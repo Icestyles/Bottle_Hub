@@ -1,0 +1,334 @@
+-- Standalone Combat Script
+-- Features: Auto Attack, Auto Skills (Q,E,R), Weapon Rotation
+-- Compatibility: PC & Mobile (Universal Input)
+
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local VirtualUser = game:GetService("VirtualUser") 
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+
+-- Configuration
+local CombatEnabled = false
+local SkillDelay = 0.1
+
+-- Variables
+local SkillCycleRunning = false
+local AttackLoopRunning = false
+local WeaponRotationRunning = false
+local GUI = nil
+
+-- Weapon Config
+local WeaponSlots = { "Three", "One", "Four", nil } -- Default defaults
+local CurrentEquippedKey = nil 
+local IsFirstLoop = true
+
+-- Mapping
+local NumberKeys = {
+    ["1"] = "One", ["2"] = "Two", ["3"] = "Three", ["4"] = "Four",
+    ["5"] = "Five", ["6"] = "Six", ["7"] = "Seven", ["8"] = "Eight", ["9"] = "Nine"
+}
+local SkillOrder = {"Q", "E", "R"}
+
+-- UI Helpers
+local function MakeRounded(guiObject, radius)
+    local uiCorner = Instance.new("UICorner")
+    uiCorner.CornerRadius = UDim.new(0, radius or 10)
+    uiCorner.Parent = guiObject
+    return uiCorner
+end
+
+-- ==========================================
+-- UNIVERSAL INPUT SYSTEM (FROM V25)
+-- ==========================================
+
+local function ClickMouse()
+    -- Mobile Optimized Click (Touch Simulation)
+    pcall(function()
+        VirtualUser:CaptureController()
+        VirtualUser:Button1Down(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
+        task.wait(0.05)
+        VirtualUser:Button1Up(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
+    end)
+end
+
+local function PressKey(keyStr)
+    if not keyStr then return end
+    local key = Enum.KeyCode[keyStr]
+    if not key then return end
+    
+    -- Universal Key Press
+    pcall(function()
+        VirtualInputManager:SendKeyEvent(true, key, false, game)
+        task.wait(0.05)
+        VirtualInputManager:SendKeyEvent(false, key, false, game)
+    end)
+end
+
+local function HoldMouse(duration)
+    pcall(function()
+        VirtualUser:CaptureController()
+        VirtualUser:Button1Down(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
+        task.wait(duration)
+        VirtualUser:Button1Up(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
+    end)
+end
+
+-- ==========================================
+-- COMBAT LOGIC
+-- ==========================================
+
+local function SkillRotation()
+    while SkillCycleRunning and CombatEnabled do
+        for i = 1, #SkillOrder do
+            if not SkillCycleRunning or not CombatEnabled then break end
+            PressKey(SkillOrder[i])
+            task.wait(SkillDelay)
+        end
+        task.wait(0.1)
+    end
+end
+
+local function AutoAttack()
+    while AttackLoopRunning and CombatEnabled do
+        ClickMouse()
+        task.wait(0.1)
+    end
+end
+
+-- Reads from UI
+local function UpdateWeaponSlots()
+    if not GUI then return end
+    local MainFrame = GUI:FindFirstChild("MainFrame")
+    local WeaponFrame = MainFrame and MainFrame:FindFirstChild("WeaponFrame")
+    if not WeaponFrame then return end
+    
+    for i = 1, 4 do
+        local SlotInput = WeaponFrame:FindFirstChild("Slot"..i)
+        if SlotInput then
+            local txt = SlotInput.Text
+            if txt and txt ~= "" and NumberKeys[txt] then 
+                WeaponSlots[i] = NumberKeys[txt] 
+            else 
+                WeaponSlots[i] = nil 
+            end
+        end
+    end
+end
+
+local function DefaultWeaponRotation()
+    UpdateWeaponSlots()
+    
+    -- Calculate cycle time based on active weapons
+    local activeWeaponsCount = 0
+    for i = 1, 4 do if WeaponSlots[i] then activeWeaponsCount = activeWeaponsCount + 1 end end
+    
+    local baseCycleTime = 12 
+    local timePerStage = 2
+    local autoAttackDuration = baseCycleTime - (activeWeaponsCount * timePerStage)
+    if autoAttackDuration < 1 then autoAttackDuration = 1 end
+    
+    -- Equip Main Weapon First Time
+    if IsFirstLoop then
+        if WeaponSlots[1] then
+            PressKey(WeaponSlots[1])
+            CurrentEquippedKey = WeaponSlots[1]
+            task.wait(0.5)
+        end
+        IsFirstLoop = false
+    end
+    
+    -- Rotate Weapons 1-4
+    for i = 1, 4 do
+        local key = WeaponSlots[i]
+        if key then
+            if not WeaponRotationRunning or not CombatEnabled then return end
+            
+            if CurrentEquippedKey ~= key then
+                PressKey(key)
+                CurrentEquippedKey = key
+                task.wait(0.5) 
+            else
+                task.wait(0.1) 
+            end
+
+            -- Spam Skills
+            for _, skill in pairs(SkillOrder) do
+                if not WeaponRotationRunning or not CombatEnabled then break end
+                PressKey(skill)
+                task.wait(0.1)
+            end
+            
+            -- Hold Attack for sub-weapons
+            if i > 1 then
+                HoldMouse(0.3) 
+            end
+            
+            task.wait(0.5)
+        end
+    end
+    
+    -- Main Weapon Auto Attack Phase
+    if WeaponSlots[1] then
+        if not WeaponRotationRunning or not CombatEnabled then return end
+        
+        local mainKey = WeaponSlots[1]
+        if CurrentEquippedKey ~= mainKey then
+            PressKey(mainKey)
+            CurrentEquippedKey = mainKey
+            task.wait(0.5)
+        end
+        
+        local timer = 0
+        while timer < autoAttackDuration and WeaponRotationRunning and CombatEnabled do
+            ClickMouse()
+            task.wait(0.1)
+            timer = timer + 0.1
+        end
+    end
+end
+
+local function WeaponRotationLoop()
+    IsFirstLoop = true
+    CurrentEquippedKey = nil 
+    while WeaponRotationRunning and CombatEnabled do
+        DefaultWeaponRotation()
+        task.wait(0.1)
+    end
+    -- Reset to main weapon when stopped
+    UpdateWeaponSlots()
+    if WeaponSlots[1] then PressKey(WeaponSlots[1]) end
+    IsFirstLoop = true
+end
+
+-- ==========================================
+-- MAIN TOGGLE
+-- ==========================================
+local function ToggleCombat(enable)
+    CombatEnabled = enable
+    if enable then
+        if not WeaponRotationRunning then 
+            WeaponRotationRunning = true 
+            task.spawn(WeaponRotationLoop) 
+        end
+        if not SkillCycleRunning then 
+            SkillCycleRunning = true 
+            task.spawn(SkillRotation) 
+        end
+        if not AttackLoopRunning then 
+            AttackLoopRunning = true 
+            task.spawn(AutoAttack) 
+        end
+        print("Combat: ON")
+    else
+        WeaponRotationRunning = false
+        SkillCycleRunning = false
+        AttackLoopRunning = false
+        print("Combat: OFF")
+    end
+end
+
+-- ==========================================
+-- MINI UI
+-- ==========================================
+local function CreateGUI()
+    local ScreenGui = Instance.new("ScreenGui")
+    ScreenGui.Name = "StandaloneCombatUI"
+    ScreenGui.ResetOnSpawn = false
+    
+    local MainFrame = Instance.new("Frame")
+    MainFrame.Name = "MainFrame"
+    MainFrame.Size = UDim2.new(0, 300, 0, 150)
+    MainFrame.Position = UDim2.new(0.5, -150, 0.2, 0)
+    MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 32)
+    MainFrame.Active = true
+    MainFrame.Draggable = true
+    MainFrame.Parent = ScreenGui
+    MakeRounded(MainFrame, 10)
+    
+    local Title = Instance.new("TextLabel")
+    Title.Size = UDim2.new(1, 0, 0, 30)
+    Title.BackgroundTransparency = 1
+    Title.Text = "Combat Only (V25 Logic)"
+    Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Title.Font = Enum.Font.GothamBold
+    Title.TextSize = 14
+    Title.Parent = MainFrame
+    
+    -- Toggle Button
+    local ToggleBtn = Instance.new("TextButton")
+    ToggleBtn.Size = UDim2.new(0.8, 0, 0, 35)
+    ToggleBtn.Position = UDim2.new(0.1, 0, 0, 40)
+    ToggleBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+    ToggleBtn.Text = "Enable Combat"
+    ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    ToggleBtn.Font = Enum.Font.GothamBold
+    ToggleBtn.TextSize = 14
+    ToggleBtn.Parent = MainFrame
+    MakeRounded(ToggleBtn, 6)
+    
+    ToggleBtn.MouseButton1Click:Connect(function()
+        CombatEnabled = not CombatEnabled
+        if CombatEnabled then
+            ToggleBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
+            ToggleBtn.Text = "Combat Active"
+            ToggleCombat(true)
+        else
+            ToggleBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+            ToggleBtn.Text = "Enable Combat"
+            ToggleCombat(false)
+        end
+    end)
+    
+    -- Weapon Slots UI
+    local WeaponFrame = Instance.new("Frame")
+    WeaponFrame.Name = "WeaponFrame"
+    WeaponFrame.Size = UDim2.new(1, 0, 0, 50)
+    WeaponFrame.Position = UDim2.new(0, 0, 0, 85)
+    WeaponFrame.BackgroundTransparency = 1
+    WeaponFrame.Parent = MainFrame
+    
+    local Label = Instance.new("TextLabel")
+    Label.Size = UDim2.new(1,0,0,15)
+    Label.BackgroundTransparency = 1
+    Label.Text = "Weapon Slots (1-9)"
+    Label.TextColor3 = Color3.fromRGB(150,150,150)
+    Label.TextSize = 10
+    Label.Parent = WeaponFrame
+    
+    for i = 1, 4 do
+        local Slot = Instance.new("TextBox")
+        Slot.Name = "Slot"..i
+        Slot.Size = UDim2.new(0, 50, 0, 25)
+        Slot.Position = UDim2.new(0, 25 + (i-1)*65, 0, 20)
+        Slot.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+        Slot.Text = (i==1 and "3") or (i==2 and "1") or (i==3 and "4") or ""
+        Slot.TextColor3 = Color3.fromRGB(255, 255, 255)
+        Slot.Parent = WeaponFrame
+        MakeRounded(Slot, 4)
+        
+        Slot:GetPropertyChangedSignal("Text"):Connect(function()
+            local key = NumberKeys[Slot.Text]
+            WeaponSlots[i] = key 
+        end)
+    end
+    
+    ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+    GUI = ScreenGui
+    
+    -- Mobile Toggle Icon (Top Right)
+    local MobileBtn = Instance.new("ImageButton")
+    MobileBtn.Size = UDim2.new(0, 40, 0, 40)
+    MobileBtn.Position = UDim2.new(0.9, 0, 0.1, 0)
+    MobileBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    MobileBtn.Image = "rbxassetid://6031265978"
+    MobileBtn.Parent = ScreenGui
+    MakeRounded(MobileBtn, 8)
+    
+    MobileBtn.MouseButton1Click:Connect(function()
+        MainFrame.Visible = not MainFrame.Visible
+    end)
+end
+
+CreateGUI()
