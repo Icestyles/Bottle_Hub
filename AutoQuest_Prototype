@@ -1,0 +1,542 @@
+--[[
+    UNIVERSAL AUTO SCRIPT: FINAL QUEST FLOW FIX
+    Updates:
+    1. Quest Logic: Changed to Non-Blocking flow. It will continuously fire 'QuestRepeat' if the quest exists and boss is dead, ensuring it gets turned in.
+    2. Weapon & Rotation: Kept the working logic.
+]]
+
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local VirtualUser = game:GetService("VirtualUser") 
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local LocalPlayer = Players.LocalPlayer
+
+-- ==========================================
+-- CONFIGURATION
+-- ==========================================
+local Config = {
+    AutoQuestEnabled = false, 
+    SelectedQuest = "Abaddon", 
+    
+    AttackDistance = 18, 
+    TweenSpeed = 0.1, 
+    SkillDelay = 0.1,
+    WalkSpeed = 16, 
+    BossTimeout = 15,
+}
+
+-- Variables
+local SkillCycleRunning = false
+local AttackLoopRunning = false
+local WeaponRotationRunning = false
+local TweenConnection = nil 
+local CurrentTarget = nil 
+local PreLogicRunning = false 
+local GUI = nil
+
+-- Weapon Config
+local WeaponSlots = { "Three", "One", "Four", nil }
+local CurrentEquippedKey = nil 
+local IsFirstLoop = true
+local NumberKeys = {
+    ["1"] = "One", ["2"] = "Two", ["3"] = "Three", ["4"] = "Four",
+    ["5"] = "Five", ["6"] = "Six", ["7"] = "Seven", ["8"] = "Eight", ["9"] = "Nine"
+}
+local SkillOrder = {"Q", "E", "R"}
+
+-- ==========================================
+-- QUEST HELPER
+-- ==========================================
+local function HasQuest(questID)
+    local quests = LocalPlayer:FindFirstChild("Quests")
+    if quests then
+        if quests:FindFirstChild(questID) then
+            return true
+        end
+    end
+    return false
+end
+
+-- ==========================================
+-- REMOTE HELPER
+-- ==========================================
+local function FireRemote(type, name, ...)
+    local args = {...}
+    task.spawn(function()
+        local remoteFolder = workspace:WaitForChild("Remote", 5)
+        if not remoteFolder then return end
+        
+        if type == "Fire" then
+            local remote = remoteFolder:WaitForChild(name, 5)
+            if remote then 
+                remote:FireServer(unpack(args)) 
+            end
+        elseif type == "Invoke" then
+            local remote = remoteFolder:WaitForChild(name, 5)
+            if remote then 
+                remote:InvokeServer(unpack(args)) 
+            end
+        end
+    end)
+end
+
+-- ==========================================
+-- QUEST DATABASE
+-- ==========================================
+local QuestData = {
+    ["Abaddon"] = {
+        TargetName = "Abaddon",
+        QuestID = "Demon",
+        TargetPath = function() return workspace:FindFirstChild("MobFolder") end,
+        HasPreLogic = true, 
+        PreLogic = function()
+            local AbaddonConfig = {
+                FirstTP = CFrame.new(-1125.14844, 7227.03711, 15287.8633, -0.767242491, -2.69211275e-09, 0.641357183, -4.21872759e-09, 1, -8.49252779e-10, -0.641357183, -3.357294e-09, -0.767242491),
+                WalkPoint = Vector3.new(-1139.58777, 7228.54297, 15305.751),
+                ButtonPath = function() 
+                    return workspace:FindFirstChild("Ascension Trial Maps") 
+                        and workspace["Ascension Trial Maps"]:FindFirstChild("Ascensia Isles")
+                        and workspace["Ascension Trial Maps"]["Ascensia Isles"]:FindFirstChild("Abaddon Teleporter")
+                        and workspace["Ascension Trial Maps"]["Ascensia Isles"]["Abaddon Teleporter"]:FindFirstChild("Button")
+                end
+            }
+            
+            if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                LocalPlayer.Character.HumanoidRootPart.CFrame = AbaddonConfig.FirstTP
+            end
+            task.wait(0.5)
+
+            local char = LocalPlayer.Character
+            local humanoid = char:WaitForChild("Humanoid")
+            humanoid:MoveTo(AbaddonConfig.WalkPoint)
+            
+            local reached = false
+            local timer = 0
+            while not reached and timer < Config.BossTimeout do
+                if not Config.AutoQuestEnabled then return end
+                local dist = (char.HumanoidRootPart.Position - AbaddonConfig.WalkPoint).Magnitude
+                if dist < 5 then reached = true end
+                task.wait(0.5)
+                timer = timer + 0.5
+                humanoid:MoveTo(AbaddonConfig.WalkPoint) 
+            end
+
+            if reached then
+                task.wait(0.5)
+                local btn = AbaddonConfig.ButtonPath()
+                if btn and btn:FindFirstChild("ClickDetector") then
+                    if fireclickdetector then
+                        fireclickdetector(btn.ClickDetector)
+                    else
+                        VirtualUser:CaptureController()
+                        VirtualUser:ClickButton1(Vector2.new(0,0))
+                    end
+                    print("PreLogic: Button Clicked")
+                    task.wait(4) 
+                end
+            end
+        end
+    }
+}
+
+-- ==========================================
+-- INPUT SYSTEM
+-- ==========================================
+local function ClickMouse()
+    VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+    task.wait(0.05)
+    VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+end
+
+local function PressKey(keyStr)
+    if not keyStr then return end
+    local key = Enum.KeyCode[keyStr]
+    if not key then return end
+    pcall(function()
+        VirtualInputManager:SendKeyEvent(true, key, false, game)
+        task.wait(0.05)
+        VirtualInputManager:SendKeyEvent(false, key, false, game)
+    end)
+end
+
+local function HoldMouse(duration)
+    VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+    task.wait(duration)
+    VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+end
+
+-- ==========================================
+-- HELPER: GET HUMANOID
+-- ==========================================
+local function GetHumanoid(model)
+    if not model then return nil end
+    return model:FindFirstChild("Humanoid") or model:FindFirstChild("Enemy")
+end
+
+-- ==========================================
+-- MOVEMENT LOGIC (PLATFORM STAND)
+-- ==========================================
+local function TweenToTarget(targetPart)
+    if not targetPart or not LocalPlayer.Character then return end
+    local hrp = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    local char = LocalPlayer.Character
+    local humanoid = char:FindFirstChild("Humanoid")
+
+    if TweenConnection then TweenConnection:Disconnect() TweenConnection = nil end
+    
+    if humanoid then 
+        humanoid.PlatformStand = true 
+        humanoid.AutoRotate = false
+    end
+    
+    local tweenInfo = TweenInfo.new(Config.TweenSpeed, Enum.EasingStyle.Linear)
+    
+    TweenConnection = RunService.Heartbeat:Connect(function()
+        local parent = targetPart and targetPart.Parent
+        local targetHumanoid = GetHumanoid(parent)
+        
+        if not Config.AutoQuestEnabled or not parent or not targetHumanoid or targetHumanoid.Health <= 0 then
+            if TweenConnection then TweenConnection:Disconnect() TweenConnection = nil end
+            if humanoid then 
+                humanoid.PlatformStand = false
+                humanoid.AutoRotate = true
+            end
+            return
+        end
+        
+        if hrp then
+            hrp.Velocity = Vector3.new(0, 0, 0)
+            hrp.RotVelocity = Vector3.new(0, 0, 0)
+            
+            local targetPos = targetPart.Position + Vector3.new(0, Config.AttackDistance, 0)
+            local goalCFrame = CFrame.new(targetPos) * CFrame.Angles(math.rad(-90), 0, 0)
+            
+            local tween = TweenService:Create(hrp, tweenInfo, {CFrame = goalCFrame})
+            tween:Play()
+        end
+    end)
+end
+
+-- ==========================================
+-- COMBAT LOGIC
+-- ==========================================
+local function SkillRotation()
+    while SkillCycleRunning and Config.AutoQuestEnabled do
+        for i = 1, #SkillOrder do
+            if not SkillCycleRunning or not Config.AutoQuestEnabled then break end
+            PressKey(SkillOrder[i])
+            task.wait(Config.SkillDelay)
+        end
+        task.wait(0.1)
+    end
+end
+
+local function AutoAttack()
+    while AttackLoopRunning and Config.AutoQuestEnabled do
+        ClickMouse()
+        task.wait(0.1)
+    end
+end
+
+local function UpdateWeaponSlots()
+    if not GUI then return end
+    local WeaponFrame = GUI.MainFrame:FindFirstChild("WeaponFrame")
+    if not WeaponFrame then return end
+    for i = 1, 4 do
+        local SlotInput = WeaponFrame:FindFirstChild("Slot"..i)
+        if SlotInput then
+            local txt = SlotInput.Text
+            if NumberKeys[txt] then WeaponSlots[i] = NumberKeys[txt] else WeaponSlots[i] = nil end
+        end
+    end
+end
+
+local function WeaponRotationLoop()
+    UpdateWeaponSlots()
+    local mainKey = WeaponSlots[1]
+    local char = LocalPlayer.Character
+    local holdingTool = char and char:FindFirstChildOfClass("Tool")
+    
+    if mainKey then
+        if holdingTool or CurrentEquippedKey == mainKey then
+            CurrentEquippedKey = mainKey 
+        else
+            PressKey(mainKey)
+            CurrentEquippedKey = mainKey
+            task.wait(0.5)
+        end
+    end
+
+    while WeaponRotationRunning and Config.AutoQuestEnabled do
+        local activeWeaponsCount = 0
+        for i = 1, 4 do if WeaponSlots[i] then activeWeaponsCount = activeWeaponsCount + 1 end end
+        local baseCycleTime = 12 
+        local timePerStage = 2
+        local autoAttackDuration = baseCycleTime - (activeWeaponsCount * timePerStage)
+        if autoAttackDuration < 1 then autoAttackDuration = 1 end
+
+        for i = 1, 4 do
+            local key = WeaponSlots[i]
+            if key then
+                if not WeaponRotationRunning or not Config.AutoQuestEnabled then return end
+                
+                if CurrentEquippedKey ~= key then
+                    PressKey(key)
+                    CurrentEquippedKey = key
+                    task.wait(0.5) 
+                end
+
+                for _, skill in pairs(SkillOrder) do
+                    PressKey(skill)
+                    task.wait(0.1)
+                end
+                
+                if i > 1 then HoldMouse(0.3) end
+                task.wait(0.5)
+            end
+        end
+        
+        if WeaponSlots[1] then
+            if CurrentEquippedKey ~= WeaponSlots[1] then
+                PressKey(WeaponSlots[1])
+                CurrentEquippedKey = WeaponSlots[1]
+                task.wait(0.5)
+            end
+            local timer = 0
+            while timer < autoAttackDuration and WeaponRotationRunning and Config.AutoQuestEnabled do
+                ClickMouse()
+                task.wait(0.1)
+                timer = timer + 0.1
+            end
+        end
+        task.wait(0.1)
+    end
+end
+
+local function StopCombat()
+    WeaponRotationRunning = false
+    SkillCycleRunning = false
+    AttackLoopRunning = false
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+        LocalPlayer.Character.Humanoid.PlatformStand = false
+        LocalPlayer.Character.Humanoid.AutoRotate = true
+    end
+end
+
+local function StartCombat()
+    if not WeaponRotationRunning then 
+        WeaponRotationRunning = true 
+        task.spawn(WeaponRotationLoop) 
+    end
+    if not SkillCycleRunning then 
+        SkillCycleRunning = true 
+        task.spawn(SkillRotation) 
+    end
+    if not AttackLoopRunning then 
+        AttackLoopRunning = true 
+        task.spawn(AutoAttack) 
+    end
+end
+
+-- ==========================================
+-- MAIN AUTO QUEST LOOP (REFINED)
+-- ==========================================
+local function FindQuestTarget()
+    local questInfo = QuestData[Config.SelectedQuest]
+    if not questInfo then return nil end
+    
+    local folder = questInfo.TargetPath()
+    if folder and folder:FindFirstChild(questInfo.TargetName) then
+        local target = folder[questInfo.TargetName]
+        local humanoid = GetHumanoid(target)
+        
+        if target:FindFirstChild("HumanoidRootPart") and humanoid and humanoid.Health > 0 then
+            return target
+        end
+    end
+    return nil
+end
+
+local function AutoQuestLoop()
+    while Config.AutoQuestEnabled do
+        local target = FindQuestTarget()
+        local questInfo = QuestData[Config.SelectedQuest]
+        
+        if target then
+            -- [CASE 1] เจอบอส
+            if CurrentTarget ~= target then
+                CurrentTarget = target
+                print("AutoQuest: Target Found -> " .. target.Name)
+                
+                -- ถ้ายังไม่มีเควส ให้รับ (StartQuest)
+                if questInfo and questInfo.QuestID and not HasQuest(questInfo.QuestID) then
+                     print("Quest: StartQuest -> " .. questInfo.QuestID)
+                     FireRemote("Invoke", "QuestFunction", "Check", questInfo.QuestID)
+                     FireRemote("Fire", "QuestEvent", "StartQuest", questInfo.QuestID)
+                end
+                
+                TweenToTarget(target.HumanoidRootPart)
+                StartCombat()
+            end
+        else
+            -- [CASE 2] ไม่เจอบอส (Turn In Logic)
+            CurrentTarget = nil
+            StopCombat() 
+            if TweenConnection then TweenConnection:Disconnect() TweenConnection = nil end 
+            
+            if questInfo and questInfo.QuestID then
+                if HasQuest(questInfo.QuestID) then
+                    -- มีเควสค้างอยู่ = เควสเสร็จแล้วแต่บอสตาย ให้ส่งเควส (Repeat)
+                    -- ยิงซ้ำๆ ทุก Loop จนกว่าเควสจะหายไป (Force Turn In)
+                    print("Quest: Turning In (QuestRepeat)...")
+                    FireRemote("Fire", "QuestRepeat", questInfo.QuestID)
+                else
+                    -- ไม่มีเควส = ส่งเสร็จแล้ว ให้รับใหม่ (Start)
+                    print("Quest: Accepting New (StartQuest)...")
+                    FireRemote("Invoke", "QuestFunction", "Check", questInfo.QuestID)
+                    FireRemote("Fire", "QuestEvent", "StartQuest", questInfo.QuestID)
+                end
+            end
+            
+            -- ทำ PreLogic ถ้ายังไม่มีเควส หรือพึ่งรับเควสมา
+            if questInfo and questInfo.HasPreLogic and not PreLogicRunning then
+                -- ถ้าไม่มีเควส อย่าพึ่งวิ่งไป ให้รับเควสให้ได้ก่อน (Logic ด้านบนจะจัดการรับ)
+                -- แต่อนุญาตให้วิ่งถ้ามีเควสแล้ว
+                if questInfo.QuestID and HasQuest(questInfo.QuestID) then
+                    PreLogicRunning = true
+                    print("AutoQuest: Running Pre-Logic...")
+                    questInfo.PreLogic()
+                    PreLogicRunning = false
+                end
+            end
+        end
+        task.wait(0.5) -- Loop Tick
+    end
+    
+    StopCombat()
+    if TweenConnection then TweenConnection:Disconnect() TweenConnection = nil end
+    CurrentTarget = nil
+    PreLogicRunning = false
+end
+
+-- ==========================================
+-- UI SETUP
+-- ==========================================
+local function MakeRounded(guiObject, radius)
+    local uiCorner = Instance.new("UICorner")
+    uiCorner.CornerRadius = UDim.new(0, radius or 10)
+    uiCorner.Parent = guiObject
+    return uiCorner
+end
+
+local function CreateGUI()
+    if GUI then GUI:Destroy() end
+
+    local ScreenGui = Instance.new("ScreenGui")
+    ScreenGui.Name = "UnifiedQuestUI"
+    ScreenGui.ResetOnSpawn = false
+    
+    local MainFrame = Instance.new("Frame")
+    MainFrame.Name = "MainFrame"
+    MainFrame.Size = UDim2.new(0, 320, 0, 200)
+    MainFrame.Position = UDim2.new(0.5, -160, 0.2, 0)
+    MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 32)
+    MainFrame.Active = true
+    MainFrame.Draggable = true
+    MainFrame.Parent = ScreenGui
+    MakeRounded(MainFrame, 10)
+    
+    local Title = Instance.new("TextLabel")
+    Title.Size = UDim2.new(1, 0, 0, 30)
+    Title.BackgroundTransparency = 1
+    Title.Text = "Auto Quest: Demon (Stable Flow)"
+    Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Title.Font = Enum.Font.GothamBold
+    Title.TextSize = 14
+    Title.Parent = MainFrame
+    
+    local ToggleBtn = Instance.new("TextButton")
+    ToggleBtn.Size = UDim2.new(0.8, 0, 0, 35)
+    ToggleBtn.Position = UDim2.new(0.1, 0, 0, 40)
+    ToggleBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+    ToggleBtn.Text = "Enable Auto Quest"
+    ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    ToggleBtn.Font = Enum.Font.GothamBold
+    ToggleBtn.TextSize = 14
+    ToggleBtn.Parent = MainFrame
+    MakeRounded(ToggleBtn, 6)
+    
+    ToggleBtn.MouseButton1Click:Connect(function()
+        Config.AutoQuestEnabled = not Config.AutoQuestEnabled
+        if Config.AutoQuestEnabled then
+            ToggleBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
+            ToggleBtn.Text = "Auto Quest: Active"
+            task.spawn(AutoQuestLoop)
+        else
+            ToggleBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+            ToggleBtn.Text = "Enable Auto Quest"
+        end
+    end)
+    
+    local WeaponFrame = Instance.new("Frame")
+    WeaponFrame.Name = "WeaponFrame"
+    WeaponFrame.Size = UDim2.new(1, 0, 0, 50)
+    WeaponFrame.Position = UDim2.new(0, 0, 0, 85)
+    WeaponFrame.BackgroundTransparency = 1
+    WeaponFrame.Parent = MainFrame
+    
+    local Label = Instance.new("TextLabel")
+    Label.Size = UDim2.new(1,0,0,15)
+    Label.BackgroundTransparency = 1
+    Label.Text = "Weapon Slots (1-9)"
+    Label.TextColor3 = Color3.fromRGB(150,150,150)
+    Label.TextSize = 10
+    Label.Parent = WeaponFrame
+    
+    for i = 1, 4 do
+        local Slot = Instance.new("TextBox")
+        Slot.Name = "Slot"..i
+        Slot.Size = UDim2.new(0, 50, 0, 25)
+        Slot.Position = UDim2.new(0, 25 + (i-1)*65, 0, 20)
+        Slot.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+        Slot.Text = (i==1 and "3") or (i==2 and "1") or (i==3 and "4") or ""
+        Slot.TextColor3 = Color3.fromRGB(255, 255, 255)
+        Slot.Parent = WeaponFrame
+        MakeRounded(Slot, 4)
+        Slot:GetPropertyChangedSignal("Text"):Connect(UpdateWeaponSlots)
+    end
+    
+    local DistInput = Instance.new("TextBox")
+    DistInput.Size = UDim2.new(0.4, 0, 0, 25)
+    DistInput.Position = UDim2.new(0.3, 0, 0, 150)
+    DistInput.BackgroundColor3 = Color3.fromRGB(40,40,40)
+    DistInput.Text = "Dist: "..Config.AttackDistance
+    DistInput.TextColor3 = Color3.fromRGB(200,200,200)
+    DistInput.Parent = MainFrame
+    MakeRounded(DistInput, 4)
+    
+    DistInput.FocusLost:Connect(function()
+        local num = tonumber(DistInput.Text)
+        if num then Config.AttackDistance = num end
+        DistInput.Text = "Dist: "..Config.AttackDistance
+    end)
+
+    ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+    GUI = ScreenGui
+    
+    local MobileBtn = Instance.new("ImageButton")
+    MobileBtn.Size = UDim2.new(0, 40, 0, 40)
+    MobileBtn.Position = UDim2.new(0.9, 0, 0.1, 0)
+    MobileBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    MobileBtn.Image = "rbxassetid://6031265978"
+    MobileBtn.Parent = ScreenGui
+    MakeRounded(MobileBtn, 8)
+    
+    MobileBtn.MouseButton1Click:Connect(function()
+        MainFrame.Visible = not MainFrame.Visible
+    end)
+end
+
+CreateGUI()
