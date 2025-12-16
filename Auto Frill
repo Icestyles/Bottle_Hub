@@ -1,0 +1,1286 @@
+-- Auto Farm Script for Roblox
+-- Version V26: Side Attack Position + Side Distance UI
+
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local Lighting = game:GetService("Lighting")
+local LocalPlayer = Players.LocalPlayer
+local Mouse = LocalPlayer:GetMouse()
+
+-- Configuration
+local AutoFarmEnabled = false
+local ESPEnabled = false
+local ReduceLagEnabled = false
+local TargetPriority = "None"
+local AttackHeight = 5 -- [CHANGED] Renamed from AttackDistance to Height (Vertical)
+local SideDistance = 12 -- [NEW] Distance from the side (Horizontal)
+local SkillDelay = 0.1
+local TweenSpeed = 0.3
+local ViewDistanceVal = 10000 
+local CurrentGraphicLevel = 5 
+
+-- Variables
+local CurrentTarget = nil
+local TweenConnection = nil
+local SkillCycleRunning = false
+local AttackLoopRunning = false
+local WeaponRotationRunning = false
+local GUI = nil
+local ESPConnection = nil
+
+-- Dynamic Weapon Configuration
+local WeaponSlots = { "Three", "One", "Four", nil } 
+local CurrentEquippedKey = nil 
+local IsFirstLoop = true
+local CurrentPattern = "Default"
+
+-- Mapping Numbers
+local NumberKeys = {
+    ["1"] = "One", ["2"] = "Two", ["3"] = "Three", ["4"] = "Four",
+    ["5"] = "Five", ["6"] = "Six", ["7"] = "Seven", ["8"] = "Eight", ["9"] = "Nine"
+}
+
+-- Frill Logic Variables
+local FrillSpawnTime = 0
+local IsWaitingForFrill = false
+local FrillWaitTimer = 0
+
+-- Movement Variables
+local FlyEnabled = false
+local NoclipEnabled = false
+local AntiIdleEnabled = false
+local CharacterParts = {}
+
+-- Optimization Variables
+local LastTargetUpdate = 0
+local TargetUpdateInterval = 0.3
+local LastUIUpdate = 0
+local UIUpdateInterval = 0.5
+local LastHealthUpdate = 0
+local HealthUpdateInterval = 0.3
+
+-- Connections
+local FlyConnection = nil
+local NoclipConnection = nil
+local AntiIdleConnection = nil
+local LagMonitorConnection = nil
+
+local SkillOrder = {"Q", "E", "R"}
+local MobFolder = workspace.MobFolder
+local VirtualInputManager = game:GetService("VirtualInputManager")
+
+-- UI Helpers
+local function MakeRounded(guiObject, radius)
+    local uiCorner = Instance.new("UICorner")
+    uiCorner.CornerRadius = UDim.new(0, radius or 10)
+    uiCorner.Parent = guiObject
+    return uiCorner
+end
+
+local function AddStroke(guiObject, color, transparency, thickness)
+    local uiStroke = Instance.new("UIStroke")
+    uiStroke.Color = color or Color3.fromRGB(255, 255, 255)
+    uiStroke.Transparency = transparency or 0.8
+    uiStroke.Thickness = thickness or 1
+    uiStroke.Parent = guiObject
+    return uiStroke
+end
+
+-- ==========================================
+-- OPTIMIZE OBJECT (FIXED: Map Flashing & Player Fade)
+-- ==========================================
+local function OptimizeObject(v)
+    if not ReduceLagEnabled then return end
+    if v.Parent and (v.Parent:FindFirstChild("Humanoid") or (v.Parent.Parent and v.Parent.Parent:FindFirstChild("Humanoid"))) then return end
+
+    local arena = workspace:FindFirstChild("Frill Arena")
+    if arena then
+        local tiles = arena:FindFirstChild("FragileTiles")
+        if tiles and v:IsDescendantOf(tiles) then return end
+    end
+
+    if v:IsA("ParticleEmitter") or v:IsA("Trail") or v:IsA("Beam") or v:IsA("Smoke") or v:IsA("Fire") or v:IsA("Sparkles") then
+        v.Enabled = false
+    elseif v:IsA("Explosion") then
+        v.Visible = false
+        v.BlastPressure = 0
+        v.BlastRadius = 0
+    elseif v:IsA("PostEffect") or v:IsA("Light") then
+        v.Enabled = false
+    elseif v:IsA("Decal") or v:IsA("Texture") then
+        if v.Transparency ~= 1 then v.Transparency = 1 end
+    elseif v:IsA("BasePart") or v:IsA("MeshPart") then
+        if v.Material ~= Enum.Material.SmoothPlastic then v.Material = Enum.Material.SmoothPlastic end
+        v.Reflectance = 0
+        v.CastShadow = false
+        if v:IsA("Part") and v.Shape == Enum.PartType.Ball then
+            if v.Transparency < 0.8 then v.Transparency = 0.8 end
+        elseif not v.CanCollide then
+            if v.Transparency < 0.8 then v.Transparency = 0.8 end
+        end
+        if v:IsA("MeshPart") then v.TextureID = "" end
+    end
+end
+
+local function ApplyRenderSetting(level)
+    local quality = Enum.QualityLevel.Level01 
+    if level == 1 then quality = Enum.QualityLevel.Level01
+    elseif level == 2 then quality = Enum.QualityLevel.Level06
+    elseif level == 3 then quality = Enum.QualityLevel.Level10
+    elseif level == 4 then quality = Enum.QualityLevel.Level16
+    elseif level == 5 then quality = Enum.QualityLevel.Level21 end
+    
+    pcall(function() settings().Rendering.QualityLevel = quality end)
+    
+    if Lighting then
+        Lighting.GlobalShadows = false
+        Lighting.FogStart = 100000 
+        Lighting.FogEnd = 100000
+    end
+    
+    if ReduceLagEnabled then
+        for _, v in pairs(workspace:GetDescendants()) do OptimizeObject(v) end
+    end
+end
+
+local function ToggleReduceLag(enable)
+    ReduceLagEnabled = enable
+    if enable then
+        if Lighting then Lighting.GlobalShadows = false Lighting.Brightness = 2 end
+        ApplyRenderSetting(CurrentGraphicLevel)
+        if LagMonitorConnection then LagMonitorConnection:Disconnect() end
+        LagMonitorConnection = workspace.DescendantAdded:Connect(OptimizeObject)
+        print("FPS Boost Active")
+    else
+        if LagMonitorConnection then LagMonitorConnection:Disconnect() LagMonitorConnection = nil end
+        if Lighting then Lighting.GlobalShadows = true end
+        ApplyRenderSetting(5)
+        settings().Rendering.QualityLevel = Enum.QualityLevel.Automatic
+        print("FPS Boost Disabled")
+    end
+end
+
+-- Core Logic Functions
+local function PressKey(key)
+    if not key then return end
+    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode[key], false, game)
+    task.wait(0.05)
+    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode[key], false, game)
+end
+
+local function ClickMouse()
+    VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+    task.wait(0.05)
+    VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+end
+
+local function HoldMouse(duration)
+    VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+    task.wait(duration)
+    VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+end
+
+-- ESP SYSTEM
+local function UpdateESP()
+    if not ESPEnabled then return end
+    local function ApplyHighlight(model, color)
+        if not model then return end
+        if not model:FindFirstChild("FarmHighlight") then
+            local highlight = Instance.new("Highlight")
+            highlight.Name = "FarmHighlight"
+            highlight.Adornee = model
+            highlight.FillColor = color
+            highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+            highlight.FillTransparency = 0.5
+            highlight.OutlineTransparency = 0
+            highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+            highlight.Parent = model
+        end
+    end
+    for _, child in pairs(MobFolder:GetChildren()) do
+        if child.Name == "Frill" then ApplyHighlight(child, Color3.fromRGB(255, 0, 0)) 
+        elseif child.Name == "Puppet" then
+             local extras = child:FindFirstChild("Extras")
+             if extras and extras:FindFirstChild("FrillScythe") then ApplyHighlight(child, Color3.fromRGB(255, 170, 0)) end
+        end
+    end
+end
+
+local function ClearESP()
+    for _, v in pairs(MobFolder:GetDescendants()) do if v.Name == "FarmHighlight" then v:Destroy() end end
+end
+
+local function ToggleESP(enable)
+    ESPEnabled = enable
+    if enable then
+        if ESPConnection then ESPConnection:Disconnect() end
+        ESPConnection = RunService.Stepped:Connect(function() if tick() % 1 < 0.1 then UpdateESP() end end)
+        UpdateESP()
+    else
+        if ESPConnection then ESPConnection:Disconnect() ESPConnection = nil end
+        ClearESP()
+    end
+end
+
+-- UI Creation
+local function CreateGUI()
+    local ScreenGui = Instance.new("ScreenGui")
+    ScreenGui.Name = "AutoFarmGUI_V26_Side"
+    ScreenGui.ResetOnSpawn = false
+    
+    local MainFrame = Instance.new("Frame")
+    MainFrame.Name = "MainFrame"
+    MainFrame.Size = UDim2.new(0, 340, 0, 650) -- Increased Height for new input
+    MainFrame.Position = UDim2.new(0.5, -170, 0.5, -325)
+    MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 32)
+    MainFrame.BorderSizePixel = 0
+    MainFrame.Active = true
+    MainFrame.Draggable = true
+    MainFrame.Parent = ScreenGui
+    
+    MakeRounded(MainFrame, 14)
+    AddStroke(MainFrame, Color3.fromRGB(255, 255, 255), 0.9, 1)
+    
+    -- Title Bar
+    local TitleBar = Instance.new("Frame")
+    TitleBar.Name = "TitleBar"
+    TitleBar.Size = UDim2.new(1, 0, 0, 38)
+    TitleBar.BackgroundTransparency = 1
+    TitleBar.Parent = MainFrame
+
+    local function CreateDot(color, offset)
+        local Dot = Instance.new("Frame")
+        Dot.Size = UDim2.new(0, 12, 0, 12)
+        Dot.Position = UDim2.new(0, offset, 0.5, -6)
+        Dot.BackgroundColor3 = color
+        MakeRounded(Dot, 100)
+        Dot.Parent = TitleBar
+        return Dot
+    end
+    CreateDot(Color3.fromRGB(255, 95, 87), 15)
+    CreateDot(Color3.fromRGB(255, 189, 46), 35)
+    CreateDot(Color3.fromRGB(40, 200, 64), 55)
+
+    local CloseButton = Instance.new("TextButton")
+    CloseButton.Name = "CloseButton"
+    CloseButton.Size = UDim2.new(0, 20, 0, 20)
+    CloseButton.Position = UDim2.new(0, 11, 0.5, -10)
+    CloseButton.BackgroundTransparency = 1
+    CloseButton.Text = ""
+    CloseButton.Parent = TitleBar
+
+    local Title = Instance.new("TextLabel")
+    Title.Name = "Title"
+    Title.Size = UDim2.new(1, 0, 1, 0)
+    Title.BackgroundTransparency = 1
+    Title.Text = "Auto Farm Pro (V26 Side)"
+    Title.TextColor3 = Color3.fromRGB(220, 220, 220)
+    Title.Font = Enum.Font.GothamMedium
+    Title.TextSize = 14
+    Title.Parent = TitleBar
+    
+    local Divider = Instance.new("Frame")
+    Divider.Name = "Divider"
+    Divider.Size = UDim2.new(1, 0, 0, 1)
+    Divider.Position = UDim2.new(0, 0, 0, 38)
+    Divider.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+    Divider.BorderSizePixel = 0
+    Divider.Parent = MainFrame
+
+    -- Content
+    local Content = Instance.new("Frame")
+    Content.Name = "Content"
+    Content.Size = UDim2.new(1, -30, 1, -50)
+    Content.Position = UDim2.new(0, 15, 0, 50)
+    Content.BackgroundTransparency = 1
+    Content.Parent = MainFrame
+
+    -- Toggles & Sliders (Same as before)
+    local function CreateToggle(name, text, yPos)
+        local Container = Instance.new("Frame")
+        Container.Name = name .. "Container"
+        Container.Size = UDim2.new(1, 0, 0, 40)
+        Container.Position = UDim2.new(0, 0, 0, yPos)
+        Container.BackgroundTransparency = 1
+        Container.Parent = Content
+
+        local Label = Instance.new("TextLabel")
+        Label.Size = UDim2.new(0, 200, 1, 0)
+        Label.BackgroundTransparency = 1
+        Label.Text = text
+        Label.TextColor3 = Color3.fromRGB(255, 255, 255)
+        Label.Font = Enum.Font.GothamBold
+        Label.TextSize = 15
+        Label.TextXAlignment = Enum.TextXAlignment.Left
+        Label.Parent = Container
+
+        local Button = Instance.new("TextButton")
+        Button.Name = name .. "Button"
+        Button.Size = UDim2.new(0, 50, 0, 28)
+        Button.Position = UDim2.new(1, -50, 0.5, -14)
+        Button.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+        Button.Text = ""
+        Button.Parent = Container
+        MakeRounded(Button, 16)
+
+        local Knob = Instance.new("Frame")
+        Knob.Name = "Knob"
+        Knob.Size = UDim2.new(0, 24, 0, 24)
+        Knob.Position = UDim2.new(0, 2, 0.5, -12)
+        Knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+        Knob.Parent = Button
+        MakeRounded(Knob, 100)
+    end
+
+    CreateToggle("Toggle", "Enable Auto Farm", 0)
+    CreateToggle("ESP", "Enable ESP (Visuals)", 45)
+    CreateToggle("Lag", "Boost FPS (No Effects)", 90)
+
+    -- View Slider
+    local ViewFrame = Instance.new("Frame")
+    ViewFrame.Name = "ViewFrame"
+    ViewFrame.Size = UDim2.new(1, 0, 0, 50)
+    ViewFrame.Position = UDim2.new(0, 0, 0, 135)
+    ViewFrame.BackgroundTransparency = 1
+    ViewFrame.Parent = Content
+
+    local ViewTitle = Instance.new("TextLabel")
+    ViewTitle.Name = "ViewTitle"
+    ViewTitle.Size = UDim2.new(1, 0, 0, 20)
+    ViewTitle.BackgroundTransparency = 1
+    ViewTitle.Text = "Render Distance: Level 5"
+    ViewTitle.TextColor3 = Color3.fromRGB(200, 200, 200)
+    ViewTitle.Font = Enum.Font.Gotham
+    ViewTitle.TextSize = 12
+    ViewTitle.TextXAlignment = Enum.TextXAlignment.Left
+    ViewTitle.Parent = ViewFrame
+
+    local SliderTrack = Instance.new("Frame")
+    SliderTrack.Name = "SliderTrack"
+    SliderTrack.Size = UDim2.new(1, 0, 0, 6)
+    SliderTrack.Position = UDim2.new(0, 0, 0, 30)
+    SliderTrack.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+    SliderTrack.BorderSizePixel = 0
+    SliderTrack.Parent = ViewFrame
+    MakeRounded(SliderTrack, 10)
+
+    local SliderFill = Instance.new("Frame")
+    SliderFill.Name = "SliderFill"
+    SliderFill.Size = UDim2.new(1, 0, 1, 0) 
+    SliderFill.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
+    SliderFill.BorderSizePixel = 0
+    SliderFill.Parent = SliderTrack
+    MakeRounded(SliderFill, 10)
+
+    local SliderKnob = Instance.new("TextButton")
+    SliderKnob.Name = "SliderKnob"
+    SliderKnob.Size = UDim2.new(0, 16, 0, 16)
+    SliderKnob.Position = UDim2.new(1, -8, 0.5, -8)
+    SliderKnob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    SliderKnob.Text = ""
+    SliderKnob.Parent = SliderTrack
+    MakeRounded(SliderKnob, 100)
+
+    -- Status Card
+    local StatusCard = Instance.new("Frame")
+    StatusCard.Name = "StatusCard"
+    StatusCard.Size = UDim2.new(1, 0, 0, 80)
+    StatusCard.Position = UDim2.new(0, 0, 0, 195)
+    StatusCard.BackgroundColor3 = Color3.fromRGB(45, 45, 48)
+    StatusCard.Parent = Content
+    MakeRounded(StatusCard, 10)
+    
+    local TargetLabel = Instance.new("TextLabel")
+    TargetLabel.Name = "TargetLabel"
+    TargetLabel.Size = UDim2.new(1, -20, 0, 25)
+    TargetLabel.Position = UDim2.new(0, 10, 0, 10)
+    TargetLabel.BackgroundTransparency = 1
+    TargetLabel.Text = "Target: None"
+    TargetLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
+    TargetLabel.Font = Enum.Font.Gotham
+    TargetLabel.TextSize = 13
+    TargetLabel.TextXAlignment = Enum.TextXAlignment.Left
+    TargetLabel.Parent = StatusCard
+
+    local HealthLabel = Instance.new("TextLabel")
+    HealthLabel.Name = "HealthLabel"
+    HealthLabel.Size = UDim2.new(1, -20, 0, 20)
+    HealthLabel.Position = UDim2.new(0, 10, 0, 35)
+    HealthLabel.BackgroundTransparency = 1
+    HealthLabel.Text = "Health: N/A"
+    HealthLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    HealthLabel.Font = Enum.Font.GothamBold
+    HealthLabel.TextSize = 14
+    HealthLabel.TextXAlignment = Enum.TextXAlignment.Left
+    HealthLabel.Parent = StatusCard
+
+    local HealthBarBG = Instance.new("Frame")
+    HealthBarBG.Name = "HealthBarBG"
+    HealthBarBG.Size = UDim2.new(1, -20, 0, 6)
+    HealthBarBG.Position = UDim2.new(0, 10, 0, 62)
+    HealthBarBG.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    HealthBarBG.BorderSizePixel = 0
+    HealthBarBG.Parent = StatusCard
+    MakeRounded(HealthBarBG, 10)
+
+    local HealthBar = Instance.new("Frame")
+    HealthBar.Name = "HealthBar"
+    HealthBar.Size = UDim2.new(0, 0, 1, 0)
+    HealthBar.BackgroundColor3 = Color3.fromRGB(48, 209, 88)
+    HealthBar.BorderSizePixel = 0
+    HealthBar.Parent = HealthBarBG
+    MakeRounded(HealthBar, 10)
+
+    -- [CHANGED] Distance Settings: Vertical
+    local VDistFrame = Instance.new("Frame")
+    VDistFrame.Name = "VDistFrame"
+    VDistFrame.Size = UDim2.new(1, 0, 0, 45)
+    VDistFrame.Position = UDim2.new(0, 0, 0, 290)
+    VDistFrame.BackgroundTransparency = 1
+    VDistFrame.Parent = Content
+
+    local VDistLabel = Instance.new("TextLabel")
+    VDistLabel.Size = UDim2.new(0, 120, 1, 0)
+    VDistLabel.BackgroundTransparency = 1
+    VDistLabel.Text = "Height (Vertical)"
+    VDistLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+    VDistLabel.Font = Enum.Font.Gotham
+    VDistLabel.TextSize = 13
+    VDistLabel.TextXAlignment = Enum.TextXAlignment.Left
+    VDistLabel.Parent = VDistFrame
+
+    local VInputBg = Instance.new("Frame")
+    VInputBg.Size = UDim2.new(0, 80, 0, 30)
+    VInputBg.Position = UDim2.new(1, -80, 0.5, -15)
+    VInputBg.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    VInputBg.Parent = VDistFrame
+    MakeRounded(VInputBg, 6)
+    AddStroke(VInputBg, Color3.fromRGB(80, 80, 80), 0.5, 1)
+
+    local VDistInput = Instance.new("TextBox")
+    VDistInput.Name = "VDistInput"
+    VDistInput.Size = UDim2.new(1, 0, 1, 0)
+    VDistInput.BackgroundTransparency = 1
+    VDistInput.Text = tostring(AttackHeight)
+    VDistInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+    VDistInput.Font = Enum.Font.Gotham
+    VDistInput.TextSize = 13
+    VDistInput.PlaceholderText = "1-100"
+    VDistInput.ClearTextOnFocus = false
+    VDistInput.Parent = VInputBg
+
+    -- [NEW] Distance Settings: Side (Horizontal)
+    local SDistFrame = Instance.new("Frame")
+    SDistFrame.Name = "SDistFrame"
+    SDistFrame.Size = UDim2.new(1, 0, 0, 45)
+    SDistFrame.Position = UDim2.new(0, 0, 0, 335) -- Positoned below Vertical
+    SDistFrame.BackgroundTransparency = 1
+    SDistFrame.Parent = Content
+
+    local SDistLabel = Instance.new("TextLabel")
+    SDistLabel.Size = UDim2.new(0, 120, 1, 0)
+    SDistLabel.BackgroundTransparency = 1
+    SDistLabel.Text = "Side Distance"
+    SDistLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+    SDistLabel.Font = Enum.Font.Gotham
+    SDistLabel.TextSize = 13
+    SDistLabel.TextXAlignment = Enum.TextXAlignment.Left
+    SDistLabel.Parent = SDistFrame
+
+    local SInputBg = Instance.new("Frame")
+    SInputBg.Size = UDim2.new(0, 80, 0, 30)
+    SInputBg.Position = UDim2.new(1, -80, 0.5, -15)
+    SInputBg.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    SInputBg.Parent = SDistFrame
+    MakeRounded(SInputBg, 6)
+    AddStroke(SInputBg, Color3.fromRGB(80, 80, 80), 0.5, 1)
+
+    local SDistInput = Instance.new("TextBox")
+    SDistInput.Name = "SDistInput"
+    SDistInput.Size = UDim2.new(1, 0, 1, 0)
+    SDistInput.BackgroundTransparency = 1
+    SDistInput.Text = tostring(SideDistance)
+    SDistInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+    SDistInput.Font = Enum.Font.Gotham
+    SDistInput.TextSize = 13
+    SDistInput.PlaceholderText = "1-100"
+    SDistInput.ClearTextOnFocus = false
+    SDistInput.Parent = SInputBg
+    
+    -- WEAPON CONFIGURATION SECTION
+    local WeaponFrame = Instance.new("Frame")
+    WeaponFrame.Name = "WeaponFrame"
+    WeaponFrame.Size = UDim2.new(1, 0, 0, 60)
+    WeaponFrame.Position = UDim2.new(0, 0, 0, 385) -- Shifted Down
+    WeaponFrame.BackgroundTransparency = 1
+    WeaponFrame.Parent = Content
+    
+    local WeaponTitle = Instance.new("TextLabel")
+    WeaponTitle.Name = "WeaponTitle"
+    WeaponTitle.Size = UDim2.new(1, 0, 0, 20)
+    WeaponTitle.BackgroundTransparency = 1
+    WeaponTitle.Text = "Weapon Sequence (1-9)"
+    WeaponTitle.TextColor3 = Color3.fromRGB(200, 200, 200)
+    WeaponTitle.Font = Enum.Font.Gotham
+    WeaponTitle.TextSize = 13
+    WeaponTitle.TextXAlignment = Enum.TextXAlignment.Left
+    WeaponTitle.Parent = WeaponFrame
+    
+    for i = 1, 4 do
+        local SlotBg = Instance.new("Frame")
+        SlotBg.Name = "SlotBg"..i
+        SlotBg.Size = UDim2.new(0, 60, 0, 30)
+        SlotBg.Position = UDim2.new(0, (i-1)*75, 0, 25)
+        SlotBg.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+        SlotBg.Parent = WeaponFrame
+        MakeRounded(SlotBg, 6)
+        AddStroke(SlotBg, Color3.fromRGB(80, 80, 80), 0.5, 1)
+        
+        local SlotInput = Instance.new("TextBox")
+        SlotInput.Name = "Slot"..i
+        SlotInput.Size = UDim2.new(1, 0, 1, 0)
+        SlotInput.BackgroundTransparency = 1
+        
+        local defaultVal = ""
+        if i == 1 then defaultVal = "3"
+        elseif i == 2 then defaultVal = "1"
+        elseif i == 3 then defaultVal = "4"
+        end
+        
+        SlotInput.Text = defaultVal
+        SlotInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+        SlotInput.Font = Enum.Font.GothamBold
+        SlotInput.TextSize = 14
+        SlotInput.PlaceholderText = "-"
+        SlotInput.Parent = SlotBg
+    end
+
+    -- Info / Weapon Status
+    local InfoCard = Instance.new("Frame")
+    InfoCard.Name = "InfoCard"
+    InfoCard.Size = UDim2.new(1, 0, 0, 80)
+    InfoCard.Position = UDim2.new(0, 0, 0, 455) -- Shifted Down
+    InfoCard.BackgroundColor3 = Color3.fromRGB(45, 45, 48)
+    InfoCard.BackgroundTransparency = 0.5
+    InfoCard.Parent = Content
+    MakeRounded(InfoCard, 10)
+    AddStroke(InfoCard, Color3.fromRGB(80, 80, 80), 0.8, 1)
+    
+    local WeaponLabel = Instance.new("TextLabel")
+    WeaponLabel.Name = "WeaponLabel"
+    WeaponLabel.Size = UDim2.new(1, -20, 0, 40)
+    WeaponLabel.Position = UDim2.new(0, 10, 0, 5)
+    WeaponLabel.BackgroundTransparency = 1
+    WeaponLabel.Text = "Weapon: Ready\nMode: Waiting"
+    WeaponLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+    WeaponLabel.Font = Enum.Font.Gotham
+    WeaponLabel.TextSize = 12
+    WeaponLabel.TextXAlignment = Enum.TextXAlignment.Left
+    WeaponLabel.Parent = InfoCard
+
+    local Instructions = Instance.new("TextLabel")
+    Instructions.Name = "Instructions"
+    Instructions.Size = UDim2.new(1, -20, 0, 30)
+    Instructions.Position = UDim2.new(0, 10, 0, 45)
+    Instructions.BackgroundTransparency = 1
+    Instructions.Text = "Press 'Y' to Toggle | 'Ctrl' to Hide UI"
+    Instructions.TextColor3 = Color3.fromRGB(100, 100, 100)
+    Instructions.Font = Enum.Font.Gotham
+    Instructions.TextSize = 11
+    Instructions.TextXAlignment = Enum.TextXAlignment.Left
+    Instructions.Parent = InfoCard
+
+    ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+    return ScreenGui
+end
+
+-- [CORE FUNCTIONS: AUTO FARM LOGIC]
+
+local function FindPuppetWithScythe()
+    local children = MobFolder:GetChildren()
+    for i = 1, #children do
+        local child = children[i]
+        if child.Name == "Puppet" then
+            local extras = child:FindFirstChild("Extras")
+            if extras then
+                local frillScythe = extras:FindFirstChild("FrillScythe")
+                if frillScythe then
+                    local hurtBox = child:FindFirstChild("HurtBox")
+                    if hurtBox then
+                        TargetPriority = "Puppet (With Scythe)"
+                        return hurtBox
+                    end
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local function FindTarget()
+    local puppetTarget = FindPuppetWithScythe()
+    if puppetTarget then return puppetTarget end
+    local frill = MobFolder:FindFirstChild("Frill")
+    if frill and frill:FindFirstChild("HurtBox") then
+        local currentTime = tick()
+        if FrillSpawnTime == 0 then
+            FrillSpawnTime = currentTime
+            IsWaitingForFrill = true
+            FrillWaitTimer = 2
+            print("New Frill detected! Waiting 2 seconds...")
+            return nil
+        elseif IsWaitingForFrill then
+            local timeSinceSpawn = currentTime - FrillSpawnTime
+            if timeSinceSpawn >= FrillWaitTimer then
+                IsWaitingForFrill = false
+                TargetPriority = "Frill"
+                print("Frill wait complete! Targeting Frill.")
+                return frill.HurtBox
+            else
+                if GUI and GUI:FindFirstChild("MainFrame") then
+                    local StatusCard = GUI.MainFrame:FindFirstChild("Content") and GUI.MainFrame.Content:FindFirstChild("StatusCard")
+                    local TargetLabel = StatusCard and StatusCard:FindFirstChild("TargetLabel")
+                    if TargetLabel then
+                        local remaining = math.ceil(FrillWaitTimer - timeSinceSpawn)
+                        TargetLabel.Text = "Waiting: " .. remaining .. "s"
+                    end
+                end
+                return nil
+            end
+        else
+            TargetPriority = "Frill"
+            return frill.HurtBox
+        end
+    else
+        FrillSpawnTime = 0
+        IsWaitingForFrill = false
+    end
+    return nil
+end
+
+local function EnableFly()
+    if not LocalPlayer.Character then return end
+    local humanoid = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+    FlyEnabled = true
+    local lastUpdate = tick()
+    FlyConnection = RunService.Heartbeat:Connect(function()
+        local currentTime = tick()
+        if currentTime - lastUpdate < 0.1 then return end
+        lastUpdate = currentTime
+        if not FlyEnabled or not LocalPlayer.Character or not humanoid then
+            if FlyConnection then FlyConnection:Disconnect() FlyConnection = nil end
+            return
+        end
+        humanoid.PlatformStand = true
+        local rootPart = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if not rootPart then return end
+        rootPart.Velocity = Vector3.new(0, 0, 0)
+    end)
+end
+
+local function DisableFly()
+    FlyEnabled = false
+    if FlyConnection then FlyConnection:Disconnect() FlyConnection = nil end
+    if LocalPlayer.Character then
+        local humanoid = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if humanoid then humanoid.PlatformStand = false end
+    end
+end
+
+local function EnableNoclip()
+    NoclipEnabled = true
+    if LocalPlayer.Character and #CharacterParts == 0 then
+        local descendants = LocalPlayer.Character:GetDescendants()
+        for i = 1, #descendants do
+            local part = descendants[i]
+            if part:IsA("BasePart") and part.CanCollide then table.insert(CharacterParts, part) end
+        end
+    end
+    NoclipConnection = RunService.Stepped:Connect(function()
+        if not NoclipEnabled or not LocalPlayer.Character then
+            if NoclipConnection then NoclipConnection:Disconnect() NoclipConnection = nil end
+            return
+        end
+        for i = 1, #CharacterParts do CharacterParts[i].CanCollide = false end
+    end)
+end
+
+local function DisableNoclip()
+    NoclipEnabled = false
+    if NoclipConnection then NoclipConnection:Disconnect() NoclipConnection = nil end
+    for i = 1, #CharacterParts do CharacterParts[i].CanCollide = true end
+    CharacterParts = {}
+end
+
+local function StartAntiIdle()
+    AntiIdleEnabled = true
+    AntiIdleRunning = true
+    local lastKeyPress = tick()
+    AntiIdleConnection = RunService.Heartbeat:Connect(function()
+        if not AntiIdleEnabled or not LocalPlayer.Character then
+            if AntiIdleConnection then AntiIdleConnection:Disconnect() AntiIdleConnection = nil end
+            AntiIdleRunning = false
+            return
+        end
+        local currentTime = tick()
+        if currentTime - lastKeyPress >= 30 then
+            PressKey("W")
+            lastKeyPress = currentTime
+        end
+    end)
+end
+
+local function StopAntiIdle()
+    AntiIdleEnabled = false
+    AntiIdleRunning = false
+    if AntiIdleConnection then AntiIdleConnection:Disconnect() AntiIdleConnection = nil end
+end
+
+local function ToggleFeatures(enable)
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+        LocalPlayer.Character.Humanoid.AutoRotate = not enable
+    end
+
+    if enable then
+        EnableFly()
+        EnableNoclip()
+        StartAntiIdle()
+        if ReduceLagEnabled then ToggleReduceLag(true) end
+    else
+        DisableFly()
+        DisableNoclip()
+        StopAntiIdle()
+    end
+end
+
+local function GetTargetHealth(target)
+    if not target then return nil end
+    local parent = target.Parent
+    if parent.Name == "Frill" or parent.Name == "Puppet" then
+        local enemy = parent:FindFirstChild("Enemy")
+        if enemy then
+            local healthValue = enemy:FindFirstChild("HealthValue")
+            if healthValue then return math.floor(healthValue.Value) end
+        end
+    end
+    return nil
+end
+
+local function GetTargetMaxHealth(target)
+    if not target then return 100 end
+    local parent = target.Parent
+    if parent.Name == "Frill" or parent.Name == "Puppet" then
+        local enemy = parent:FindFirstChild("Enemy")
+        if enemy then
+            local maxHealthValue = enemy:FindFirstChild("MaxHealthValue")
+            if maxHealthValue then return math.floor(maxHealthValue.Value) end
+        end
+    end
+    return 100
+end
+
+-- [CHANGED] TweenToTarget: Now positions at Side and looks at target
+local function TweenToTarget(target)
+    if not target or not LocalPlayer.Character then return end
+    local humanoidRootPart = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not humanoidRootPart then return end
+    if TweenConnection then TweenConnection:Disconnect() TweenConnection = nil end
+    
+    local tweenInfo = TweenInfo.new(TweenSpeed, Enum.EasingStyle.Linear, Enum.EasingDirection.Out, 0, false, 0)
+    local goal = {}
+    
+    -- [NEW LOGIC] Calculate Side Position + Height
+    local offset = Vector3.new(SideDistance, AttackHeight, 0) -- X = Side, Y = Height
+    local targetPos = target.Position
+    local finalPos = targetPos + offset
+    
+    -- Look at the target (CFrame.lookAt)
+    goal.CFrame = CFrame.lookAt(finalPos, targetPos)
+    
+    local tween = TweenService:Create(humanoidRootPart, tweenInfo, goal)
+    tween:Play()
+    
+    local lastTweenUpdate = tick()
+    TweenConnection = RunService.Heartbeat:Connect(function()
+        if not target or not target.Parent or not AutoFarmEnabled then
+            if TweenConnection then TweenConnection:Disconnect() TweenConnection = nil end
+            return
+        end
+        
+        if humanoidRootPart then
+            humanoidRootPart.Velocity = Vector3.new(0, 0, 0)
+            humanoidRootPart.RotVelocity = Vector3.new(0, 0, 0)
+        end
+        
+        local currentTime = tick()
+        if currentTime - lastTweenUpdate < 0.05 then return end
+        lastTweenUpdate = currentTime
+        
+        -- Update dynamic position
+        targetPos = target.Position
+        finalPos = targetPos + Vector3.new(SideDistance, AttackHeight, 0)
+        
+        goal.CFrame = CFrame.lookAt(finalPos, targetPos)
+        
+        tween = TweenService:Create(humanoidRootPart, tweenInfo, goal)
+        tween:Play()
+    end)
+end
+
+local function SkillRotation()
+    while SkillCycleRunning and AutoFarmEnabled do
+        for i = 1, #SkillOrder do
+            if not SkillCycleRunning or not AutoFarmEnabled then break end
+            PressKey(SkillOrder[i])
+            task.wait(SkillDelay)
+        end
+    end
+end
+
+local function AutoAttack()
+    while AttackLoopRunning and AutoFarmEnabled do
+        ClickMouse()
+        task.wait(0.1)
+    end
+end
+
+local function UpdateWeaponLabel(text)
+    if GUI and GUI:FindFirstChild("MainFrame") then
+        local InfoCard = GUI.MainFrame:FindFirstChild("Content") and GUI.MainFrame.Content:FindFirstChild("InfoCard")
+        local WeaponLabel = InfoCard and InfoCard:FindFirstChild("WeaponLabel")
+        if WeaponLabel then
+            WeaponLabel.Text = text
+        end
+    end
+end
+
+local function UpdateWeaponSlots()
+    if not GUI then return end
+    local WeaponFrame = GUI.MainFrame.Content:FindFirstChild("WeaponFrame")
+    if not WeaponFrame then return end
+    
+    for i = 1, 4 do
+        local SlotBg = WeaponFrame:FindFirstChild("SlotBg"..i)
+        local SlotInput = SlotBg and SlotBg:FindFirstChild("Slot"..i)
+        
+        if SlotInput then
+            local txt = SlotInput.Text
+            if txt and txt ~= "" and NumberKeys[txt] then
+                WeaponSlots[i] = NumberKeys[txt]
+            else
+                WeaponSlots[i] = nil
+            end
+        end
+    end
+end
+
+local function ExecuteWeaponPattern(patternFunc)
+    while WeaponRotationRunning and AutoFarmEnabled and CurrentPattern == (patternFunc == DefaultWeaponRotation and "Default" or "Special") do
+        patternFunc()
+        task.wait(0.05)
+    end
+end
+
+local function PerformDynamicLoop(ModeName)
+    UpdateWeaponSlots()
+    
+    local activeWeaponsCount = 0
+    for i = 1, 4 do
+        if WeaponSlots[i] then activeWeaponsCount = activeWeaponsCount + 1 end
+    end
+    
+    local baseCycleTime = 12 
+    local timePerStage = 2
+    local autoAttackDuration = baseCycleTime - (activeWeaponsCount * timePerStage)
+    if autoAttackDuration < 1 then autoAttackDuration = 1 end
+    
+    if IsFirstLoop then
+        if WeaponSlots[1] then
+            PressKey(WeaponSlots[1])
+            CurrentEquippedKey = WeaponSlots[1]
+            UpdateWeaponLabel("Mode: " .. ModeName .. "\nEquipping Main Weapon")
+            task.wait(0.5)
+        end
+        IsFirstLoop = false
+    end
+    
+    for i = 1, 4 do
+        local key = WeaponSlots[i]
+        if key then
+            if not WeaponRotationRunning or not AutoFarmEnabled or CurrentPattern ~= ModeName then return end
+            
+            if CurrentEquippedKey ~= key then
+                PressKey(key)
+                CurrentEquippedKey = key
+                UpdateWeaponLabel("Mode: " .. ModeName .. "\nSwitching to Weapon " .. i)
+                task.wait(0.5) 
+            else
+                UpdateWeaponLabel("Mode: " .. ModeName .. "\nWeapon " .. i .. " Active")
+                task.wait(0.1) 
+            end
+
+            for _, skill in pairs(SkillOrder) do
+                if not WeaponRotationRunning or not AutoFarmEnabled then break end
+                PressKey(skill)
+                task.wait(0.1)
+            end
+            
+            if i > 1 then
+                HoldMouse(0.3) 
+            end
+            
+            task.wait(0.5)
+        end
+    end
+    
+    if WeaponSlots[1] then
+        if not WeaponRotationRunning or not AutoFarmEnabled or CurrentPattern ~= ModeName then return end
+        
+        local mainKey = WeaponSlots[1]
+        if CurrentEquippedKey ~= mainKey then
+            PressKey(mainKey)
+            CurrentEquippedKey = mainKey
+            task.wait(0.5)
+        end
+        
+        UpdateWeaponLabel("Mode: " .. ModeName .. "\nAuto Atk: " .. autoAttackDuration .. "s")
+        
+        local timer = 0
+        while timer < autoAttackDuration and WeaponRotationRunning and AutoFarmEnabled and CurrentPattern == ModeName do
+            ClickMouse()
+            task.wait(0.1)
+            timer = timer + 0.1
+        end
+    end
+end
+
+local function DefaultWeaponRotation()
+    PerformDynamicLoop("Default")
+end
+
+local function SpecialWeaponRotation()
+    PerformDynamicLoop("Special")
+end
+
+local function WeaponRotationLoop()
+    IsFirstLoop = true
+    CurrentEquippedKey = nil
+    
+    while WeaponRotationRunning and AutoFarmEnabled do
+        if CurrentPattern ~= "Default" then
+            CurrentPattern = "Default"
+            IsFirstLoop = true
+        end
+        DefaultWeaponRotation()
+        task.wait(0.1)
+    end
+    
+    UpdateWeaponSlots()
+    if WeaponSlots[1] then
+        PressKey(WeaponSlots[1])
+    end
+    IsFirstLoop = true
+    CurrentPattern = "Default"
+end
+
+local function AutoFarmLoop()
+    while AutoFarmEnabled do
+        local currentTime = tick()
+        if currentTime - LastTargetUpdate >= TargetUpdateInterval then
+            LastTargetUpdate = currentTime
+            local target = FindTarget()
+            if target then
+                CurrentTarget = target
+                if currentTime - LastUIUpdate >= UIUpdateInterval then
+                    LastUIUpdate = currentTime
+                    if GUI and GUI:FindFirstChild("MainFrame") then
+                        local StatusCard = GUI.MainFrame:FindFirstChild("Content") and GUI.MainFrame.Content:FindFirstChild("StatusCard")
+                        local TargetLabel = StatusCard and StatusCard:FindFirstChild("TargetLabel")
+                        if TargetLabel then TargetLabel.Text = "Target: " .. TargetPriority end
+                    end
+                end
+                
+                TweenToTarget(target)
+                
+                if not WeaponRotationRunning then 
+                    WeaponRotationRunning = true 
+                    UpdateWeaponSlots()
+                    
+                    if WeaponSlots[1] then
+                        PressKey(WeaponSlots[1])
+                        CurrentEquippedKey = WeaponSlots[1]
+                        task.wait(0.5)
+                    end
+                    task.spawn(WeaponRotationLoop) 
+                end
+                if not SkillCycleRunning then 
+                    SkillCycleRunning = true 
+                    task.spawn(SkillRotation) 
+                end
+                if not AttackLoopRunning then 
+                    AttackLoopRunning = true 
+                    task.spawn(AutoAttack) 
+                end
+                
+                if currentTime - LastHealthUpdate >= HealthUpdateInterval then
+                    LastHealthUpdate = currentTime
+                    if GUI and GUI:FindFirstChild("MainFrame") then
+                        local StatusCard = GUI.MainFrame:FindFirstChild("Content") and GUI.MainFrame.Content:FindFirstChild("StatusCard")
+                        local HealthLabel = StatusCard and StatusCard:FindFirstChild("HealthLabel")
+                        local HealthBarBG = StatusCard and StatusCard:FindFirstChild("HealthBarBG")
+                        local HealthBar = HealthBarBG and HealthBarBG:FindFirstChild("HealthBar")
+                        
+                        if HealthLabel then
+                            local health = GetTargetHealth(target)
+                            local maxHealth = GetTargetMaxHealth(target)
+                            if health then
+                                local percentage = math.floor((health / maxHealth) * 100)
+                                HealthLabel.Text = "Health: " .. health .. "/" .. maxHealth
+                                if HealthBar then
+                                    HealthBar.Size = UDim2.new(percentage / 100, 0, 1, 0)
+                                    if percentage > 50 then HealthBar.BackgroundColor3 = Color3.fromRGB(48, 209, 88)
+                                    elseif percentage > 20 then HealthBar.BackgroundColor3 = Color3.fromRGB(255, 204, 0)
+                                    else HealthBar.BackgroundColor3 = Color3.fromRGB(255, 59, 48)
+                                    end
+                                end
+                            else
+                                HealthLabel.Text = "Health: N/A"
+                                if HealthBar then HealthBar.Size = UDim2.new(0, 0, 1, 0) end
+                            end
+                        end
+                    end
+                end
+            else
+                CurrentTarget = nil
+                if TweenConnection then TweenConnection:Disconnect() TweenConnection = nil end
+                SkillCycleRunning = false
+                AttackLoopRunning = false
+                WeaponRotationRunning = false
+                if currentTime - LastUIUpdate >= UIUpdateInterval then
+                    LastUIUpdate = currentTime
+                    if GUI and GUI:FindFirstChild("MainFrame") then
+                        local StatusCard = GUI.MainFrame:FindFirstChild("Content") and GUI.MainFrame.Content:FindFirstChild("StatusCard")
+                        local TargetLabel = StatusCard and StatusCard:FindFirstChild("TargetLabel")
+                        local HealthLabel = StatusCard and StatusCard:FindFirstChild("HealthLabel")
+                        local HealthBarBG = StatusCard and StatusCard:FindFirstChild("HealthBarBG")
+                        local HealthBar = HealthBarBG and HealthBarBG:FindFirstChild("HealthBar")
+                        local InfoCard = GUI.MainFrame.Content:FindFirstChild("InfoCard")
+                        local WeaponLabel = InfoCard and InfoCard:FindFirstChild("WeaponLabel")
+                        
+                        if TargetLabel then TargetLabel.Text = "Target: None" end
+                        if HealthLabel then HealthLabel.Text = "Health: N/A" end
+                        if HealthBar then HealthBar.Size = UDim2.new(0, 0, 1, 0) end
+                        if WeaponLabel then WeaponLabel.Text = "Weapon: Ready\nMode: Waiting" end
+                    end
+                end
+            end
+        end
+        task.wait(0.2)
+    end
+    
+    if TweenConnection then TweenConnection:Disconnect() TweenConnection = nil end
+    SkillCycleRunning = false
+    AttackLoopRunning = false
+    WeaponRotationRunning = false
+    CurrentTarget = nil
+end
+
+local function ToggleAutoFarm()
+    AutoFarmEnabled = not AutoFarmEnabled
+    
+    if GUI and GUI:FindFirstChild("MainFrame") then
+        local Content = GUI.MainFrame:FindFirstChild("Content")
+        local ToggleContainer = Content and Content:FindFirstChild("ToggleContainer")
+        local ToggleButton = ToggleContainer and ToggleContainer:FindFirstChild("ToggleButton")
+        local Knob = ToggleButton and ToggleButton:FindFirstChild("Knob")
+        
+        if ToggleButton and Knob then
+            if AutoFarmEnabled then
+                TweenService:Create(ToggleButton, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(48, 209, 88)}):Play()
+                TweenService:Create(Knob, TweenInfo.new(0.2), {Position = UDim2.new(1, -28, 0.5, -12)}):Play()
+                ToggleFeatures(true)
+                task.spawn(AutoFarmLoop)
+            else
+                TweenService:Create(ToggleButton, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(60, 60, 60)}):Play()
+                TweenService:Create(Knob, TweenInfo.new(0.2), {Position = UDim2.new(0, 2, 0.5, -12)}):Play()
+                ToggleFeatures(false)
+            end
+        end
+    end
+end
+
+-- Lag Toggle Function
+local function OnLagToggle()
+    ReduceLagEnabled = not ReduceLagEnabled
+    if GUI and GUI:FindFirstChild("MainFrame") then
+        local Content = GUI.MainFrame:FindFirstChild("Content")
+        local LagContainer = Content and Content:FindFirstChild("LagContainer")
+        local LagButton = LagContainer and LagContainer:FindFirstChild("LagButton")
+        local Knob = LagButton and LagButton:FindFirstChild("Knob")
+        
+        if LagButton and Knob then
+            if ReduceLagEnabled then
+                TweenService:Create(LagButton, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(0, 120, 255)}):Play()
+                TweenService:Create(Knob, TweenInfo.new(0.2), {Position = UDim2.new(1, -28, 0.5, -12)}):Play()
+                ToggleReduceLag(true)
+            else
+                TweenService:Create(LagButton, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(60, 60, 60)}):Play()
+                TweenService:Create(Knob, TweenInfo.new(0.2), {Position = UDim2.new(0, 2, 0.5, -12)}):Play()
+                ToggleReduceLag(false)
+            end
+        end
+    end
+end
+
+-- ESP Toggle Wrapper
+local function OnESPToggle()
+    ESPEnabled = not ESPEnabled
+    local Content = GUI.MainFrame:FindFirstChild("Content")
+    local ESPContainer = Content:FindFirstChild("ESPContainer")
+    local ESPButton = ESPContainer:FindFirstChild("ESPButton")
+    local Knob = ESPButton:FindFirstChild("Knob")
+    
+    if ESPButton and Knob then
+        if ESPEnabled then
+            TweenService:Create(ESPButton, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(255, 170, 0)}):Play() -- Orange
+            TweenService:Create(Knob, TweenInfo.new(0.2), {Position = UDim2.new(1, -28, 0.5, -12)}):Play()
+            ToggleESP(true)
+        else
+            TweenService:Create(ESPButton, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(60, 60, 60)}):Play()
+            TweenService:Create(Knob, TweenInfo.new(0.2), {Position = UDim2.new(0, 2, 0.5, -12)}):Play()
+            ToggleESP(false)
+        end
+    end
+end
+
+local function Init()
+    GUI = CreateGUI()
+    local Content = GUI.MainFrame:FindFirstChild("Content")
+    
+    local ToggleContainer = Content and Content:FindFirstChild("ToggleContainer")
+    local ToggleButton = ToggleContainer and ToggleContainer:FindFirstChild("ToggleButton")
+    if ToggleButton then ToggleButton.MouseButton1Click:Connect(ToggleAutoFarm) end
+    
+    local ESPContainer = Content and Content:FindFirstChild("ESPContainer")
+    local ESPButton = ESPContainer and ESPContainer:FindFirstChild("ESPButton")
+    if ESPButton then ESPButton.MouseButton1Click:Connect(OnESPToggle) end
+    
+    local LagContainer = Content and Content:FindFirstChild("LagContainer")
+    local LagButton = LagContainer and LagContainer:FindFirstChild("LagButton")
+    if LagButton then LagButton.MouseButton1Click:Connect(OnLagToggle) end
+    
+    local TitleBar = GUI.MainFrame:FindFirstChild("TitleBar")
+    local CloseButton = TitleBar and TitleBar:FindFirstChild("CloseButton")
+    if CloseButton then
+        CloseButton.MouseButton1Click:Connect(function()
+            AutoFarmEnabled = false
+            ToggleESP(false)
+            ToggleFeatures(false)
+            if TweenConnection then TweenConnection:Disconnect() TweenConnection = nil end
+            GUI:Destroy()
+            GUI = nil
+            script:Destroy()
+        end)
+    end
+    
+    -- [UPDATED] Vertical Distance Input Logic
+    local VDistFrame = Content and Content:FindFirstChild("VDistFrame")
+    local VInputBg = VDistFrame and VDistFrame:FindFirstChild("Frame")
+    local VDistInput = VInputBg and VInputBg:FindFirstChild("VDistInput")
+    if VDistInput then
+        local function UpdateVDistance()
+            local newHeight = tonumber(VDistInput.Text)
+            if newHeight and newHeight >= 1 and newHeight <= 100 then
+                AttackHeight = newHeight
+                if AutoFarmEnabled and CurrentTarget then TweenToTarget(CurrentTarget) end
+            else
+                VDistInput.Text = tostring(AttackHeight)
+            end
+        end
+        VDistInput.FocusLost:Connect(UpdateVDistance)
+    end
+
+    -- [NEW] Side Distance Input Logic
+    local SDistFrame = Content and Content:FindFirstChild("SDistFrame")
+    local SInputBg = SDistFrame and SDistFrame:FindFirstChild("Frame")
+    local SDistInput = SInputBg and SInputBg:FindFirstChild("SDistInput")
+    if SDistInput then
+        local function UpdateSDistance()
+            local newSide = tonumber(SDistInput.Text)
+            if newSide and newSide >= 1 and newSide <= 100 then
+                SideDistance = newSide
+                if AutoFarmEnabled and CurrentTarget then TweenToTarget(CurrentTarget) end
+            else
+                SDistInput.Text = tostring(SideDistance)
+            end
+        end
+        SDistInput.FocusLost:Connect(UpdateSDistance)
+    end
+    
+    -- Slider Logic
+    local ViewFrame = Content:FindFirstChild("ViewFrame")
+    if ViewFrame then
+        local SliderTrack = ViewFrame:FindFirstChild("SliderTrack")
+        local SliderKnob = SliderTrack and SliderTrack:FindFirstChild("SliderKnob")
+        local SliderFill = SliderTrack and SliderTrack:FindFirstChild("SliderFill")
+        local ViewTitle = ViewFrame:FindFirstChild("ViewTitle")
+        
+        if SliderKnob and SliderTrack then
+            local isDragging = false
+            local function UpdateSlider(input)
+                local pos = input.Position.X
+                local trackPos = SliderTrack.AbsolutePosition.X
+                local trackSize = SliderTrack.AbsoluteSize.X
+                local relativePos = math.clamp((pos - trackPos) / trackSize, 0, 1)
+                
+                SliderKnob.Position = UDim2.new(relativePos, -8, 0.5, -8)
+                SliderFill.Size = UDim2.new(relativePos, 0, 1, 0)
+                
+                local level = 1 + (relativePos * 4)
+                local displayLevel = math.floor(level + 0.5) 
+                
+                if displayLevel ~= CurrentGraphicLevel then
+                    CurrentGraphicLevel = displayLevel
+                    ViewTitle.Text = "Render Distance: Level " .. displayLevel
+                    if ReduceLagEnabled then ApplyRenderSetting(CurrentGraphicLevel) end
+                end
+            end
+            
+            SliderKnob.MouseButton1Down:Connect(function() isDragging = true end)
+            UserInputService.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 then isDragging = false end end)
+            UserInputService.InputChanged:Connect(function(input) if isDragging and input.UserInputType == Enum.UserInputType.MouseMovement then UpdateSlider(input) end end)
+        end
+    end
+    
+    -- Weapon Slot Updates
+    local WeaponFrame = Content:FindFirstChild("WeaponFrame")
+    if WeaponFrame then
+        for i = 1, 4 do
+            local SlotBg = WeaponFrame:FindFirstChild("SlotBg"..i)
+            local SlotInput = SlotBg and SlotBg:FindFirstChild("Slot"..i)
+            if SlotInput then
+                SlotInput:GetPropertyChangedSignal("Text"):Connect(function()
+                    local key = NumberKeys[SlotInput.Text]
+                    WeaponSlots[i] = key 
+                end)
+            end
+        end
+    end
+    
+    UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if not gameProcessed then
+            if input.KeyCode == Enum.KeyCode.LeftControl then
+                if GUI then GUI.Enabled = not GUI.Enabled end
+            elseif input.KeyCode == Enum.KeyCode.Y then
+                ToggleAutoFarm()
+            end
+        end
+    end)
+    
+    print("Auto Farm V26 - Side Attack Position Update")
+end
+
+Init()
