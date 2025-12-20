@@ -1,11 +1,13 @@
 -- Auto Farm Script for Roblox
--- Version V26: Side Attack Position + Side Distance UI
+-- Version V27: Added 'F' Skill + Side Attack Position + Side Distance UI + Android Support
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 local Lighting = game:GetService("Lighting")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local VirtualUser = game:GetService("VirtualUser")
 local LocalPlayer = Players.LocalPlayer
 local Mouse = LocalPlayer:GetMouse()
 
@@ -14,8 +16,8 @@ local AutoFarmEnabled = false
 local ESPEnabled = false
 local ReduceLagEnabled = false
 local TargetPriority = "None"
-local AttackHeight = 5 -- [CHANGED] Renamed from AttackDistance to Height (Vertical)
-local SideDistance = 12 -- [NEW] Distance from the side (Horizontal)
+local AttackHeight = 5 -- Vertical Distance
+local SideDistance = 12 -- Horizontal Side Distance
 local SkillDelay = 0.1
 local TweenSpeed = 0.3
 local ViewDistanceVal = 10000 
@@ -42,15 +44,25 @@ local NumberKeys = {
     ["5"] = "Five", ["6"] = "Six", ["7"] = "Seven", ["8"] = "Eight", ["9"] = "Nine"
 }
 
+-- [MODIFIED] Added "F" to Skill Order
+local SkillOrder = {"Q", "E", "R", "F"}
+
 -- Frill Logic Variables
+local FrillDetectionHistory = {}
+local MAX_HISTORY_SIZE = 10
+local VELOCITY_THRESHOLD = 0.3
+local MOVEDIRECTION_THRESHOLD = 0.1
+local TIME_THRESHOLD = 0.8
 local FrillSpawnTime = 0
 local IsWaitingForFrill = false
 local FrillWaitTimer = 0
 
 -- Movement Variables
 local FlyEnabled = false
+local FlySpeed = 2
 local NoclipEnabled = false
 local AntiIdleEnabled = false
+local AntiIdleRunning = false
 local CharacterParts = {}
 
 -- Optimization Variables
@@ -65,11 +77,10 @@ local HealthUpdateInterval = 0.3
 local FlyConnection = nil
 local NoclipConnection = nil
 local AntiIdleConnection = nil
+local FrillMonitorConnection = nil
 local LagMonitorConnection = nil
 
-local SkillOrder = {"Q", "E", "R"}
 local MobFolder = workspace.MobFolder
-local VirtualInputManager = game:GetService("VirtualInputManager")
 
 -- UI Helpers
 local function MakeRounded(guiObject, radius)
@@ -89,7 +100,7 @@ local function AddStroke(guiObject, color, transparency, thickness)
 end
 
 -- ==========================================
--- OPTIMIZE OBJECT (FIXED: Map Flashing & Player Fade)
+-- OPTIMIZATION & RENDER
 -- ==========================================
 local function OptimizeObject(v)
     if not ReduceLagEnabled then return end
@@ -162,27 +173,53 @@ local function ToggleReduceLag(enable)
     end
 end
 
--- Core Logic Functions
-local function PressKey(key)
-    if not key then return end
-    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode[key], false, game)
-    task.wait(0.05)
-    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode[key], false, game)
+-- ==========================================
+-- INPUT SYSTEM (PC & MOBILE)
+-- ==========================================
+local function ClickMouse()
+    pcall(function()
+        if VirtualUser then
+            VirtualUser:CaptureController()
+            VirtualUser:Button1Down(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
+            task.wait(0.05)
+            VirtualUser:Button1Up(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
+        else
+            VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+            task.wait(0.05)
+            VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+        end
+    end)
 end
 
-local function ClickMouse()
-    VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
-    task.wait(0.05)
-    VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+local function PressKey(keyStr)
+    if not keyStr then return end
+    local key = Enum.KeyCode[keyStr]
+    if not key then return end
+    pcall(function()
+        VirtualInputManager:SendKeyEvent(true, key, false, game)
+        task.wait(0.05)
+        VirtualInputManager:SendKeyEvent(false, key, false, game)
+    end)
 end
 
 local function HoldMouse(duration)
-    VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
-    task.wait(duration)
-    VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+    pcall(function()
+        if VirtualUser then
+            VirtualUser:CaptureController()
+            VirtualUser:Button1Down(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
+            task.wait(duration)
+            VirtualUser:Button1Up(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
+        else
+            VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+            task.wait(duration)
+            VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+        end
+    end)
 end
 
+-- ==========================================
 -- ESP SYSTEM
+-- ==========================================
 local function UpdateESP()
     if not ESPEnabled then return end
     local function ApplyHighlight(model, color)
@@ -224,15 +261,18 @@ local function ToggleESP(enable)
     end
 end
 
--- UI Creation
+-- ==========================================
+-- UI CREATION
+-- ==========================================
 local function CreateGUI()
     local ScreenGui = Instance.new("ScreenGui")
-    ScreenGui.Name = "AutoFarmGUI_V26_Side"
+    ScreenGui.Name = "AutoFarmGUI_V27_Final"
     ScreenGui.ResetOnSpawn = false
+    ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     
     local MainFrame = Instance.new("Frame")
     MainFrame.Name = "MainFrame"
-    MainFrame.Size = UDim2.new(0, 340, 0, 650) -- Increased Height for new input
+    MainFrame.Size = UDim2.new(0, 340, 0, 650)
     MainFrame.Position = UDim2.new(0.5, -170, 0.5, -325)
     MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 32)
     MainFrame.BorderSizePixel = 0
@@ -243,7 +283,21 @@ local function CreateGUI()
     MakeRounded(MainFrame, 14)
     AddStroke(MainFrame, Color3.fromRGB(255, 255, 255), 0.9, 1)
     
-    -- Title Bar
+    -- Mobile Toggle
+    local MobileBtn = Instance.new("ImageButton")
+    MobileBtn.Name = "MobileToggle"
+    MobileBtn.Size = UDim2.new(0, 45, 0, 45)
+    MobileBtn.Position = UDim2.new(0, 10, 0, 10)
+    MobileBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 32)
+    MobileBtn.Image = "rbxassetid://6031265978"
+    MobileBtn.Parent = ScreenGui
+    MakeRounded(MobileBtn, 10)
+    AddStroke(MobileBtn, Color3.fromRGB(255, 255, 255), 0.8, 2)
+    
+    MobileBtn.MouseButton1Click:Connect(function()
+        MainFrame.Visible = not MainFrame.Visible
+    end)
+    
     local TitleBar = Instance.new("Frame")
     TitleBar.Name = "TitleBar"
     TitleBar.Size = UDim2.new(1, 0, 0, 38)
@@ -275,7 +329,7 @@ local function CreateGUI()
     Title.Name = "Title"
     Title.Size = UDim2.new(1, 0, 1, 0)
     Title.BackgroundTransparency = 1
-    Title.Text = "Auto Farm Pro (V26 Side)"
+    Title.Text = "Auto Farm Pro (V27)"
     Title.TextColor3 = Color3.fromRGB(220, 220, 220)
     Title.Font = Enum.Font.GothamMedium
     Title.TextSize = 14
@@ -289,7 +343,6 @@ local function CreateGUI()
     Divider.BorderSizePixel = 0
     Divider.Parent = MainFrame
 
-    -- Content
     local Content = Instance.new("Frame")
     Content.Name = "Content"
     Content.Size = UDim2.new(1, -30, 1, -50)
@@ -297,7 +350,7 @@ local function CreateGUI()
     Content.BackgroundTransparency = 1
     Content.Parent = MainFrame
 
-    -- Toggles & Sliders (Same as before)
+    -- Helper Toggle
     local function CreateToggle(name, text, yPos)
         local Container = Instance.new("Frame")
         Container.Name = name .. "Container"
@@ -332,11 +385,54 @@ local function CreateGUI()
         Knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
         Knob.Parent = Button
         MakeRounded(Knob, 100)
+        return Button, Knob
     end
 
-    CreateToggle("Toggle", "Enable Auto Farm", 0)
-    CreateToggle("ESP", "Enable ESP (Visuals)", 45)
-    CreateToggle("Lag", "Boost FPS (No Effects)", 90)
+    local FarmBtn, FarmKnob = CreateToggle("Toggle", "Enable Auto Farm", 0)
+    FarmBtn.MouseButton1Click:Connect(function()
+        AutoFarmEnabled = not AutoFarmEnabled
+        local goalColor = AutoFarmEnabled and Color3.fromRGB(48, 209, 88) or Color3.fromRGB(60, 60, 60)
+        local goalPos = AutoFarmEnabled and UDim2.new(1, -28, 0.5, -12) or UDim2.new(0, 2, 0.5, -12)
+        TweenService:Create(FarmBtn, TweenInfo.new(0.2), {BackgroundColor3 = goalColor}):Play()
+        TweenService:Create(FarmKnob, TweenInfo.new(0.2), {Position = goalPos}):Play()
+        
+        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+            LocalPlayer.Character.Humanoid.AutoRotate = not AutoFarmEnabled
+        end
+        if AutoFarmEnabled then
+            EnableFly()
+            EnableNoclip()
+            StartAntiIdle()
+            StartFrillMonitoring()
+            if ReduceLagEnabled then ToggleReduceLag(true) end
+            task.spawn(AutoFarmLoop)
+        else
+            DisableFly()
+            DisableNoclip()
+            StopAntiIdle()
+            StopFrillMonitoring()
+        end
+    end)
+
+    local ESPBtn, ESPKnob = CreateToggle("ESP", "Enable ESP (Visuals)", 45)
+    ESPBtn.MouseButton1Click:Connect(function()
+        ESPEnabled = not ESPEnabled
+        local goalColor = ESPEnabled and Color3.fromRGB(255, 170, 0) or Color3.fromRGB(60, 60, 60)
+        local goalPos = ESPEnabled and UDim2.new(1, -28, 0.5, -12) or UDim2.new(0, 2, 0.5, -12)
+        TweenService:Create(ESPBtn, TweenInfo.new(0.2), {BackgroundColor3 = goalColor}):Play()
+        TweenService:Create(ESPKnob, TweenInfo.new(0.2), {Position = goalPos}):Play()
+        ToggleESP(ESPEnabled)
+    end)
+
+    local LagBtn, LagKnob = CreateToggle("Lag", "Boost FPS (No Effects)", 90)
+    LagBtn.MouseButton1Click:Connect(function()
+        ReduceLagEnabled = not ReduceLagEnabled
+        local goalColor = ReduceLagEnabled and Color3.fromRGB(0, 120, 255) or Color3.fromRGB(60, 60, 60)
+        local goalPos = ReduceLagEnabled and UDim2.new(1, -28, 0.5, -12) or UDim2.new(0, 2, 0.5, -12)
+        TweenService:Create(LagBtn, TweenInfo.new(0.2), {BackgroundColor3 = goalColor}):Play()
+        TweenService:Create(LagKnob, TweenInfo.new(0.2), {Position = goalPos}):Play()
+        ToggleReduceLag(ReduceLagEnabled)
+    end)
 
     -- View Slider
     local ViewFrame = Instance.new("Frame")
@@ -433,7 +529,7 @@ local function CreateGUI()
     HealthBar.Parent = HealthBarBG
     MakeRounded(HealthBar, 10)
 
-    -- [CHANGED] Distance Settings: Vertical
+    -- Distance Settings: Vertical
     local VDistFrame = Instance.new("Frame")
     VDistFrame.Name = "VDistFrame"
     VDistFrame.Size = UDim2.new(1, 0, 0, 45)
@@ -471,11 +567,11 @@ local function CreateGUI()
     VDistInput.ClearTextOnFocus = false
     VDistInput.Parent = VInputBg
 
-    -- [NEW] Distance Settings: Side (Horizontal)
+    -- Distance Settings: Side (Horizontal)
     local SDistFrame = Instance.new("Frame")
     SDistFrame.Name = "SDistFrame"
     SDistFrame.Size = UDim2.new(1, 0, 0, 45)
-    SDistFrame.Position = UDim2.new(0, 0, 0, 335) -- Positoned below Vertical
+    SDistFrame.Position = UDim2.new(0, 0, 0, 335)
     SDistFrame.BackgroundTransparency = 1
     SDistFrame.Parent = Content
 
@@ -555,6 +651,11 @@ local function CreateGUI()
         SlotInput.TextSize = 14
         SlotInput.PlaceholderText = "-"
         SlotInput.Parent = SlotBg
+        
+        SlotInput:GetPropertyChangedSignal("Text"):Connect(function()
+            local key = NumberKeys[SlotInput.Text]
+            WeaponSlots[i] = key 
+        end)
     end
 
     -- Info / Weapon Status
@@ -593,6 +694,54 @@ local function CreateGUI()
     Instructions.Parent = InfoCard
 
     ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+    
+    -- Events
+    if SliderKnob and SliderTrack then
+        local isDragging = false
+        local function UpdateSlider(input)
+            local pos = input.Position.X
+            local trackPos = SliderTrack.AbsolutePosition.X
+            local trackSize = SliderTrack.AbsoluteSize.X
+            local relativePos = math.clamp((pos - trackPos) / trackSize, 0, 1)
+            SliderKnob.Position = UDim2.new(relativePos, -8, 0.5, -8)
+            SliderFill.Size = UDim2.new(relativePos, 0, 1, 0)
+            local level = 1 + (relativePos * 4)
+            local displayLevel = math.floor(level + 0.5) 
+            if displayLevel ~= CurrentGraphicLevel then
+                CurrentGraphicLevel = displayLevel
+                ViewTitle.Text = "Render Distance: Level " .. displayLevel
+                if ReduceLagEnabled then ApplyRenderSetting(CurrentGraphicLevel) end
+            end
+        end
+        SliderKnob.MouseButton1Down:Connect(function() isDragging = true end)
+        UserInputService.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 then isDragging = false end end)
+        UserInputService.InputChanged:Connect(function(input) if isDragging and input.UserInputType == Enum.UserInputType.MouseMovement then UpdateSlider(input) end end)
+    end
+    
+    if VDistInput then
+        VDistInput.FocusLost:Connect(function()
+            local n = tonumber(VDistInput.Text)
+            if n then AttackHeight = n end
+        end)
+    end
+    
+    if SDistInput then
+        SDistInput.FocusLost:Connect(function()
+            local n = tonumber(SDistInput.Text)
+            if n then SideDistance = n end
+        end)
+    end
+
+    if CloseButton then
+        CloseButton.MouseButton1Click:Connect(function()
+            AutoFarmEnabled = false
+            ToggleESP(false)
+            if TweenConnection then TweenConnection:Disconnect() end
+            GUI:Destroy()
+            script:Destroy()
+        end)
+    end
+
     return ScreenGui
 end
 
@@ -629,24 +778,14 @@ local function FindTarget()
             FrillSpawnTime = currentTime
             IsWaitingForFrill = true
             FrillWaitTimer = 2
-            print("New Frill detected! Waiting 2 seconds...")
             return nil
         elseif IsWaitingForFrill then
             local timeSinceSpawn = currentTime - FrillSpawnTime
             if timeSinceSpawn >= FrillWaitTimer then
                 IsWaitingForFrill = false
                 TargetPriority = "Frill"
-                print("Frill wait complete! Targeting Frill.")
                 return frill.HurtBox
             else
-                if GUI and GUI:FindFirstChild("MainFrame") then
-                    local StatusCard = GUI.MainFrame:FindFirstChild("Content") and GUI.MainFrame.Content:FindFirstChild("StatusCard")
-                    local TargetLabel = StatusCard and StatusCard:FindFirstChild("TargetLabel")
-                    if TargetLabel then
-                        local remaining = math.ceil(FrillWaitTimer - timeSinceSpawn)
-                        TargetLabel.Text = "Waiting: " .. remaining .. "s"
-                    end
-                end
                 return nil
             end
         else
@@ -739,23 +878,6 @@ local function StopAntiIdle()
     if AntiIdleConnection then AntiIdleConnection:Disconnect() AntiIdleConnection = nil end
 end
 
-local function ToggleFeatures(enable)
-    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
-        LocalPlayer.Character.Humanoid.AutoRotate = not enable
-    end
-
-    if enable then
-        EnableFly()
-        EnableNoclip()
-        StartAntiIdle()
-        if ReduceLagEnabled then ToggleReduceLag(true) end
-    else
-        DisableFly()
-        DisableNoclip()
-        StopAntiIdle()
-    end
-end
-
 local function GetTargetHealth(target)
     if not target then return nil end
     local parent = target.Parent
@@ -792,12 +914,10 @@ local function TweenToTarget(target)
     local tweenInfo = TweenInfo.new(TweenSpeed, Enum.EasingStyle.Linear, Enum.EasingDirection.Out, 0, false, 0)
     local goal = {}
     
-    -- [NEW LOGIC] Calculate Side Position + Height
     local offset = Vector3.new(SideDistance, AttackHeight, 0) -- X = Side, Y = Height
     local targetPos = target.Position
     local finalPos = targetPos + offset
     
-    -- Look at the target (CFrame.lookAt)
     goal.CFrame = CFrame.lookAt(finalPos, targetPos)
     
     local tween = TweenService:Create(humanoidRootPart, tweenInfo, goal)
@@ -819,7 +939,6 @@ local function TweenToTarget(target)
         if currentTime - lastTweenUpdate < 0.05 then return end
         lastTweenUpdate = currentTime
         
-        -- Update dynamic position
         targetPos = target.Position
         finalPos = targetPos + Vector3.new(SideDistance, AttackHeight, 0)
         
@@ -1101,174 +1220,40 @@ local function ToggleAutoFarm()
             if AutoFarmEnabled then
                 TweenService:Create(ToggleButton, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(48, 209, 88)}):Play()
                 TweenService:Create(Knob, TweenInfo.new(0.2), {Position = UDim2.new(1, -28, 0.5, -12)}):Play()
-                ToggleFeatures(true)
-                task.spawn(AutoFarmLoop)
+                
+                -- [CHANGED] Enable/Disable Features
+                if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+                    LocalPlayer.Character.Humanoid.AutoRotate = not AutoFarmEnabled
+                end
+                
+                if AutoFarmEnabled then
+                    EnableFly()
+                    EnableNoclip()
+                    StartAntiIdle()
+                    if ReduceLagEnabled then ToggleReduceLag(true) end
+                    task.spawn(AutoFarmLoop)
+                else
+                    DisableFly()
+                    DisableNoclip()
+                    StopAntiIdle()
+                end
             else
                 TweenService:Create(ToggleButton, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(60, 60, 60)}):Play()
                 TweenService:Create(Knob, TweenInfo.new(0.2), {Position = UDim2.new(0, 2, 0.5, -12)}):Play()
-                ToggleFeatures(false)
+                
+                if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+                    LocalPlayer.Character.Humanoid.AutoRotate = true
+                end
+                DisableFly()
+                DisableNoclip()
+                StopAntiIdle()
             end
-        end
-    end
-end
-
--- Lag Toggle Function
-local function OnLagToggle()
-    ReduceLagEnabled = not ReduceLagEnabled
-    if GUI and GUI:FindFirstChild("MainFrame") then
-        local Content = GUI.MainFrame:FindFirstChild("Content")
-        local LagContainer = Content and Content:FindFirstChild("LagContainer")
-        local LagButton = LagContainer and LagContainer:FindFirstChild("LagButton")
-        local Knob = LagButton and LagButton:FindFirstChild("Knob")
-        
-        if LagButton and Knob then
-            if ReduceLagEnabled then
-                TweenService:Create(LagButton, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(0, 120, 255)}):Play()
-                TweenService:Create(Knob, TweenInfo.new(0.2), {Position = UDim2.new(1, -28, 0.5, -12)}):Play()
-                ToggleReduceLag(true)
-            else
-                TweenService:Create(LagButton, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(60, 60, 60)}):Play()
-                TweenService:Create(Knob, TweenInfo.new(0.2), {Position = UDim2.new(0, 2, 0.5, -12)}):Play()
-                ToggleReduceLag(false)
-            end
-        end
-    end
-end
-
--- ESP Toggle Wrapper
-local function OnESPToggle()
-    ESPEnabled = not ESPEnabled
-    local Content = GUI.MainFrame:FindFirstChild("Content")
-    local ESPContainer = Content:FindFirstChild("ESPContainer")
-    local ESPButton = ESPContainer:FindFirstChild("ESPButton")
-    local Knob = ESPButton:FindFirstChild("Knob")
-    
-    if ESPButton and Knob then
-        if ESPEnabled then
-            TweenService:Create(ESPButton, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(255, 170, 0)}):Play() -- Orange
-            TweenService:Create(Knob, TweenInfo.new(0.2), {Position = UDim2.new(1, -28, 0.5, -12)}):Play()
-            ToggleESP(true)
-        else
-            TweenService:Create(ESPButton, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(60, 60, 60)}):Play()
-            TweenService:Create(Knob, TweenInfo.new(0.2), {Position = UDim2.new(0, 2, 0.5, -12)}):Play()
-            ToggleESP(false)
         end
     end
 end
 
 local function Init()
     GUI = CreateGUI()
-    local Content = GUI.MainFrame:FindFirstChild("Content")
-    
-    local ToggleContainer = Content and Content:FindFirstChild("ToggleContainer")
-    local ToggleButton = ToggleContainer and ToggleContainer:FindFirstChild("ToggleButton")
-    if ToggleButton then ToggleButton.MouseButton1Click:Connect(ToggleAutoFarm) end
-    
-    local ESPContainer = Content and Content:FindFirstChild("ESPContainer")
-    local ESPButton = ESPContainer and ESPContainer:FindFirstChild("ESPButton")
-    if ESPButton then ESPButton.MouseButton1Click:Connect(OnESPToggle) end
-    
-    local LagContainer = Content and Content:FindFirstChild("LagContainer")
-    local LagButton = LagContainer and LagContainer:FindFirstChild("LagButton")
-    if LagButton then LagButton.MouseButton1Click:Connect(OnLagToggle) end
-    
-    local TitleBar = GUI.MainFrame:FindFirstChild("TitleBar")
-    local CloseButton = TitleBar and TitleBar:FindFirstChild("CloseButton")
-    if CloseButton then
-        CloseButton.MouseButton1Click:Connect(function()
-            AutoFarmEnabled = false
-            ToggleESP(false)
-            ToggleFeatures(false)
-            if TweenConnection then TweenConnection:Disconnect() TweenConnection = nil end
-            GUI:Destroy()
-            GUI = nil
-            script:Destroy()
-        end)
-    end
-    
-    -- [UPDATED] Vertical Distance Input Logic
-    local VDistFrame = Content and Content:FindFirstChild("VDistFrame")
-    local VInputBg = VDistFrame and VDistFrame:FindFirstChild("Frame")
-    local VDistInput = VInputBg and VInputBg:FindFirstChild("VDistInput")
-    if VDistInput then
-        local function UpdateVDistance()
-            local newHeight = tonumber(VDistInput.Text)
-            if newHeight and newHeight >= 1 and newHeight <= 100 then
-                AttackHeight = newHeight
-                if AutoFarmEnabled and CurrentTarget then TweenToTarget(CurrentTarget) end
-            else
-                VDistInput.Text = tostring(AttackHeight)
-            end
-        end
-        VDistInput.FocusLost:Connect(UpdateVDistance)
-    end
-
-    -- [NEW] Side Distance Input Logic
-    local SDistFrame = Content and Content:FindFirstChild("SDistFrame")
-    local SInputBg = SDistFrame and SDistFrame:FindFirstChild("Frame")
-    local SDistInput = SInputBg and SInputBg:FindFirstChild("SDistInput")
-    if SDistInput then
-        local function UpdateSDistance()
-            local newSide = tonumber(SDistInput.Text)
-            if newSide and newSide >= 1 and newSide <= 100 then
-                SideDistance = newSide
-                if AutoFarmEnabled and CurrentTarget then TweenToTarget(CurrentTarget) end
-            else
-                SDistInput.Text = tostring(SideDistance)
-            end
-        end
-        SDistInput.FocusLost:Connect(UpdateSDistance)
-    end
-    
-    -- Slider Logic
-    local ViewFrame = Content:FindFirstChild("ViewFrame")
-    if ViewFrame then
-        local SliderTrack = ViewFrame:FindFirstChild("SliderTrack")
-        local SliderKnob = SliderTrack and SliderTrack:FindFirstChild("SliderKnob")
-        local SliderFill = SliderTrack and SliderTrack:FindFirstChild("SliderFill")
-        local ViewTitle = ViewFrame:FindFirstChild("ViewTitle")
-        
-        if SliderKnob and SliderTrack then
-            local isDragging = false
-            local function UpdateSlider(input)
-                local pos = input.Position.X
-                local trackPos = SliderTrack.AbsolutePosition.X
-                local trackSize = SliderTrack.AbsoluteSize.X
-                local relativePos = math.clamp((pos - trackPos) / trackSize, 0, 1)
-                
-                SliderKnob.Position = UDim2.new(relativePos, -8, 0.5, -8)
-                SliderFill.Size = UDim2.new(relativePos, 0, 1, 0)
-                
-                local level = 1 + (relativePos * 4)
-                local displayLevel = math.floor(level + 0.5) 
-                
-                if displayLevel ~= CurrentGraphicLevel then
-                    CurrentGraphicLevel = displayLevel
-                    ViewTitle.Text = "Render Distance: Level " .. displayLevel
-                    if ReduceLagEnabled then ApplyRenderSetting(CurrentGraphicLevel) end
-                end
-            end
-            
-            SliderKnob.MouseButton1Down:Connect(function() isDragging = true end)
-            UserInputService.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 then isDragging = false end end)
-            UserInputService.InputChanged:Connect(function(input) if isDragging and input.UserInputType == Enum.UserInputType.MouseMovement then UpdateSlider(input) end end)
-        end
-    end
-    
-    -- Weapon Slot Updates
-    local WeaponFrame = Content:FindFirstChild("WeaponFrame")
-    if WeaponFrame then
-        for i = 1, 4 do
-            local SlotBg = WeaponFrame:FindFirstChild("SlotBg"..i)
-            local SlotInput = SlotBg and SlotBg:FindFirstChild("Slot"..i)
-            if SlotInput then
-                SlotInput:GetPropertyChangedSignal("Text"):Connect(function()
-                    local key = NumberKeys[SlotInput.Text]
-                    WeaponSlots[i] = key 
-                end)
-            end
-        end
-    end
     
     UserInputService.InputBegan:Connect(function(input, gameProcessed)
         if not gameProcessed then
@@ -1280,7 +1265,7 @@ local function Init()
         end
     end)
     
-    print("Auto Farm V26 - Side Attack Position Update")
+    print("Auto Farm V27 - 'F' Key Added + Side Attack + Android")
 end
 
 Init()
