@@ -1,5 +1,5 @@
 -- Auto Farm Script for Roblox
--- Version V27: V26 Base + Added 'F' Skill Only
+-- Version V26 (Modified): Added 'F' to Skill Rotation (Q E R F) + Side Attack Position
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -15,7 +15,7 @@ local ESPEnabled = false
 local ReduceLagEnabled = false
 local TargetPriority = "None"
 local AttackHeight = 5 
-local SideDistance = 12 
+local SideDistance = 22 
 local SkillDelay = 0.1
 local TweenSpeed = 0.3
 local ViewDistanceVal = 10000 
@@ -31,7 +31,7 @@ local GUI = nil
 local ESPConnection = nil
 
 -- Dynamic Weapon Configuration
-local WeaponSlots = { "Three", "One", "Four", nil } 
+local WeaponSlots = { "Three", "One", nil, nil } 
 local CurrentEquippedKey = nil 
 local IsFirstLoop = true
 local CurrentPattern = "Default"
@@ -67,8 +67,8 @@ local NoclipConnection = nil
 local AntiIdleConnection = nil
 local LagMonitorConnection = nil
 
--- [EDITED] Added "F" to SkillOrder
-local SkillOrder = {"Q", "E", "R", "F"}
+-- [MODIFIED] Added "F" to the skill rotation
+local SkillOrder = {"Q", "E", "R", "F"} 
 
 local MobFolder = workspace.MobFolder
 local VirtualInputManager = game:GetService("VirtualInputManager")
@@ -229,12 +229,12 @@ end
 -- UI Creation
 local function CreateGUI()
     local ScreenGui = Instance.new("ScreenGui")
-    ScreenGui.Name = "AutoFarmGUI_V27_FKey"
+    ScreenGui.Name = "AutoFarmGUI_V26_Side_F"
     ScreenGui.ResetOnSpawn = false
     
     local MainFrame = Instance.new("Frame")
     MainFrame.Name = "MainFrame"
-    MainFrame.Size = UDim2.new(0, 340, 0, 650)
+    MainFrame.Size = UDim2.new(0, 340, 0, 650) 
     MainFrame.Position = UDim2.new(0.5, -170, 0.5, -325)
     MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 32)
     MainFrame.BorderSizePixel = 0
@@ -277,7 +277,7 @@ local function CreateGUI()
     Title.Name = "Title"
     Title.Size = UDim2.new(1, 0, 1, 0)
     Title.BackgroundTransparency = 1
-    Title.Text = "Auto Farm Pro (V27 +F)"
+    Title.Text = "Auto Farm Pro (V26 +F)"
     Title.TextColor3 = Color3.fromRGB(220, 220, 220)
     Title.Font = Enum.Font.GothamMedium
     Title.TextSize = 14
@@ -636,14 +636,24 @@ local function FindTarget()
             FrillSpawnTime = currentTime
             IsWaitingForFrill = true
             FrillWaitTimer = 2
+            print("New Frill detected! Waiting 2 seconds...")
             return nil
         elseif IsWaitingForFrill then
             local timeSinceSpawn = currentTime - FrillSpawnTime
             if timeSinceSpawn >= FrillWaitTimer then
                 IsWaitingForFrill = false
                 TargetPriority = "Frill"
+                print("Frill wait complete! Targeting Frill.")
                 return frill.HurtBox
             else
+                if GUI and GUI:FindFirstChild("MainFrame") then
+                    local StatusCard = GUI.MainFrame:FindFirstChild("Content") and GUI.MainFrame.Content:FindFirstChild("StatusCard")
+                    local TargetLabel = StatusCard and StatusCard:FindFirstChild("TargetLabel")
+                    if TargetLabel then
+                        local remaining = math.ceil(FrillWaitTimer - timeSinceSpawn)
+                        TargetLabel.Text = "Waiting: " .. remaining .. "s"
+                    end
+                end
                 return nil
             end
         else
@@ -753,6 +763,33 @@ local function ToggleFeatures(enable)
     end
 end
 
+local function GetTargetHealth(target)
+    if not target then return nil end
+    local parent = target.Parent
+    if parent.Name == "Frill" or parent.Name == "Puppet" then
+        local enemy = parent:FindFirstChild("Enemy")
+        if enemy then
+            local healthValue = enemy:FindFirstChild("HealthValue")
+            if healthValue then return math.floor(healthValue.Value) end
+        end
+    end
+    return nil
+end
+
+local function GetTargetMaxHealth(target)
+    if not target then return 100 end
+    local parent = target.Parent
+    if parent.Name == "Frill" or parent.Name == "Puppet" then
+        local enemy = parent:FindFirstChild("Enemy")
+        if enemy then
+            local maxHealthValue = enemy:FindFirstChild("MaxHealthValue")
+            if maxHealthValue then return math.floor(maxHealthValue.Value) end
+        end
+    end
+    return 100
+end
+
+-- [CHANGED] TweenToTarget: Now positions at Side and looks at target
 local function TweenToTarget(target)
     if not target or not LocalPlayer.Character then return end
     local humanoidRootPart = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
