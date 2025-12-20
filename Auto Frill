@@ -1,5 +1,5 @@
 -- Auto Farm Script for Roblox
--- Version V27: Added 'F' Skill + Side Attack Position + Side Distance UI
+-- Version V27: V26 Base + Added 'F' Skill Only
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -67,8 +67,8 @@ local NoclipConnection = nil
 local AntiIdleConnection = nil
 local LagMonitorConnection = nil
 
--- [MODIFIED] Added "F" to the skill rotation order
-local SkillOrder = {"Q", "E", "R", "F"} 
+-- [EDITED] Added "F" to SkillOrder
+local SkillOrder = {"Q", "E", "R", "F"}
 
 local MobFolder = workspace.MobFolder
 local VirtualInputManager = game:GetService("VirtualInputManager")
@@ -611,12 +611,15 @@ local function FindPuppetWithScythe()
         local child = children[i]
         if child.Name == "Puppet" then
             local extras = child:FindFirstChild("Extras")
-            if extras and extras:FindFirstChild("FrillScythe") then
-                 local hurtBox = child:FindFirstChild("HurtBox")
-                 if hurtBox then
-                    TargetPriority = "Puppet (With Scythe)"
-                    return hurtBox
-                 end
+            if extras then
+                local frillScythe = extras:FindFirstChild("FrillScythe")
+                if frillScythe then
+                    local hurtBox = child:FindFirstChild("HurtBox")
+                    if hurtBox then
+                        TargetPriority = "Puppet (With Scythe)"
+                        return hurtBox
+                    end
+                end
             end
         end
     end
@@ -1247,7 +1250,7 @@ local function Init()
         end
     end)
     
-    print("Auto Farm V27 - 'F' Key Added + Side Attack")
+    print("Auto Farm V26 - Side Attack Position Update")
 end
 
 Init()
