@@ -1,4 +1,5 @@
---Lost_Current_22/12--
+--- = Lost_Current_V1====
+
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -28,17 +29,15 @@ local Config = {
     BucketHoldTime = 2.5,
     WaterTriggerLevel = 2, 
     MaxBugAttempts = 3,
-    DangerZoneRadius = 300,
-    MapBorderDistance = 2000, 
     TurnInterval = 5,
 }
 
 local Theme = {
-    Background = Color3.fromRGB(30, 30, 30),      -- Dark Grey
-    ItemBg = Color3.fromRGB(45, 45, 45),          -- Lighter Grey
-    Accent = Color3.fromRGB(0, 122, 255),         -- MacOS Blue
-    Text = Color3.fromRGB(240, 240, 240),         -- White
-    SubText = Color3.fromRGB(160, 160, 160),      -- Grey Text
+    Background = Color3.fromRGB(30, 30, 30),
+    ItemBg = Color3.fromRGB(45, 45, 45),
+    Accent = Color3.fromRGB(0, 122, 255),
+    Text = Color3.fromRGB(240, 240, 240),
+    SubText = Color3.fromRGB(160, 160, 160),
     Traffic = {
         Red = Color3.fromRGB(255, 95, 87),
         Yellow = Color3.fromRGB(255, 189, 46)
@@ -47,8 +46,7 @@ local Theme = {
 
 -- State Variables
 local Toggles = {
-    Gold = false, Scrap = false, Helmet = false, Barrel = false,
-    FarmGold = false -- Master Switch
+    Gold = false, Scrap = false, FarmGold = false
 }
 
 local LocalPlayer = Players.LocalPlayer
@@ -64,7 +62,7 @@ local IsDriving = false
 local CurrentHealth = 100
 
 -- ==========================================
--- 🛠️ LOGIC UTILITIES
+-- 🛠️ UTILITIES
 -- ==========================================
 local function GetFarmPlatforms(cframe)
     if not FarmPlatformParts.Floor or not FarmPlatformParts.Floor.Parent then
@@ -125,9 +123,6 @@ local function FormatNumber(n)
     return tostring(n):reverse():gsub("%d%d%d", "%1,"):reverse():gsub("^,", "")
 end
 
--- ==========================================
--- 🚑 SAFETY & FARMING LOGIC (MERGED)
--- ==========================================
 local function UpdateSafeZone()
     local boat = Workspace:FindFirstChild("Boat")
     if not boat then 
@@ -154,9 +149,7 @@ local function SetupHealthMonitor()
     CurrentHealth = hum.Health
     local conn = hum.HealthChanged:Connect(function(newHealth)
         if Toggles.FarmGold and newHealth < CurrentHealth then
-            -- Smart Safety Logic Integrated here
-            warn("⚠️ Safety Triggered: Damage Taken")
-            -- Simple logic: Refresh safe zone or blacklist area if needed
+            warn("⚠️ Safety Triggered")
         end
         CurrentHealth = newHealth
     end)
@@ -172,8 +165,6 @@ local function StartAutoSystem()
             if not char or not char:FindFirstChild("HumanoidRootPart") then task.wait(1); continue end
             
             local safeZone = UpdateSafeZone()
-            
-            -- [INTEGRATED] Auto Bucket Logic
             local waterLevel = 0
             local levelObj = Workspace:FindFirstChild("Boat") and Workspace.Boat:FindFirstChild("WaterFlood") and Workspace.Boat.WaterFlood:FindFirstChild("Level")
             if levelObj then waterLevel = levelObj.Value end
@@ -194,7 +185,6 @@ local function StartAutoSystem()
                 continue
             end
 
-            -- [CORE] Find Gold
             local goldFolder = Workspace:FindFirstChild("Materials") and Workspace.Materials:FindFirstChild("Gold")
             local targetGold, minDist = nil, math.huge
             local rootPos = char.HumanoidRootPart.Position
@@ -223,7 +213,6 @@ local function StartAutoSystem()
                 task.wait(Config.FarmWaitTime)
             else
                 if SafePlatformPart then SafePlatformPart.CFrame = CFrame.new(0, -9000, 0) end
-                -- Simple Driving Logic
                 if not IsDriving then 
                     local seat = Workspace:FindFirstChild("Boat") and Workspace.Boat:FindFirstChild("DrivingSeat") and Workspace.Boat.DrivingSeat:FindFirstChild("Seat")
                     if seat then 
@@ -239,7 +228,7 @@ local function StartAutoSystem()
 end
 
 -- ==========================================
--- 🎨 MACOS UI (MINIMAL)
+-- 🎨 UI CONSTRUCTION (No Scroll)
 -- ==========================================
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "LostCurrent_UI"
@@ -251,8 +240,8 @@ else ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
 -- Main Window
 local MainWindow = Instance.new("Frame")
 MainWindow.Name = "MainWindow"
-MainWindow.Size = UDim2.new(0, 300, 0, 360) -- Reduced height due to merged buttons
-MainWindow.Position = UDim2.new(0.5, -150, 0.5, -180)
+MainWindow.Size = UDim2.new(0, 300, 0, 385) -- Fixed Height for No Scroll
+MainWindow.Position = UDim2.new(0.5, -150, 0.5, -192)
 MainWindow.BackgroundColor3 = Theme.Background
 MainWindow.BorderSizePixel = 0
 MainWindow.Active = true; MainWindow.Draggable = true
@@ -261,18 +250,14 @@ MainWindow.Parent = ScreenGui
 local UICorner = Instance.new("UICorner")
 UICorner.CornerRadius = UDim.new(0, 12)
 UICorner.Parent = MainWindow
-
 local UIStroke = Instance.new("UIStroke")
-UIStroke.Color = Color3.fromRGB(60, 60, 60)
-UIStroke.Thickness = 1
-UIStroke.Parent = MainWindow
+UIStroke.Color = Color3.fromRGB(60, 60, 60); UIStroke.Thickness = 1; UIStroke.Parent = MainWindow
 
--- Header (Traffic Lights)
+-- Header
 local Header = Instance.new("Frame")
 Header.Size = UDim2.new(1, 0, 0, 36)
 Header.BackgroundTransparency = 1
 Header.Parent = MainWindow
-
 local Title = Instance.new("TextLabel")
 Title.Text = "Lost Current"
 Title.Size = UDim2.new(1, 0, 1, 0)
@@ -284,22 +269,13 @@ Title.Parent = Header
 
 local function CreateTrafficBtn(color, x, cb)
     local btn = Instance.new("TextButton")
-    btn.Text = ""
-    btn.Size = UDim2.new(0, 12, 0, 12)
-    btn.Position = UDim2.new(0, x, 0.5, -6)
-    btn.BackgroundColor3 = color
-    btn.AutoButtonColor = false
-    btn.Parent = Header
+    btn.Text = ""; btn.Size = UDim2.new(0, 12, 0, 12); btn.Position = UDim2.new(0, x, 0.5, -6)
+    btn.BackgroundColor3 = color; btn.AutoButtonColor = false; btn.Parent = Header
     Instance.new("UICorner", btn).CornerRadius = UDim.new(1, 0)
-    
-    local hoverInfo = Instance.new("Frame"); hoverInfo.Size = UDim2.new(1,0,1,0); hoverInfo.BackgroundTransparency = 1; hoverInfo.Parent = btn
-    btn.MouseEnter:Connect(function() hoverInfo.BackgroundTransparency = 0.8 end)
-    btn.MouseLeave:Connect(function() hoverInfo.BackgroundTransparency = 1 end)
-    
     if cb then btn.MouseButton1Click:Connect(cb) end
 end
 
--- 🔴 Red: Close/Destroy
+-- 🔴 Close
 CreateTrafficBtn(Theme.Traffic.Red, 12, function()
     Toggles.FarmGold = false
     StopDriving()
@@ -308,19 +284,14 @@ CreateTrafficBtn(Theme.Traffic.Red, 12, function()
     HideFarmPlatforms()
     if SafePlatformPart then SafePlatformPart:Destroy() end
 end)
+-- 🟠 Hide (Right Ctrl)
+CreateTrafficBtn(Theme.Traffic.Yellow, 30, function() ScreenGui.Enabled = false end)
 
--- 🟠 Orange: Hide UI (Works with Left Control)
-CreateTrafficBtn(Theme.Traffic.Yellow, 30, function() 
-    ScreenGui.Enabled = false
-end)
-
--- Scroll Container
-local Container = Instance.new("ScrollingFrame")
+-- Main Container (Frame, No Scroll)
+local Container = Instance.new("Frame")
 Container.Size = UDim2.new(1, 0, 1, -36)
 Container.Position = UDim2.new(0, 0, 0, 36)
 Container.BackgroundTransparency = 1
-Container.ScrollBarThickness = 2
-Container.ScrollBarImageColor3 = Theme.Accent
 Container.Parent = MainWindow
 
 local UIList = Instance.new("UIListLayout")
@@ -330,228 +301,116 @@ UIList.HorizontalAlignment = Enum.HorizontalAlignment.Center
 UIList.Parent = Container
 
 local UIPadding = Instance.new("UIPadding")
-UIPadding.PaddingTop = UDim.new(0, 10)
-UIPadding.PaddingBottom = UDim.new(0, 10)
-UIPadding.Parent = Container
+UIPadding.PaddingTop = UDim.new(0, 10); UIPadding.PaddingBottom = UDim.new(0, 10); UIPadding.Parent = Container
 
--- ==========================================
--- 📊 STATS PANEL
--- ==========================================
+-- 1. Stats Panel
 local StatsContainer = Instance.new("Frame")
 StatsContainer.Size = UDim2.new(0, 280, 0, 60)
 StatsContainer.BackgroundColor3 = Theme.ItemBg
 StatsContainer.LayoutOrder = 1
 StatsContainer.Parent = Container
 Instance.new("UICorner", StatsContainer).CornerRadius = UDim.new(0, 8)
-
 local StatLayout = Instance.new("UIListLayout")
-StatLayout.FillDirection = Enum.FillDirection.Horizontal
-StatLayout.Padding = UDim.new(0, 1)
-StatLayout.Parent = StatsContainer
+StatLayout.FillDirection = Enum.FillDirection.Horizontal; StatLayout.Padding = UDim.new(0, 1); StatLayout.Parent = StatsContainer
 
 local function CreateStatItem(name)
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0.5, -1, 1, 0)
-    frame.BackgroundTransparency = 1
-    frame.Parent = StatsContainer
-    
-    local title = Instance.new("TextLabel")
-    title.Text = name
-    title.Size = UDim2.new(1, 0, 0, 20)
-    title.Position = UDim2.new(0, 0, 0, 10)
-    title.BackgroundTransparency = 1
-    title.Font = Enum.Font.GothamMedium
-    title.TextColor3 = Theme.SubText
-    title.TextSize = 11
-    title.Parent = frame
-    
-    local val = Instance.new("TextLabel")
-    val.Text = "..."
-    val.Size = UDim2.new(1, 0, 0, 25)
-    val.Position = UDim2.new(0, 0, 0, 28)
-    val.BackgroundTransparency = 1
-    val.Font = Enum.Font.GothamBold
-    val.TextColor3 = Theme.Text
-    val.TextSize = 16
-    val.Parent = frame
+    local frame = Instance.new("Frame"); frame.Size = UDim2.new(0.5, -1, 1, 0); frame.BackgroundTransparency = 1; frame.Parent = StatsContainer
+    local title = Instance.new("TextLabel"); title.Text = name; title.Size = UDim2.new(1, 0, 0, 20); title.Position = UDim2.new(0, 0, 0, 10); title.BackgroundTransparency = 1; title.Font = Enum.Font.GothamMedium; title.TextColor3 = Theme.SubText; title.TextSize = 11; title.Parent = frame
+    local val = Instance.new("TextLabel"); val.Text = "Loading..."; val.Size = UDim2.new(1, 0, 0, 25); val.Position = UDim2.new(0, 0, 0, 28); val.BackgroundTransparency = 1; val.Font = Enum.Font.GothamBold; val.TextColor3 = Theme.Text; val.TextSize = 16; val.Parent = frame
     return val
 end
+local GoldVal = CreateStatItem("GOLD")
+local DayVal = CreateStatItem("DAY")
+Instance.new("Frame", StatsContainer).Size=UDim2.new(0,1,0.6,0); StatsContainer.Frame.Position=UDim2.new(0.5,0,0.2,0); StatsContainer.Frame.BackgroundColor3=Theme.Background; StatsContainer.Frame.BorderSizePixel=0
 
-local GoldValLabel = CreateStatItem("GOLD")
-local DayValLabel = CreateStatItem("DAY")
-local Sep = Instance.new("Frame"); Sep.Size=UDim2.new(0,1,0.6,0); Sep.Position=UDim2.new(0.5,0,0.2,0); Sep.BackgroundColor3=Theme.Background; Sep.BorderSizePixel=0; Sep.Parent=StatsContainer
-
--- Data Monitor
 task.spawn(function()
     local values = Workspace:WaitForChild("Values", 5)
     if values then
-        local gold = values:WaitForChild("Gold", 5)
-        local day = values:WaitForChild("Day", 5)
-        if gold then
-            local function up() GoldValLabel.Text = FormatNumber(gold.Value) end
-            up(); table.insert(Connections, gold:GetPropertyChangedSignal("Value"):Connect(up))
-        end
-        if day then
-            local function up() DayValLabel.Text = tostring(day.Value) end
-            up(); table.insert(Connections, day:GetPropertyChangedSignal("Value"):Connect(up))
-        else DayValLabel.Text = "N/A" end
+        local g = values:WaitForChild("Gold", 5); local d = values:WaitForChild("Day", 5)
+        if g then local u = function() GoldVal.Text=FormatNumber(g.Value) end; u(); table.insert(Connections, g:GetPropertyChangedSignal("Value"):Connect(u)) end
+        if d then local u = function() DayVal.Text=tostring(d.Value) end; u(); table.insert(Connections, d:GetPropertyChangedSignal("Value"):Connect(u)) end
     end
 end)
 
--- ==========================================
--- 🕹️ MACOS SWITCHES
--- ==========================================
-local function CreateSwitch(text, default, callback)
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 280, 0, 44)
-    frame.BackgroundColor3 = Theme.ItemBg
-    frame.LayoutOrder = 2
-    frame.Parent = Container
+-- 2. Controls Section
+local Header1 = Instance.new("TextLabel")
+Header1.Text = "SYSTEM CONTROLS"; Header1.Size = UDim2.new(0, 280, 0, 20); Header1.BackgroundTransparency=1; Header1.Font=Enum.Font.GothamBold; Header1.TextColor3=Theme.SubText; Header1.TextSize=10; Header1.TextXAlignment=Enum.TextXAlignment.Left; Header1.LayoutOrder=2; Header1.Parent=Container
+Instance.new("UIPadding", Header1).PaddingLeft = UDim.new(0, 5)
+
+local function CreateSwitch(text, default, order, cb)
+    local frame = Instance.new("Frame"); frame.Size = UDim2.new(0, 280, 0, 44); frame.BackgroundColor3=Theme.ItemBg; frame.LayoutOrder=order; frame.Parent=Container
     Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
-
-    local label = Instance.new("TextLabel")
-    label.Text = text
-    label.Size = UDim2.new(1, -60, 1, 0)
-    label.Position = UDim2.new(0, 15, 0, 0)
-    label.BackgroundTransparency = 1
-    label.Font = Enum.Font.GothamMedium
-    label.TextColor3 = Theme.Text
-    label.TextXAlignment = Enum.TextXAlignment.Left
-    label.TextSize = 13
-    label.Parent = frame
-
-    local switchBg = Instance.new("TextButton")
-    switchBg.Text = ""
-    switchBg.Size = UDim2.new(0, 40, 0, 24)
-    switchBg.AnchorPoint = Vector2.new(1, 0.5)
-    switchBg.Position = UDim2.new(1, -15, 0.5, 0)
-    switchBg.BackgroundColor3 = default and Theme.Accent or Color3.fromRGB(60, 60, 60)
-    switchBg.AutoButtonColor = false
-    switchBg.Parent = frame
-    Instance.new("UICorner", switchBg).CornerRadius = UDim.new(1, 0)
-
-    local knob = Instance.new("Frame")
-    knob.Size = UDim2.new(0, 20, 0, 20)
-    knob.AnchorPoint = Vector2.new(0, 0.5)
-    knob.Position = default and UDim2.new(0, 18, 0.5, 0) or UDim2.new(0, 2, 0.5, 0)
-    knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    knob.Parent = switchBg
-    Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
-
-    local isOn = default
-    switchBg.MouseButton1Click:Connect(function()
-        isOn = not isOn
-        local targetPos = isOn and UDim2.new(0, 18, 0.5, 0) or UDim2.new(0, 2, 0.5, 0)
-        local targetColor = isOn and Theme.Accent or Color3.fromRGB(60, 60, 60)
-        TweenService:Create(knob, TweenInfo.new(0.2), {Position = targetPos}):Play()
-        TweenService:Create(switchBg, TweenInfo.new(0.2), {BackgroundColor3 = targetColor}):Play()
-        callback(isOn)
+    local lbl = Instance.new("TextLabel"); lbl.Text=text; lbl.Size=UDim2.new(1,-60,1,0); lbl.Position=UDim2.new(0,15,0,0); lbl.BackgroundTransparency=1; lbl.Font=Enum.Font.GothamMedium; lbl.TextColor3=Theme.Text; lbl.TextXAlignment=Enum.TextXAlignment.Left; lbl.TextSize=13; lbl.Parent=frame
+    local btn = Instance.new("TextButton"); btn.Text=""; btn.Size=UDim2.new(0,40,0,24); btn.AnchorPoint=Vector2.new(1,0.5); btn.Position=UDim2.new(1,-15,0.5,0); btn.BackgroundColor3=default and Theme.Accent or Color3.fromRGB(60,60,60); btn.AutoButtonColor=false; btn.Parent=frame
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(1,0)
+    local knob = Instance.new("Frame"); knob.Size=UDim2.new(0,20,0,20); knob.AnchorPoint=Vector2.new(0,0.5); knob.Position=default and UDim2.new(0,18,0.5,0) or UDim2.new(0,2,0.5,0); knob.BackgroundColor3=Color3.new(1,1,1); knob.Parent=btn; Instance.new("UICorner", knob).CornerRadius=UDim.new(1,0)
+    local on = default
+    btn.MouseButton1Click:Connect(function()
+        on = not on
+        TweenService:Create(knob, TweenInfo.new(0.2), {Position=on and UDim2.new(0,18,0.5,0) or UDim2.new(0,2,0.5,0)}):Play()
+        TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3=on and Theme.Accent or Color3.fromRGB(60,60,60)}):Play()
+        cb(on)
     end)
-    return frame
 end
 
--- Main Toggle (Includes Bucket & Safety)
-local HeaderText = Instance.new("TextLabel")
-HeaderText.Text = "SYSTEM CONTROLS"
-HeaderText.Size = UDim2.new(0, 280, 0, 20)
-HeaderText.BackgroundTransparency = 1
-HeaderText.Font = Enum.Font.GothamBold
-HeaderText.TextColor3 = Theme.SubText
-HeaderText.TextSize = 10
-HeaderText.TextXAlignment = Enum.TextXAlignment.Left
-HeaderText.LayoutOrder = 1
-HeaderText.Parent = Container
-Instance.new("UIPadding", HeaderText).PaddingLeft = UDim.new(0, 5)
+CreateSwitch("Farm Gold", false, 3, function(s) Toggles.FarmGold = s; if s then StartAutoSystem() else StopDriving(); GoldAttemptHistory={}; GoldBlacklist={} end end)
 
-CreateSwitch("Farm Gold", false, function(s) 
-    Toggles.FarmGold = s 
-    if s then StartAutoSystem() 
-    else StopDriving(); GoldAttemptHistory={}; GoldBlacklist={} end 
-end)
+-- 3. ESP Section
+local Spacer = Instance.new("Frame"); Spacer.Size=UDim2.new(0,280,0,5); Spacer.BackgroundTransparency=1; Spacer.LayoutOrder=4; Spacer.Parent=Container
+local Header2 = Header1:Clone(); Header2.Text="VISUALS"; Header2.LayoutOrder=5; Header2.Parent=Container
 
--- ESP Section
-local Spacer = Instance.new("Frame"); Spacer.Size = UDim2.new(0, 280, 0, 10); Spacer.BackgroundTransparency=1; Spacer.LayoutOrder=3; Spacer.Parent=Container
-local ESPHeader = HeaderText:Clone(); ESPHeader.Text = "BY BOTTLE"; ESPHeader.LayoutOrder=3; ESPHeader.Parent=Container
-
-local function CreateESP(part, typeName, color)
-    if not part or not part:IsA("BasePart") or ActiveESP[part] then return end
-    local hl = Instance.new("Highlight"); hl.FillColor = color; hl.OutlineTransparency=1; hl.Parent = part
-    local bb = Instance.new("BillboardGui"); bb.Size=UDim2.new(0,100,0,30); bb.AlwaysOnTop=true; bb.Parent=part
-    local tx = Instance.new("TextLabel"); tx.Size=UDim2.new(1,0,1,0); tx.Text=typeName; tx.TextColor3=color; tx.BackgroundTransparency=1; tx.TextStrokeTransparency=0.5; tx.Font=Enum.Font.GothamBold; tx.Parent=bb
-    ActiveESP[part] = {Highlight=hl, Billboard=bb, Label=tx, Type=typeName}
-end
-
-local function ToggleESP(name, typeName, color, state)
-    Toggles[name] = state
-    local folderMap = {
-        Gold = {Workspace:FindFirstChild("Materials"), "Gold"},
-        Scrap = {Workspace:FindFirstChild("Materials"), "Scrap"}
-    }
-    local fData = folderMap[name]
-    if not fData[1] then return end
-    local folder = fData[1]:FindFirstChild(fData[2])
-    if state then
-        if folder then
-            for _, c in pairs(folder:GetChildren()) do
-                if c.Name:lower():find(typeName:lower()) then CreateESP(c, typeName, color) end
-            end
-            local conn = folder.ChildAdded:Connect(function(c)
-                if Toggles[name] and c.Name:lower():find(typeName:lower()) then task.wait(0.1); CreateESP(c, typeName, color) end
-            end)
-            table.insert(Connections, conn)
-        end
+local function ToggleESP(n, t, c, s)
+    Toggles[n]=s
+    local f = Workspace:FindFirstChild("Materials") and Workspace.Materials:FindFirstChild(n == "Barrel" and "Barrels" or n == "Gold" and "Gold" or "Scrap")
+    if n == "Barrel" then f = Workspace:FindFirstChild("Map") and Workspace.Map:FindFirstChild("Barrels") end
+    if s and f then
+        for _,v in pairs(f:GetChildren()) do if v.Name:lower():find(t:lower()) then CreateESP(v,t,c) end end
+        table.insert(Connections, f.ChildAdded:Connect(function(v) if Toggles[n] and v.Name:lower():find(t:lower()) then task.wait(0.1) CreateESP(v,t,c) end end))
     end
 end
-
-CreateSwitch("Gold ESP", false, function(s) ToggleESP("Gold", "Gold", Color3.fromRGB(255, 215, 0), s) end)
-CreateSwitch("Scrap ESP", false, function(s) ToggleESP("Scrap", "Scrap", Color3.fromRGB(192, 192, 192), s) end)
-
--- Heartbeat ESP
-local lastUpdate = 0
+-- ESP Helper
+function CreateESP(p,t,c)
+    if not p or not p:IsA("BasePart") or ActiveESP[p] then return end
+    local h=Instance.new("Highlight",p); h.FillColor=c; h.OutlineTransparency=1
+    local b=Instance.new("BillboardGui",p); b.Size=UDim2.new(0,100,0,30); b.AlwaysOnTop=true
+    local l=Instance.new("TextLabel",b); l.Size=UDim2.new(1,0,1,0); l.Text=t; l.TextColor3=c; l.BackgroundTransparency=1; l.Font=Enum.Font.GothamBold; l.TextStrokeTransparency=0.5
+    ActiveESP[p]={Highlight=h,Billboard=b,Label=l,Type=t}
+end
+-- Update Loop
 table.insert(Connections, RunService.Heartbeat:Connect(function()
-    if tick() - lastUpdate < 0.2 then return end
-    lastUpdate = tick()
-    local char = LocalPlayer.Character; local root = char and char:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-    for part, esp in pairs(ActiveESP) do
-        if part.Parent and Toggles[esp.Type] then
-            local dist = (root.Position - part.Position).Magnitude
-            if dist <= Config.MaxDistance then
-                esp.Highlight.Enabled = true; esp.Billboard.Enabled = true
-                esp.Label.Text = string.format("[%d] %s", dist, esp.Type)
-            else esp.Highlight.Enabled = false; esp.Billboard.Enabled = false end
-        else
-            if not part.Parent then 
-                if esp.Highlight then esp.Highlight:Destroy() end
-                if esp.Billboard then esp.Billboard:Destroy() end
-                ActiveESP[part] = nil
-            else esp.Highlight.Enabled = false; esp.Billboard.Enabled = false end
-        end
+    if tick()-(_G.LUE or 0)<0.2 then return end; _G.LUE=tick()
+    local c=LocalPlayer.Character; local r=c and c:FindFirstChild("HumanoidRootPart")
+    for p,e in pairs(ActiveESP) do
+        if p.Parent and Toggles[e.Type] and r then
+            local d=(r.Position-p.Position).Magnitude
+            if d<=Config.MaxDistance then e.Highlight.Enabled=true; e.Billboard.Enabled=true; e.Label.Text=string.format("[%d] %s",d,e.Type)
+            else e.Highlight.Enabled=false; e.Billboard.Enabled=false end
+        else if not p.Parent then e.Highlight:Destroy(); e.Billboard:Destroy(); ActiveESP[p]=nil else e.Highlight.Enabled=false; e.Billboard.Enabled=false end end
     end
 end))
 
-local Spacer2 = Instance.new("Frame"); Spacer2.Size = UDim2.new(0, 280, 0, 10); Spacer2.BackgroundTransparency=1; Spacer2.LayoutOrder=4; Spacer2.Parent=Container
-local ReturnBtn = Instance.new("TextButton")
-ReturnBtn.Text = "Return to Boat"
-ReturnBtn.Size = UDim2.new(0, 280, 0, 40)
-ReturnBtn.BackgroundColor3 = Theme.Accent
-ReturnBtn.TextColor3 = Theme.Text
-ReturnBtn.Font = Enum.Font.GothamBold
-ReturnBtn.TextSize = 14
-ReturnBtn.LayoutOrder = 5
-ReturnBtn.Parent = Container
-Instance.new("UICorner", ReturnBtn).CornerRadius = UDim.new(0, 8)
-ReturnBtn.MouseButton1Click:Connect(function()
-    local boat = Workspace:FindFirstChild("Boat")
-    local char = LocalPlayer.Character
-    if boat and char then char.HumanoidRootPart.CFrame = boat:GetPivot() + Vector3.new(0, 10, 0) end
+CreateSwitch("Gold ESP", false, 6, function(s) ToggleESP("Gold","Gold",Color3.fromRGB(255,215,0),s) end)
+CreateSwitch("Scrap ESP", false, 7, function(s) ToggleESP("Scrap","Scrap",Color3.fromRGB(192,192,192),s) end)
+
+-- 4. Return Button
+local Spacer2 = Instance.new("Frame"); Spacer2.Size=UDim2.new(0,280,0,5); Spacer2.BackgroundTransparency=1; Spacer2.LayoutOrder=8; Spacer2.Parent=Container
+local RetBtn = Instance.new("TextButton")
+RetBtn.Text = "Return to Boat"; RetBtn.Size = UDim2.new(0, 280, 0, 40)
+RetBtn.BackgroundColor3 = Theme.Accent; RetBtn.TextColor3 = Theme.Text; RetBtn.Font = Enum.Font.GothamBold; RetBtn.TextSize = 14
+RetBtn.LayoutOrder = 9; RetBtn.Parent = Container
+Instance.new("UICorner", RetBtn).CornerRadius = UDim.new(0, 8)
+RetBtn.MouseButton1Click:Connect(function()
+    local b = Workspace:FindFirstChild("Boat"); local c = LocalPlayer.Character
+    if b and c then c.HumanoidRootPart.CFrame = b:GetPivot() + Vector3.new(0,10,0) end
 end)
 
--- ⌨️ Keybind Listener (Left Control)
-UserInputService.InputBegan:Connect(function(input) 
-    if input.KeyCode == Enum.KeyCode.LeftControl then 
-        ScreenGui.Enabled = not ScreenGui.Enabled 
-    end 
-end)
+-- 5. Footer "made by Bottle"
+local Footer = Instance.new("TextLabel")
+Footer.Text = "made by Bottle"; Footer.Size = UDim2.new(0, 280, 0, 20)
+Footer.BackgroundTransparency = 1; Footer.TextColor3 = Theme.SubText; Footer.Font = Enum.Font.GothamBold; Footer.TextSize = 11; Footer.TextTransparency = 0.5
+Footer.LayoutOrder = 10; Footer.Parent = Container
 
-print("🌊 Lost Current Loaded - Minimal Mode")
+-- Keybind
+UserInputService.InputBegan:Connect(function(i) if i.KeyCode==Enum.KeyCode.LeftControl then ScreenGui.Enabled=not ScreenGui.Enabled end end)
+
+print("🌊 Lost Current (Minimal) - Ready.")
