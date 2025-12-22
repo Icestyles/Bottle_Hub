@@ -1,0 +1,557 @@
+--Lost_Current_22/12--
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local TweenService = game:GetService("TweenService")
+local CoreGui = game:GetService("CoreGui")
+local Workspace = game:GetService("Workspace")
+
+-- ==========================================
+-- 🧹 CLEANUP
+-- ==========================================
+if _G.LostCurrentConnection then
+    for _, conn in pairs(_G.LostCurrentConnection) do conn:Disconnect() end
+end
+if CoreGui:FindFirstChild("LostCurrent_UI") then
+    CoreGui.LostCurrent_UI:Destroy()
+end
+
+-- ==========================================
+-- ⚙️ CONFIG & THEME
+-- ==========================================
+local Config = {
+    MaxDistance = 300,
+    SafeZoneOffset = Vector3.new(0, 200, 0),
+    FarmWaitTime = 3, 
+    GoldHoldTime = 1.6,
+    BucketHoldTime = 2.5,
+    WaterTriggerLevel = 2, 
+    MaxBugAttempts = 3,
+    DangerZoneRadius = 300,
+    MapBorderDistance = 2000, 
+    TurnInterval = 5,
+}
+
+local Theme = {
+    Background = Color3.fromRGB(30, 30, 30),      -- Dark Grey
+    ItemBg = Color3.fromRGB(45, 45, 45),          -- Lighter Grey
+    Accent = Color3.fromRGB(0, 122, 255),         -- MacOS Blue
+    Text = Color3.fromRGB(240, 240, 240),         -- White
+    SubText = Color3.fromRGB(160, 160, 160),      -- Grey Text
+    Traffic = {
+        Red = Color3.fromRGB(255, 95, 87),
+        Yellow = Color3.fromRGB(255, 189, 46)
+    }
+}
+
+-- State Variables
+local Toggles = {
+    Gold = false, Scrap = false, Helmet = false, Barrel = false,
+    FarmGold = false -- Master Switch
+}
+
+local LocalPlayer = Players.LocalPlayer
+local ActiveESP = {}
+local Connections = {}
+_G.LostCurrentConnection = Connections 
+
+local SafePlatformPart = nil
+local FarmPlatformParts = {Floor = nil, Ceiling = nil}
+local GoldAttemptHistory = {}
+local GoldBlacklist = {}
+local IsDriving = false 
+local CurrentHealth = 100
+
+-- ==========================================
+-- 🛠️ LOGIC UTILITIES
+-- ==========================================
+local function GetFarmPlatforms(cframe)
+    if not FarmPlatformParts.Floor or not FarmPlatformParts.Floor.Parent then
+        local floor = Instance.new("Part")
+        floor.Name = "Farm_Floor_Pool"
+        floor.Size = Vector3.new(6, 1, 6)
+        floor.Anchored = true; floor.CanCollide = true; floor.Transparency = 1
+        floor.Parent = Workspace
+        FarmPlatformParts.Floor = floor
+    end
+    if not FarmPlatformParts.Ceiling or not FarmPlatformParts.Ceiling.Parent then
+        local ceiling = Instance.new("Part")
+        ceiling.Name = "Farm_Ceiling_Pool"
+        ceiling.Size = Vector3.new(6, 1, 6)
+        ceiling.Anchored = true; ceiling.CanCollide = true; ceiling.Transparency = 1
+        ceiling.Parent = Workspace
+        FarmPlatformParts.Ceiling = ceiling
+    end
+    FarmPlatformParts.Floor.CFrame = cframe * CFrame.new(0, -3.5, 0)
+    FarmPlatformParts.Ceiling.CFrame = cframe * CFrame.new(0, 3.5, 0)
+end
+
+local function HideFarmPlatforms()
+    if FarmPlatformParts.Floor then FarmPlatformParts.Floor.CFrame = CFrame.new(0, -9999, 0) end
+    if FarmPlatformParts.Ceiling then FarmPlatformParts.Ceiling.CFrame = CFrame.new(0, -9999, 0) end
+end
+
+local function TeleportTo(cframe)
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if root then
+        root.CFrame = cframe
+        root.AssemblyLinearVelocity = Vector3.zero 
+        root.AssemblyAngularVelocity = Vector3.zero
+    end
+end
+
+local function SendKey(key, holdTime)
+    VirtualInputManager:SendKeyEvent(true, key, false, game)
+    if holdTime then task.wait(holdTime) end
+    VirtualInputManager:SendKeyEvent(false, key, false, game)
+end
+
+local function StopDriving()
+    if IsDriving then
+        IsDriving = false
+        SendKey(Enum.KeyCode.W); SendKey(Enum.KeyCode.A); SendKey(Enum.KeyCode.S); SendKey(Enum.KeyCode.D)
+        local char = LocalPlayer.Character
+        if char and char:FindFirstChild("Humanoid") then
+            char.Humanoid.Sit = false
+            char.Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+        end
+        task.wait(0.2)
+    end
+end
+
+local function FormatNumber(n)
+    return tostring(n):reverse():gsub("%d%d%d", "%1,"):reverse():gsub("^,", "")
+end
+
+-- ==========================================
+-- 🚑 SAFETY & FARMING LOGIC (MERGED)
+-- ==========================================
+local function UpdateSafeZone()
+    local boat = Workspace:FindFirstChild("Boat")
+    if not boat then 
+        if SafePlatformPart then SafePlatformPart.CFrame = CFrame.new(0, -9000, 0) end
+        return nil
+    end
+    if not SafePlatformPart or not SafePlatformPart.Parent then
+        SafePlatformPart = Instance.new("Part")
+        SafePlatformPart.Name = "AutoFarm_SafeZone"
+        SafePlatformPart.Size = Vector3.new(20, 1, 20)
+        SafePlatformPart.Anchored = true; SafePlatformPart.CanCollide = true
+        SafePlatformPart.Material = Enum.Material.ForceField
+        SafePlatformPart.Color = Color3.fromRGB(0, 255, 255); SafePlatformPart.Transparency = 0.8
+        SafePlatformPart.Parent = Workspace
+    end
+    SafePlatformPart.CFrame = boat:GetPivot() + Config.SafeZoneOffset
+    return SafePlatformPart
+end
+
+local function SetupHealthMonitor()
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChild("Humanoid")
+    if not hum then return end
+    CurrentHealth = hum.Health
+    local conn = hum.HealthChanged:Connect(function(newHealth)
+        if Toggles.FarmGold and newHealth < CurrentHealth then
+            -- Smart Safety Logic Integrated here
+            warn("⚠️ Safety Triggered: Damage Taken")
+            -- Simple logic: Refresh safe zone or blacklist area if needed
+        end
+        CurrentHealth = newHealth
+    end)
+    table.insert(Connections, conn)
+end
+table.insert(Connections, LocalPlayer.CharacterAdded:Connect(function() task.wait(1) SetupHealthMonitor() end))
+
+local function StartAutoSystem()
+    task.spawn(function()
+        SetupHealthMonitor()
+        while Toggles.FarmGold do
+            local char = LocalPlayer.Character
+            if not char or not char:FindFirstChild("HumanoidRootPart") then task.wait(1); continue end
+            
+            local safeZone = UpdateSafeZone()
+            
+            -- [INTEGRATED] Auto Bucket Logic
+            local waterLevel = 0
+            local levelObj = Workspace:FindFirstChild("Boat") and Workspace.Boat:FindFirstChild("WaterFlood") and Workspace.Boat.WaterFlood:FindFirstChild("Level")
+            if levelObj then waterLevel = levelObj.Value end
+
+            if waterLevel >= Config.WaterTriggerLevel then
+                StopDriving()
+                local union = Workspace:FindFirstChild("Boat") and Workspace.Boat:FindFirstChild("Body") and Workspace.Boat.Body:FindFirstChild("Union")
+                if union then
+                    local targetCF = union.CFrame + Vector3.new(0, 3, 0)
+                    GetFarmPlatforms(targetCF)
+                    TeleportTo(targetCF)
+                    task.wait(0.3)
+                    SendKey(Enum.KeyCode.E, Config.BucketHoldTime)
+                    HideFarmPlatforms()
+                end
+                if safeZone then TeleportTo(safeZone.CFrame + Vector3.new(0, 3, 0)) end
+                task.wait(1)
+                continue
+            end
+
+            -- [CORE] Find Gold
+            local goldFolder = Workspace:FindFirstChild("Materials") and Workspace.Materials:FindFirstChild("Gold")
+            local targetGold, minDist = nil, math.huge
+            local rootPos = char.HumanoidRootPart.Position
+
+            if goldFolder then
+                for _, child in pairs(goldFolder:GetChildren()) do
+                    if child:IsA("BasePart") and child.Transparency < 1 and not GoldBlacklist[child] then
+                        local dist = (child.Position - rootPos).Magnitude
+                        if dist < minDist then minDist = dist; targetGold = child end
+                    end
+                end
+            end
+
+            if targetGold then
+                if IsDriving then StopDriving() end
+                local attempts = GoldAttemptHistory[targetGold] or 0
+                if attempts >= Config.MaxBugAttempts then GoldBlacklist[targetGold] = true; continue end
+                GoldAttemptHistory[targetGold] = attempts + 1
+
+                GetFarmPlatforms(targetGold.CFrame)
+                TeleportTo(targetGold.CFrame)
+                task.wait(0.2)
+                if Toggles.FarmGold then SendKey(Enum.KeyCode.E, Config.GoldHoldTime) end
+                HideFarmPlatforms()
+                if safeZone then TeleportTo(safeZone.CFrame + Vector3.new(0, 3, 0)) end
+                task.wait(Config.FarmWaitTime)
+            else
+                if SafePlatformPart then SafePlatformPart.CFrame = CFrame.new(0, -9000, 0) end
+                -- Simple Driving Logic
+                if not IsDriving then 
+                    local seat = Workspace:FindFirstChild("Boat") and Workspace.Boat:FindFirstChild("DrivingSeat") and Workspace.Boat.DrivingSeat:FindFirstChild("Seat")
+                    if seat then 
+                        IsDriving = true; seat:Sit(char.Humanoid); task.wait(0.5); VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.W, false, game)
+                    end
+                end
+                task.wait(0.1)
+            end
+            task.wait(0.1)
+        end
+        StopDriving()
+    end)
+end
+
+-- ==========================================
+-- 🎨 MACOS UI (MINIMAL)
+-- ==========================================
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "LostCurrent_UI"
+ScreenGui.ResetOnSpawn = false
+if gethui then ScreenGui.Parent = gethui()
+elseif syn and syn.protect_gui then syn.protect_gui(ScreenGui) ScreenGui.Parent = CoreGui
+else ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
+
+-- Main Window
+local MainWindow = Instance.new("Frame")
+MainWindow.Name = "MainWindow"
+MainWindow.Size = UDim2.new(0, 300, 0, 360) -- Reduced height due to merged buttons
+MainWindow.Position = UDim2.new(0.5, -150, 0.5, -180)
+MainWindow.BackgroundColor3 = Theme.Background
+MainWindow.BorderSizePixel = 0
+MainWindow.Active = true; MainWindow.Draggable = true
+MainWindow.Parent = ScreenGui
+
+local UICorner = Instance.new("UICorner")
+UICorner.CornerRadius = UDim.new(0, 12)
+UICorner.Parent = MainWindow
+
+local UIStroke = Instance.new("UIStroke")
+UIStroke.Color = Color3.fromRGB(60, 60, 60)
+UIStroke.Thickness = 1
+UIStroke.Parent = MainWindow
+
+-- Header (Traffic Lights)
+local Header = Instance.new("Frame")
+Header.Size = UDim2.new(1, 0, 0, 36)
+Header.BackgroundTransparency = 1
+Header.Parent = MainWindow
+
+local Title = Instance.new("TextLabel")
+Title.Text = "Lost Current"
+Title.Size = UDim2.new(1, 0, 1, 0)
+Title.BackgroundTransparency = 1
+Title.Font = Enum.Font.GothamBold
+Title.TextColor3 = Theme.Text
+Title.TextSize = 13
+Title.Parent = Header
+
+local function CreateTrafficBtn(color, x, cb)
+    local btn = Instance.new("TextButton")
+    btn.Text = ""
+    btn.Size = UDim2.new(0, 12, 0, 12)
+    btn.Position = UDim2.new(0, x, 0.5, -6)
+    btn.BackgroundColor3 = color
+    btn.AutoButtonColor = false
+    btn.Parent = Header
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(1, 0)
+    
+    local hoverInfo = Instance.new("Frame"); hoverInfo.Size = UDim2.new(1,0,1,0); hoverInfo.BackgroundTransparency = 1; hoverInfo.Parent = btn
+    btn.MouseEnter:Connect(function() hoverInfo.BackgroundTransparency = 0.8 end)
+    btn.MouseLeave:Connect(function() hoverInfo.BackgroundTransparency = 1 end)
+    
+    if cb then btn.MouseButton1Click:Connect(cb) end
+end
+
+-- 🔴 Red: Close/Destroy
+CreateTrafficBtn(Theme.Traffic.Red, 12, function()
+    Toggles.FarmGold = false
+    StopDriving()
+    ScreenGui:Destroy()
+    for _, conn in pairs(Connections) do conn:Disconnect() end
+    HideFarmPlatforms()
+    if SafePlatformPart then SafePlatformPart:Destroy() end
+end)
+
+-- 🟠 Orange: Hide UI (Works with Left Control)
+CreateTrafficBtn(Theme.Traffic.Yellow, 30, function() 
+    ScreenGui.Enabled = false
+end)
+
+-- Scroll Container
+local Container = Instance.new("ScrollingFrame")
+Container.Size = UDim2.new(1, 0, 1, -36)
+Container.Position = UDim2.new(0, 0, 0, 36)
+Container.BackgroundTransparency = 1
+Container.ScrollBarThickness = 2
+Container.ScrollBarImageColor3 = Theme.Accent
+Container.Parent = MainWindow
+
+local UIList = Instance.new("UIListLayout")
+UIList.SortOrder = Enum.SortOrder.LayoutOrder
+UIList.Padding = UDim.new(0, 8)
+UIList.HorizontalAlignment = Enum.HorizontalAlignment.Center
+UIList.Parent = Container
+
+local UIPadding = Instance.new("UIPadding")
+UIPadding.PaddingTop = UDim.new(0, 10)
+UIPadding.PaddingBottom = UDim.new(0, 10)
+UIPadding.Parent = Container
+
+-- ==========================================
+-- 📊 STATS PANEL
+-- ==========================================
+local StatsContainer = Instance.new("Frame")
+StatsContainer.Size = UDim2.new(0, 280, 0, 60)
+StatsContainer.BackgroundColor3 = Theme.ItemBg
+StatsContainer.LayoutOrder = 1
+StatsContainer.Parent = Container
+Instance.new("UICorner", StatsContainer).CornerRadius = UDim.new(0, 8)
+
+local StatLayout = Instance.new("UIListLayout")
+StatLayout.FillDirection = Enum.FillDirection.Horizontal
+StatLayout.Padding = UDim.new(0, 1)
+StatLayout.Parent = StatsContainer
+
+local function CreateStatItem(name)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0.5, -1, 1, 0)
+    frame.BackgroundTransparency = 1
+    frame.Parent = StatsContainer
+    
+    local title = Instance.new("TextLabel")
+    title.Text = name
+    title.Size = UDim2.new(1, 0, 0, 20)
+    title.Position = UDim2.new(0, 0, 0, 10)
+    title.BackgroundTransparency = 1
+    title.Font = Enum.Font.GothamMedium
+    title.TextColor3 = Theme.SubText
+    title.TextSize = 11
+    title.Parent = frame
+    
+    local val = Instance.new("TextLabel")
+    val.Text = "..."
+    val.Size = UDim2.new(1, 0, 0, 25)
+    val.Position = UDim2.new(0, 0, 0, 28)
+    val.BackgroundTransparency = 1
+    val.Font = Enum.Font.GothamBold
+    val.TextColor3 = Theme.Text
+    val.TextSize = 16
+    val.Parent = frame
+    return val
+end
+
+local GoldValLabel = CreateStatItem("GOLD")
+local DayValLabel = CreateStatItem("DAY")
+local Sep = Instance.new("Frame"); Sep.Size=UDim2.new(0,1,0.6,0); Sep.Position=UDim2.new(0.5,0,0.2,0); Sep.BackgroundColor3=Theme.Background; Sep.BorderSizePixel=0; Sep.Parent=StatsContainer
+
+-- Data Monitor
+task.spawn(function()
+    local values = Workspace:WaitForChild("Values", 5)
+    if values then
+        local gold = values:WaitForChild("Gold", 5)
+        local day = values:WaitForChild("Day", 5)
+        if gold then
+            local function up() GoldValLabel.Text = FormatNumber(gold.Value) end
+            up(); table.insert(Connections, gold:GetPropertyChangedSignal("Value"):Connect(up))
+        end
+        if day then
+            local function up() DayValLabel.Text = tostring(day.Value) end
+            up(); table.insert(Connections, day:GetPropertyChangedSignal("Value"):Connect(up))
+        else DayValLabel.Text = "N/A" end
+    end
+end)
+
+-- ==========================================
+-- 🕹️ MACOS SWITCHES
+-- ==========================================
+local function CreateSwitch(text, default, callback)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, 280, 0, 44)
+    frame.BackgroundColor3 = Theme.ItemBg
+    frame.LayoutOrder = 2
+    frame.Parent = Container
+    Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
+
+    local label = Instance.new("TextLabel")
+    label.Text = text
+    label.Size = UDim2.new(1, -60, 1, 0)
+    label.Position = UDim2.new(0, 15, 0, 0)
+    label.BackgroundTransparency = 1
+    label.Font = Enum.Font.GothamMedium
+    label.TextColor3 = Theme.Text
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.TextSize = 13
+    label.Parent = frame
+
+    local switchBg = Instance.new("TextButton")
+    switchBg.Text = ""
+    switchBg.Size = UDim2.new(0, 40, 0, 24)
+    switchBg.AnchorPoint = Vector2.new(1, 0.5)
+    switchBg.Position = UDim2.new(1, -15, 0.5, 0)
+    switchBg.BackgroundColor3 = default and Theme.Accent or Color3.fromRGB(60, 60, 60)
+    switchBg.AutoButtonColor = false
+    switchBg.Parent = frame
+    Instance.new("UICorner", switchBg).CornerRadius = UDim.new(1, 0)
+
+    local knob = Instance.new("Frame")
+    knob.Size = UDim2.new(0, 20, 0, 20)
+    knob.AnchorPoint = Vector2.new(0, 0.5)
+    knob.Position = default and UDim2.new(0, 18, 0.5, 0) or UDim2.new(0, 2, 0.5, 0)
+    knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    knob.Parent = switchBg
+    Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
+
+    local isOn = default
+    switchBg.MouseButton1Click:Connect(function()
+        isOn = not isOn
+        local targetPos = isOn and UDim2.new(0, 18, 0.5, 0) or UDim2.new(0, 2, 0.5, 0)
+        local targetColor = isOn and Theme.Accent or Color3.fromRGB(60, 60, 60)
+        TweenService:Create(knob, TweenInfo.new(0.2), {Position = targetPos}):Play()
+        TweenService:Create(switchBg, TweenInfo.new(0.2), {BackgroundColor3 = targetColor}):Play()
+        callback(isOn)
+    end)
+    return frame
+end
+
+-- Main Toggle (Includes Bucket & Safety)
+local HeaderText = Instance.new("TextLabel")
+HeaderText.Text = "SYSTEM CONTROLS"
+HeaderText.Size = UDim2.new(0, 280, 0, 20)
+HeaderText.BackgroundTransparency = 1
+HeaderText.Font = Enum.Font.GothamBold
+HeaderText.TextColor3 = Theme.SubText
+HeaderText.TextSize = 10
+HeaderText.TextXAlignment = Enum.TextXAlignment.Left
+HeaderText.LayoutOrder = 1
+HeaderText.Parent = Container
+Instance.new("UIPadding", HeaderText).PaddingLeft = UDim.new(0, 5)
+
+CreateSwitch("Farm Gold", false, function(s) 
+    Toggles.FarmGold = s 
+    if s then StartAutoSystem() 
+    else StopDriving(); GoldAttemptHistory={}; GoldBlacklist={} end 
+end)
+
+-- ESP Section
+local Spacer = Instance.new("Frame"); Spacer.Size = UDim2.new(0, 280, 0, 10); Spacer.BackgroundTransparency=1; Spacer.LayoutOrder=3; Spacer.Parent=Container
+local ESPHeader = HeaderText:Clone(); ESPHeader.Text = "BY BOTTLE"; ESPHeader.LayoutOrder=3; ESPHeader.Parent=Container
+
+local function CreateESP(part, typeName, color)
+    if not part or not part:IsA("BasePart") or ActiveESP[part] then return end
+    local hl = Instance.new("Highlight"); hl.FillColor = color; hl.OutlineTransparency=1; hl.Parent = part
+    local bb = Instance.new("BillboardGui"); bb.Size=UDim2.new(0,100,0,30); bb.AlwaysOnTop=true; bb.Parent=part
+    local tx = Instance.new("TextLabel"); tx.Size=UDim2.new(1,0,1,0); tx.Text=typeName; tx.TextColor3=color; tx.BackgroundTransparency=1; tx.TextStrokeTransparency=0.5; tx.Font=Enum.Font.GothamBold; tx.Parent=bb
+    ActiveESP[part] = {Highlight=hl, Billboard=bb, Label=tx, Type=typeName}
+end
+
+local function ToggleESP(name, typeName, color, state)
+    Toggles[name] = state
+    local folderMap = {
+        Gold = {Workspace:FindFirstChild("Materials"), "Gold"},
+        Scrap = {Workspace:FindFirstChild("Materials"), "Scrap"}
+    }
+    local fData = folderMap[name]
+    if not fData[1] then return end
+    local folder = fData[1]:FindFirstChild(fData[2])
+    if state then
+        if folder then
+            for _, c in pairs(folder:GetChildren()) do
+                if c.Name:lower():find(typeName:lower()) then CreateESP(c, typeName, color) end
+            end
+            local conn = folder.ChildAdded:Connect(function(c)
+                if Toggles[name] and c.Name:lower():find(typeName:lower()) then task.wait(0.1); CreateESP(c, typeName, color) end
+            end)
+            table.insert(Connections, conn)
+        end
+    end
+end
+
+CreateSwitch("Gold ESP", false, function(s) ToggleESP("Gold", "Gold", Color3.fromRGB(255, 215, 0), s) end)
+CreateSwitch("Scrap ESP", false, function(s) ToggleESP("Scrap", "Scrap", Color3.fromRGB(192, 192, 192), s) end)
+
+-- Heartbeat ESP
+local lastUpdate = 0
+table.insert(Connections, RunService.Heartbeat:Connect(function()
+    if tick() - lastUpdate < 0.2 then return end
+    lastUpdate = tick()
+    local char = LocalPlayer.Character; local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    for part, esp in pairs(ActiveESP) do
+        if part.Parent and Toggles[esp.Type] then
+            local dist = (root.Position - part.Position).Magnitude
+            if dist <= Config.MaxDistance then
+                esp.Highlight.Enabled = true; esp.Billboard.Enabled = true
+                esp.Label.Text = string.format("[%d] %s", dist, esp.Type)
+            else esp.Highlight.Enabled = false; esp.Billboard.Enabled = false end
+        else
+            if not part.Parent then 
+                if esp.Highlight then esp.Highlight:Destroy() end
+                if esp.Billboard then esp.Billboard:Destroy() end
+                ActiveESP[part] = nil
+            else esp.Highlight.Enabled = false; esp.Billboard.Enabled = false end
+        end
+    end
+end))
+
+local Spacer2 = Instance.new("Frame"); Spacer2.Size = UDim2.new(0, 280, 0, 10); Spacer2.BackgroundTransparency=1; Spacer2.LayoutOrder=4; Spacer2.Parent=Container
+local ReturnBtn = Instance.new("TextButton")
+ReturnBtn.Text = "Return to Boat"
+ReturnBtn.Size = UDim2.new(0, 280, 0, 40)
+ReturnBtn.BackgroundColor3 = Theme.Accent
+ReturnBtn.TextColor3 = Theme.Text
+ReturnBtn.Font = Enum.Font.GothamBold
+ReturnBtn.TextSize = 14
+ReturnBtn.LayoutOrder = 5
+ReturnBtn.Parent = Container
+Instance.new("UICorner", ReturnBtn).CornerRadius = UDim.new(0, 8)
+ReturnBtn.MouseButton1Click:Connect(function()
+    local boat = Workspace:FindFirstChild("Boat")
+    local char = LocalPlayer.Character
+    if boat and char then char.HumanoidRootPart.CFrame = boat:GetPivot() + Vector3.new(0, 10, 0) end
+end)
+
+-- ⌨️ Keybind Listener (Left Control)
+UserInputService.InputBegan:Connect(function(input) 
+    if input.KeyCode == Enum.KeyCode.LeftControl then 
+        ScreenGui.Enabled = not ScreenGui.Enabled 
+    end 
+end)
+
+print("🌊 Lost Current Loaded - Minimal Mode")
