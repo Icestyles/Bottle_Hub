@@ -20,7 +20,7 @@ while not player do task.wait(0.1); player = Players.LocalPlayer end
 -- 🚨 [ความลับของระบบ] 🚨 
 -- เปลี่ยนลิงก์ GAS_URL เป็นของคุณให้เรียบร้อยก่อนนำไป Obfuscate
 local SECRETS = {
-    GAS_URL = "https://script.google.com/macros/s/ใส่_URL_ของคุณตรงนี้/exec",
+    GAS_URL = "https://script.google.com/macros/s/AKfycbwqBhoPBpobkOctEfriGGaWDUFWPw_VJSnB2ecPEmneBj0E2tr88L_rlEjxyvcWBDyt/exec",
     Discord = "https://discord.gg/JbSUQCxW2w"
 }
 
