@@ -1,596 +1,448 @@
 --!nocheck
 --[[
-    BOTTLEHUB LIBRARY V9.2 (Flawless Free Drag & Spaced Layout)
+    BOTTLEHUB - Anime Knockout (V3 - Performance Optimized)
 ]]
 
-local BottleLib = {}
-BottleLib.KeyStatus = { Valid = false, ExpiresAt = nil, IsGlobal = false }
-BottleLib.Connections = {} 
+-- 1. โหลด Library (ต้องเป็นลิงก์ V9.0)
+local LibraryURL = "https://raw.githubusercontent.com/Icestyles/Bottle_Hub/refs/heads/main/GUI_Library"
+local BottleLib = loadstring(game:HttpGet(LibraryURL))()
 
-local CoreGui            = game:GetService("CoreGui")
-local TweenService       = game:GetService("TweenService")
-local UserInputService   = game:GetService("UserInputService")
-local HttpService        = game:GetService("HttpService")
-local Players            = game:GetService("Players")
-local RbxAnalyticsService = game:GetService("RbxAnalyticsService")
-local MarketplaceService = game:GetService("MarketplaceService")
+-- 2. ระบบ Key
+local isVerified = BottleLib:InitKeySystem()
+if not isVerified then return end 
+
+-- ==========================================
+-- 3. โหลด Services & Config
+-- ==========================================
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local VirtualUser = game:GetService("VirtualUser")
+local GuiService = game:GetService("GuiService")
+local TeleportService = game:GetService("TeleportService")
+local HttpService = game:GetService("HttpService")
 
 local player = Players.LocalPlayer
-while not player do task.wait(0.1); player = Players.LocalPlayer end
 
--- 🚨🚨🚨 [ใส่ลิงก์ GAS ของคุณที่นี่] 🚨🚨🚨
-local SECRETS = {
-    GAS_URL = "https://script.google.com/macros/s/AKfycbwqBhoPBpobkOctEfriGGaWDUFWPw_VJSnB2ecPEmneBj0E2tr88L_rlEjxyvcWBDyt/exec",
-    Discord = "https://discord.gg/JbSUQCxW2w"
+local State = {
+    IsRunning = true, AntiIdle = false, AutoReset = false, AutoMinimize = false,
+    AutoKey = false, Key1 = "", Key2 = "", KeyDelay = 1.0,
+    AutoEquip = false, EquipItemName = "", AutoMorph = false, MorphName = "",
+    AutoSlap = false, AutoAimRange = 15, AutoOpenChest = false,
+    AutoHop = false, MaxPlayersHop = 2, TargetPlayersHop = 0,
 }
+local Connections = {}
+local SlapCircle = nil
+local CONFIG_FILE = "BottleHub_Config_" .. tostring(game.PlaceId) .. "_" .. tostring(player.UserId) .. ".json"
 
-BottleLib.CleanUpEvent = Instance.new("BindableEvent")
-BottleLib.CleanUpEvent.Event:Connect(function()
-    for _, conn in ipairs(BottleLib.Connections) do
-        if conn then conn:Disconnect() end
+if isfile and isfile(CONFIG_FILE) and readfile then
+    pcall(function()
+        local data = HttpService:JSONDecode(readfile(CONFIG_FILE))
+        if type(data) == "table" then
+            for k, v in pairs(data) do if State[k] ~= nil then State[k] = v end end
+        end
+    end)
+end
+
+local function SaveConfig()
+    if writefile then pcall(function() writefile(CONFIG_FILE, HttpService:JSONEncode(State)) end) end
+end
+
+-- ==========================================
+-- 4. ระบบ Data Fetcher & Spawn Cache (Optimized)
+-- ==========================================
+local unlockedCharacters = {"Itadori"} 
+local inventoryItems = {"(No items found)"}
+
+local function RefreshDataLists()
+    pcall(function()
+        local scrollFrame = player.PlayerGui:FindFirstChild("Tranformar") and player.PlayerGui.Tranformar:FindFirstChild("TrocarPersonagem") and player.PlayerGui.Tranformar.TrocarPersonagem:FindFirstChild("ScrollingFrame")
+        if scrollFrame then
+            table.clear(unlockedCharacters)
+            for _, btn in ipairs(scrollFrame:GetChildren()) do
+                if btn:IsA("ImageButton") and btn.Visible then table.insert(unlockedCharacters, btn.Name) end
+            end
+            if #unlockedCharacters == 0 then table.insert(unlockedCharacters, "Itadori") end
+            table.sort(unlockedCharacters)
+        end
+    end)
+    pcall(function()
+        local uFolder = player:FindFirstChild("UnlockedItems")
+        if uFolder and #uFolder:GetChildren() > 0 then
+            table.clear(inventoryItems)
+            for _, v in ipairs(uFolder:GetChildren()) do table.insert(inventoryItems, v.Name) end
+        end
+    end)
+end
+
+task.spawn(function()
+    while State.IsRunning do
+        RefreshDataLists()
+        task.wait(10)
     end
-    BottleLib.Connections = {}
 end)
 
--- ============================================================
--- 🔐 1. KEY SYSTEM MODULE
--- ============================================================
-function BottleLib:InitKeySystem()
-    local KEY_STORAGE_FILE = "BottleHub_KeyStorage.json"
-
-    local function GetHWID()
-        if type(gethwid) == "function" then
-            local ok, hwid = pcall(gethwid)
-            if ok and hwid and hwid ~= "" then return hwid end
-        end
-        local ok, id = pcall(function() return RbxAnalyticsService:GetClientId() end)
-        if ok and id and id ~= "" then return id end
-        local HWID_FILE = "BottleHub_LocalHWID.txt"
-        if isfile and isfile(HWID_FILE) and readfile then
-            local readOk, savedHwid = pcall(readfile, HWID_FILE)
-            if readOk and type(savedHwid) == "string" and savedHwid ~= "" then return savedHwid end
-        end
-        local newHwid = "FALLBACK-" .. HttpService:GenerateGUID(false)
-        if writefile then pcall(writefile, HWID_FILE, newHwid) end
-        return newHwid
+-- 🔴 [Fix 1: SpawnLocation Caching System]
+local cachedSpawnLocations = {}
+local function RebuildSpawnCache()
+    table.clear(cachedSpawnLocations)
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("SpawnLocation") then table.insert(cachedSpawnLocations, obj) end
     end
+end
+RebuildSpawnCache()
+table.insert(Connections, workspace.DescendantAdded:Connect(function(obj)
+    if obj:IsA("SpawnLocation") then table.insert(cachedSpawnLocations, obj) end
+end))
 
-    local function MakeRequest(url)
-        local fn = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
-        if not fn then return nil, "Executor not supported" end
-        local ok, res = pcall(function() return fn({ Url = url, Method = "GET" }) end)
-        if not ok then return nil, "HTTP Call Failed" end
-        return res
+local function IsSafeZone(pos)
+    -- เช็คจาก Cache ล้วนๆ (กินทรัพยากรน้อยมาก)
+    for _, obj in ipairs(cachedSpawnLocations) do
+        if obj and obj.Parent and (pos - obj.Position).Magnitude < 40 then return true end
     end
-
-    local function CheckCloudVIP()
-        local url = string.format("%s?action=check_vip&userId=%s", SECRETS.GAS_URL, tostring(player.UserId))
-        local res = MakeRequest(url)
-        if res and res.Body then
-            local ok, data = pcall(function() return HttpService:JSONDecode(res.Body) end)
-            if ok and type(data) == "table" and data.vip == true then return true end
-        end
-        return false
+    -- Fallback กรณีไม่มี SpawnLocation แต่มี Baseplate
+    local bp = workspace:FindFirstChild("Spawn") and workspace.Spawn:FindFirstChild("Baseplate") 
+            or workspace:FindFirstChild("Baseplate") or workspace:FindFirstChild("SpawnPlate")
+    if bp and bp:IsA("BasePart") then
+        local r = bp.CFrame:PointToObjectSpace(pos); local h = bp.Size / 2
+        if math.abs(r.X) <= h.X+2 and math.abs(r.Z) <= h.Z+2 and r.Y >= -(h.Y+10) and r.Y <= (h.Y+100) then return true end
     end
-
-    local function VerifyKeyWithServer(key)
-        local url = string.format("%s?action=verify_key&key=%s&hwid=%s&placeId=%s", SECRETS.GAS_URL, key, GetHWID(), tostring(game.PlaceId))
-        local res, err = MakeRequest(url)
-        if res and res.Body then
-            local ok, data = pcall(function() return HttpService:JSONDecode(res.Body) end)
-            if ok and type(data) == "table" then
-                return data.valid == true, data.expired == true, data.message or "", data.expirationTime or nil, data.isGlobal == true
-            end
-            return false, false, "Invalid JSON", nil, false
-        end
-        return false, false, err or "Timeout", nil, false
-    end
-
-    local function LoadStoredKey()
-        if not isfile or not readfile then return nil end
-        if not isfile(KEY_STORAGE_FILE) then return nil end
-        local ok, raw = pcall(readfile, KEY_STORAGE_FILE)
-        local ok2, d = pcall(function() return HttpService:JSONDecode(raw) end)
-        if ok2 and type(d) == "table" and d.key and d.hwid then return d end
-        return nil
-    end
-
-    local function SaveKey(key, expTime)
-        if not writefile then return false end
-        local d = { key = key, hwid = GetHWID(), timestamp = os.time(), expiresAt = expTime }
-        pcall(function() writefile(KEY_STORAGE_FILE, HttpService:JSONEncode(d)) end)
-    end
-
-    local function RemoveStoredKey() pcall(function() delfile(KEY_STORAGE_FILE) end) end
-
-    if CheckCloudVIP() then
-        BottleLib.KeyStatus = { Valid = true, ExpiresAt = nil, IsGlobal = true }
-        print("[BottleHub] VIP Access Granted via Cloud!")
-        return true
-    end
-
-    local d = LoadStoredKey()
-    if d and d.hwid == GetHWID() then
-        if d.expiresAt and type(d.expiresAt) == "number" and os.time() >= d.expiresAt then
-            RemoveStoredKey()
-            player:Kick("BottleHub: Your saved key has expired.")
-            return false
-        end
-        local isValid, isExpired, _, expTime, isGlobal = VerifyKeyWithServer(d.key)
-        if isValid and not isExpired then
-            BottleLib.KeyStatus = { Valid = true, ExpiresAt = tonumber(expTime), IsGlobal = isGlobal }
-            return true
-        end
-        RemoveStoredKey()
-        if isExpired then player:Kick("BottleHub: Key Expired"); return false end
-    end
-
-    local KeyVerified = false
-    local VerifyEvent = Instance.new("BindableEvent")
-
-    if CoreGui:FindFirstChild("BOTTLEHUB_KEY_SYSTEM") then CoreGui.BOTTLEHUB_KEY_SYSTEM:Destroy() end
-    local KeyScreen = Instance.new("ScreenGui"); KeyScreen.Name = "BOTTLEHUB_KEY_SYSTEM"; KeyScreen.Parent = (gethui and gethui()) or CoreGui
-
-    local MF = Instance.new("Frame", KeyScreen)
-    MF.Size = UDim2.new(0, 380, 0, 200); MF.Position = UDim2.new(0.5, -190, 0.5, -100)
-    MF.BackgroundColor3 = Color3.fromRGB(12,12,12); MF.Active = true; MF.Draggable = true
-    Instance.new("UICorner", MF).CornerRadius = UDim.new(0, 12); Instance.new("UIStroke", MF).Color = Color3.fromRGB(35,35,35)
-
-    TweenService:Create(MF, TweenInfo.new(0.45, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
-        Size = UDim2.new(0, 400, 0, 220), Position = UDim2.new(0.5, -200, 0.5, -110)
-    }):Play()
-
-    local CloseBtn = Instance.new("TextButton", MF)
-    CloseBtn.Size = UDim2.new(0,14,0,14); CloseBtn.Position = UDim2.new(0,15,0,15); CloseBtn.BackgroundColor3 = Color3.fromRGB(255,75,75); CloseBtn.Text = ""
-    Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(1,0); CloseBtn.MouseButton1Click:Connect(function() KeyScreen:Destroy() end)
-
-    local Title = Instance.new("TextLabel", MF)
-    Title.Text = 'Bottle<font color="#e60852">Hub</font>'; Title.RichText = true; Title.Size = UDim2.new(1,-60,0,20); Title.Position = UDim2.new(0,30,0,12)
-    Title.BackgroundTransparency = 1; Title.TextColor3 = Color3.fromRGB(255,255,255); Title.Font = Enum.Font.GothamBold; Title.TextSize = 16
-
-    local InputBg = Instance.new("Frame", MF)
-    InputBg.Size = UDim2.new(1,-50,0,45); InputBg.Position = UDim2.new(0,25,0,65); InputBg.BackgroundColor3 = Color3.fromRGB(20,20,20)
-    Instance.new("UICorner", InputBg).CornerRadius = UDim.new(0,8); local InputStr = Instance.new("UIStroke", InputBg); InputStr.Color = Color3.fromRGB(40,40,40); InputStr.Thickness = 1
-
-    local InputBox = Instance.new("TextBox", InputBg)
-    InputBox.Size = UDim2.new(1,-24,1,0); InputBox.Position = UDim2.new(0,12,0,0); InputBox.BackgroundTransparency = 1; InputBox.Text = ""
-    InputBox.ClearTextOnFocus = false; InputBox.PlaceholderText = "Enter License Key"; InputBox.TextColor3 = Color3.fromRGB(240,240,240); InputBox.Font = Enum.Font.GothamMedium; InputBox.TextSize = 14
-    
-    InputBox.Focused:Connect(function() TweenService:Create(InputStr,TweenInfo.new(0.3),{Color=Color3.fromHex("#e60852")}):Play(); TweenService:Create(InputBg,TweenInfo.new(0.3),{BackgroundColor3=Color3.fromRGB(25,25,25)}):Play() end)
-    InputBox.FocusLost:Connect(function() TweenService:Create(InputStr,TweenInfo.new(0.3),{Color=Color3.fromRGB(40,40,40)}):Play(); TweenService:Create(InputBg,TweenInfo.new(0.3),{BackgroundColor3=Color3.fromRGB(20,20,20)}):Play() end)
-
-    local VerifyBtn = Instance.new("TextButton", MF)
-    VerifyBtn.Size = UDim2.new(1,-50,0,40); VerifyBtn.Position = UDim2.new(0,25,0,125); VerifyBtn.BackgroundColor3 = Color3.fromHex("#e60852")
-    VerifyBtn.Text = "Verify"; VerifyBtn.TextColor3 = Color3.fromRGB(255,255,255); VerifyBtn.Font = Enum.Font.GothamBold; VerifyBtn.TextSize = 14
-    Instance.new("UICorner", VerifyBtn).CornerRadius = UDim.new(0,8)
-
-    local GetKeyBtn = Instance.new("TextButton", MF)
-    GetKeyBtn.Text = "Get Key"; GetKeyBtn.Size = UDim2.new(1,0,0,20); GetKeyBtn.Position = UDim2.new(0,0,1,-25); GetKeyBtn.BackgroundTransparency = 1
-    GetKeyBtn.TextColor3 = Color3.fromRGB(100,100,100); GetKeyBtn.Font = Enum.Font.Gotham; GetKeyBtn.TextSize = 12
-    GetKeyBtn.MouseButton1Click:Connect(function() 
-        pcall(function() setclipboard(SECRETS.Discord) end)
-        if GetKeyBtn and GetKeyBtn.Parent then
-            GetKeyBtn.Text = "Copied!"
-            task.wait(1.5)
-            if GetKeyBtn and GetKeyBtn.Parent then GetKeyBtn.Text = "Get Key" end
-        end
-    end)
-
-    local function ShakeMF()
-        local orig = MF.Position
-        for _ = 1, 4 do MF.Position = orig + UDim2.new(0, 4, 0, 0); task.wait(0.05); MF.Position = orig - UDim2.new(0, 4, 0, 0); task.wait(0.05) end
-        MF.Position = orig
-    end
-
-    VerifyBtn.MouseButton1Click:Connect(function()
-        local input = string.upper(InputBox.Text)
-        if input == "" then return end
-        VerifyBtn.Text = "Checking..."
-        local isValid, isExpired, _, expTime, isGlobal = VerifyKeyWithServer(input)
-        if isValid and not isExpired then
-            if not isGlobal then SaveKey(input, expTime) end
-            BottleLib.KeyStatus = { Valid = true, ExpiresAt = tonumber(expTime), IsGlobal = isGlobal }
-            VerifyBtn.Text = "Success!"; VerifyBtn.BackgroundColor3 = Color3.fromRGB(46,204,113)
-            task.wait(0.5); KeyScreen:Destroy(); KeyVerified = true; VerifyEvent:Fire()
-        elseif isExpired then
-            RemoveStoredKey()
-            VerifyBtn.Text = "Key Expired"; VerifyBtn.BackgroundColor3 = Color3.fromRGB(231,76,60); task.spawn(ShakeMF)
-            task.delay(1.5, function() if player then player:Kick(("BottleHub: %s had expired"):format(input)) end end)
-        else
-            VerifyBtn.Text = "Invalid Key"; VerifyBtn.BackgroundColor3 = Color3.fromRGB(231,76,60)
-            task.spawn(ShakeMF); task.wait(1.5); VerifyBtn.Text = "Verify"; VerifyBtn.BackgroundColor3 = Color3.fromHex("#e60852")
-        end
-    end)
-
-    VerifyEvent.Event:Wait()
-    return true
+    return false
 end
 
--- ============================================================
--- 🎨 2. GUI SYSTEM MODULE
--- ============================================================
-function BottleLib:CreateWindow(WindowConfig)
-    BottleLib.CleanUpEvent:Fire()
+-- ==========================================
+-- 5. สร้างหน้าต่าง GUI
+-- ==========================================
+local Window = BottleLib:CreateWindow({
+    Name = "BOTTLEHUB | Anime Knockout",
+    Color = Color3.fromHex("#e60852"),
+    AutoMinimize = State.AutoMinimize
+})
 
-    local HubName = WindowConfig.Name or "BOTTLEHUB"
-    local ThemeColor = WindowConfig.Color or Color3.fromHex("#e60852")
+BottleLib.CleanUpEvent.Event:Connect(function()
+    State.IsRunning = false
+    for _, c in pairs(Connections) do if c then c:Disconnect() end end
+    if SlapCircle then SlapCircle:Destroy() end
+    print("[BottleHub] Script Stopped Successfully!")
+end)
 
-    local T = {
-        Main = Color3.fromRGB(10, 10, 10), Sidebar = Color3.fromRGB(15, 15, 15), Content = Color3.fromRGB(6, 6, 6),
-        Accent = ThemeColor, Text = Color3.fromRGB(255, 255, 255), SubText = Color3.fromRGB(180, 180, 180),
-        Element = Color3.fromRGB(28, 28, 28), ElemDark = Color3.fromRGB(18, 18, 18),
-        Green = Color3.fromRGB(46, 204, 113), Red = Color3.fromRGB(231, 76, 60), Yellow = Color3.fromRGB(255, 200, 50)
-    }
+local MainTab = Window:CreateTab("⚔️ Main")
+local CfgTab  = Window:CreateTab("⚙️ Config")
 
-    if CoreGui:FindFirstChild("BOTTLEHUB_MAIN") then CoreGui.BOTTLEHUB_MAIN:Destroy() end
-    local ScreenGui = Instance.new("ScreenGui"); ScreenGui.Name = "BOTTLEHUB_MAIN"; ScreenGui.Parent = (gethui and gethui()) or CoreGui
-
-    local MainFrame = Instance.new("Frame", ScreenGui)
-    MainFrame.Size = UDim2.new(0, 600, 0, 480); MainFrame.Position = UDim2.new(0.5, -300, 0.5, -240)
-    MainFrame.BackgroundColor3 = T.Main; MainFrame.Active = true
-    Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 8)
-    local MFStroke = Instance.new("UIStroke", MainFrame); MFStroke.Color = T.Accent; MFStroke.Thickness = 1.5
-
-    TweenService:Create(MainFrame, TweenInfo.new(0.5, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
-        Size = UDim2.new(0, 660, 0, 520), Position = UDim2.new(0.5, -330, 0.5, -260)
-    }):Play()
-
-    -- 🔴 [Fix: Flawless Free Drag] ใช้ TextButton ล่องหนเป็นตัวรับ Input ลาก (ไม่บังปุ่มข้างใน)
-    local DragHandle = Instance.new("TextButton", MainFrame)
-    DragHandle.Name = "DragHandle"
-    DragHandle.Size = UDim2.new(1, -60, 0, 40) -- คลุมด้านบน 40px เว้นปุ่มซ้าย 60px
-    DragHandle.Position = UDim2.new(0, 60, 0, 0)
-    DragHandle.BackgroundTransparency = 1
-    DragHandle.Text = ""
-    DragHandle.ZIndex = 50 -- ให้อยู่เหนือสุด
-
-    local dragging, dragInput, dragStart, startPos
-    DragHandle.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true; dragStart = input.Position; startPos = MainFrame.Position
-        end
-    end)
-    DragHandle.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = false
-        end
-    end)
-    DragHandle.InputChanged:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-            dragInput = input
-        end
-    end)
-    
-    local dragConn = UserInputService.InputChanged:Connect(function(input)
-        if input == dragInput and dragging then
-            local delta = input.Position - dragStart
-            -- ลากอิสระทะลุจอได้
-            MainFrame.Position = UDim2.new(
-                startPos.X.Scale, startPos.X.Offset + delta.X,
-                startPos.Y.Scale, startPos.Y.Offset + delta.Y
-            )
-        end
-    end)
-    table.insert(BottleLib.Connections, dragConn)
-    
-    -- ป้องกันค้างเวลาสลับหน้าจอ (Alt+Tab)
-    local ok, wfr = pcall(function() return UserInputService.WindowFocusReleased end)
-    if ok and wfr then 
-        table.insert(BottleLib.Connections, wfr:Connect(function() dragging = false end)) 
+-- 🟢 [Fix 7: Safe Status Setter]
+MainTab:CreateSection("SYSTEM STATUS")
+local StatusMonitor = MainTab:CreateLabel("Status: Idle")
+local function SafeSetStatus(text)
+    if State.IsRunning and StatusMonitor then
+        pcall(function() StatusMonitor:SetText(text) end)
     end
+end
 
-    local MiniButton = Instance.new("ImageButton", ScreenGui)
-    MiniButton.Size = UDim2.new(0, 42, 0, 42); MiniButton.Position = UDim2.new(0, 10, 0, 10); MiniButton.Image = "rbxassetid://78690743314126"
-    MiniButton.BackgroundColor3 = T.Main; MiniButton.Visible = false
-    Instance.new("UICorner", MiniButton).CornerRadius = UDim.new(0, 8); Instance.new("UIStroke", MiniButton).Color = T.Accent
+MainTab:CreateSection("ATTACK & FARM")
+MainTab:CreateToggle("Auto Slap (hit ≤ 8 studs)", State.AutoSlap, function(v) State.AutoSlap = v end)
+MainTab:CreateSlider("Auto Aim Range", 1, 100, State.AutoAimRange, function(v) State.AutoAimRange = v; return v.." studs" end)
+MainTab:CreateToggle("Auto Open Chest", State.AutoOpenChest, function(v) State.AutoOpenChest = v end)
 
-    local function ToggleMinimize(hide) MainFrame.Visible = not hide; MiniButton.Visible = hide end
-    MiniButton.MouseButton1Click:Connect(function() ToggleMinimize(false) end)
-    local minConn = UserInputService.InputBegan:Connect(function(i, gp)
-        if not gp and i.KeyCode == Enum.KeyCode.LeftControl then ToggleMinimize(MainFrame.Visible) end
-    end)
-    table.insert(BottleLib.Connections, minConn)
+MainTab:CreateSection("AUTO SKILL")
+MainTab:CreateToggle("Auto Skill", State.AutoKey, function(v) State.AutoKey = v end)
+MainTab:CreateDualKeyRow("Skill 1:", "Skill 2:", function(v) State.Key1 = v end, function(v) State.Key2 = v end)
+MainTab:CreateSlider("Skill Delay", 0, 100, State.KeyDelay*10, function(v) State.KeyDelay = v/10; return ("%.1f sec"):format(State.KeyDelay) end)
 
-    local Sidebar = Instance.new("Frame", MainFrame)
-    Sidebar.Size = UDim2.new(0, 195, 1, 0); Sidebar.BackgroundColor3 = T.Sidebar; Sidebar.BorderSizePixel = 0
-    Instance.new("UICorner", Sidebar).CornerRadius = UDim.new(0, 8)
+MainTab:CreateSection("AUTO MORPH")
+MainTab:CreateToggle("Auto Morph", State.AutoMorph, function(v) State.AutoMorph = v end)
+MainTab:CreateDropdown("Search Character...", unlockedCharacters, function(v) State.MorphName = v end)
+
+MainTab:CreateSection("AUTO EQUIP")
+MainTab:CreateToggle("Auto Equip", State.AutoEquip, function(v) State.AutoEquip = v end)
+MainTab:CreateDropdown("Select Weapon...", inventoryItems, function(v) State.EquipItemName = v end)
+
+CfgTab:CreateSection("PROTECTION")
+CfgTab:CreateToggle("Anti-AFK", State.AntiIdle, function(v) State.AntiIdle = v end)
+CfgTab:CreateToggle("Auto Reset", State.AutoReset, function(v) State.AutoReset = v end)
+CfgTab:CreateToggle("Auto Minimize", State.AutoMinimize, function(v) State.AutoMinimize = v end)
+
+local function ExecuteServerHop(targetCount)
+    SafeSetStatus("Status: Searching for server...")
+    targetCount = tonumber(targetCount) or 0
+    local cursor, bestServer, lowestPlayers = "", nil, math.huge
     
-    local SbCover = Instance.new("Frame", Sidebar)
-    SbCover.Size = UDim2.new(0, 10, 1, 0); SbCover.Position = UDim2.new(1, -10, 0, 0); SbCover.BackgroundColor3 = T.Sidebar; SbCover.BorderSizePixel = 0
-
-    local function MakeDot(xOff, color, label)
-        local b = Instance.new("TextButton", Sidebar)
-        b.Size = UDim2.new(0, 13, 0, 13); b.Position = UDim2.new(0, xOff, 0, 14); b.BackgroundColor3 = color; b.Text = ""; b.AutoButtonColor = false
-        Instance.new("UICorner", b).CornerRadius = UDim.new(1, 0)
-        local l = Instance.new("TextLabel", b)
-        l.Size = UDim2.new(1,0,1,0); l.BackgroundTransparency = 1; l.Text = label; l.TextColor3 = Color3.new(1,1,1); l.Font = Enum.Font.GothamBold; l.TextSize = 9
-        return b
-    end
-    local RedDot = MakeDot(14, Color3.fromRGB(255, 69, 58), "X")
-    local YellowDot = MakeDot(33, Color3.fromRGB(255, 159, 10), "-")
-
-    RedDot.MouseButton1Click:Connect(function() BottleLib.CleanUpEvent:Fire(); ScreenGui:Destroy() end)
-    YellowDot.MouseButton1Click:Connect(function() ToggleMinimize(true) end)
-
-    local SbTitle = Instance.new("TextLabel", Sidebar)
-    SbTitle.Text = HubName; SbTitle.Size = UDim2.new(1,0,0,36); SbTitle.Position = UDim2.new(0,-6,0,36); SbTitle.BackgroundTransparency = 1; SbTitle.TextColor3 = T.Accent; SbTitle.Font = Enum.Font.GothamBlack; SbTitle.TextSize = 15
-
-    -- 🔴 [Fix: Spaced Layout] จัดระยะขอบรอบ Content 12px ให้โปร่งสบายตา
-    local ContentContainer = Instance.new("Frame", MainFrame)
-    ContentContainer.Size = UDim2.new(0, 441, 1, -24)  -- ความกว้าง 441 (660-195-12-12) หักขอบบนล่าง 24px
-    ContentContainer.Position = UDim2.new(0, 207, 0, 12) -- ขยับออกมาจาก Sidebar 12px และบน 12px
-    ContentContainer.BackgroundColor3 = T.Content; ContentContainer.BorderSizePixel = 0
-    Instance.new("UICorner", ContentContainer).CornerRadius = UDim.new(0, 6)
-
-    local WindowObj = {}
-    WindowObj.ActiveDropdown = nil 
-
-    local GlobalOverlayClose = Instance.new("TextButton", ScreenGui)
-    GlobalOverlayClose.Size = UDim2.new(1, 0, 1, 0); GlobalOverlayClose.BackgroundTransparency = 1; GlobalOverlayClose.Text = ""; GlobalOverlayClose.ZIndex = 79; GlobalOverlayClose.Visible = false
-    
-    GlobalOverlayClose.MouseButton1Click:Connect(function()
-        if WindowObj.ActiveDropdown then
-            WindowObj.ActiveDropdown.Visible = false
-            WindowObj.ActiveDropdown = nil
-        end
-        GlobalOverlayClose.Visible = false
-    end)
-
-    local PROFILE_H = 135 
-    local TabScrollContainer = Instance.new("ScrollingFrame", Sidebar)
-    TabScrollContainer.Size = UDim2.new(1, 0, 1, -(PROFILE_H + 40)); TabScrollContainer.Position = UDim2.new(0, 0, 0, 40); TabScrollContainer.BackgroundTransparency = 1; TabScrollContainer.ScrollBarThickness = 0; TabScrollContainer.BorderSizePixel = 0
-    
-    local TabListLayout = Instance.new("UIListLayout", TabScrollContainer)
-    TabListLayout.SortOrder = Enum.SortOrder.LayoutOrder; TabListLayout.Padding = UDim.new(0, 5)
-    TabListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-    local TabPad = Instance.new("UIPadding", TabScrollContainer)
-    TabPad.PaddingTop = UDim.new(0, 10); TabPad.PaddingBottom = UDim.new(0, 10)
-    
-    TabListLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-        TabScrollContainer.CanvasSize = UDim2.new(0, 0, 0, TabListLayout.AbsoluteContentSize.Y + 20)
-    end)
-
-    local ProfileCard = Instance.new("TextButton", Sidebar)
-    ProfileCard.Size = UDim2.new(0, 181, 0, PROFILE_H); ProfileCard.Position = UDim2.new(0, 7, 1, -(PROFILE_H + 10)); ProfileCard.BackgroundColor3 = Color3.fromRGB(20, 20, 20); ProfileCard.Text = ""; ProfileCard.AutoButtonColor = false
-    Instance.new("UICorner", ProfileCard).CornerRadius = UDim.new(0, 8)
-    local PCStroke = Instance.new("UIStroke", ProfileCard); PCStroke.Color = Color3.fromRGB(42,42,42)
-
-    local AvatarImg = Instance.new("ImageLabel", ProfileCard)
-    AvatarImg.Size = UDim2.new(0, 46, 0, 46); AvatarImg.Position = UDim2.new(0, 8, 0, 8); AvatarImg.BackgroundColor3 = Color3.fromRGB(35,35,35)
-    Instance.new("UICorner", AvatarImg).CornerRadius = UDim.new(1, 0)
-    task.spawn(function() local ok, img = pcall(function() return Players:GetUserThumbnailAsync(player.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size420x420) end); if ok then AvatarImg.Image = img end end)
-
-    local InfoFrame = Instance.new("Frame", ProfileCard)
-    InfoFrame.Size = UDim2.new(1, -68, 0, 46); InfoFrame.Position = UDim2.new(0, 62, 0, 8); InfoFrame.BackgroundTransparency = 1
-    Instance.new("UIListLayout", InfoFrame).Padding = UDim.new(0, 2)
-
-    local function CreateMarqueeLabel(parent, text, col, fnt, sz, allowScroll)
-        local container = Instance.new("Frame", parent)
-        container.Size = UDim2.new(1, 0, 0, sz + 4); container.BackgroundTransparency = 1; container.ClipsDescendants = true
-        local l = Instance.new("TextLabel", container)
-        l.Size = UDim2.new(1, 0, 1, 0); l.BackgroundTransparency = 1; l.Text = text; l.TextColor3 = col; l.Font = fnt; l.TextSize = sz; l.TextXAlignment = Enum.TextXAlignment.Left
-        if allowScroll then
-            task.spawn(function()
-                task.wait(0.1)
-                if l.TextBounds.X > container.AbsoluteSize.X then
-                    l.Size = UDim2.new(0, l.TextBounds.X, 1, 0)
-                    local dist = l.TextBounds.X - container.AbsoluteSize.X + 10
-                    while container and container.Parent do 
-                        task.wait(2)
-                        if not container or not container.Parent then break end
-                        TweenService:Create(l, TweenInfo.new(dist/15, Enum.EasingStyle.Linear), {Position = UDim2.new(0, -dist, 0, 0)}):Play()
-                        task.wait(dist/15 + 1)
-                        if l and l.Parent then l.Position = UDim2.new(0, 0, 0, 0) end
-                    end
-                end
-            end)
-        else l.TextTruncate = Enum.TextTruncate.AtEnd end
-        return l
-    end
-
-    CreateMarqueeLabel(InfoFrame, player.DisplayName, T.Text, Enum.Font.GothamBold, 12, true)
-    CreateMarqueeLabel(InfoFrame, "@"..player.Name, T.SubText, Enum.Font.Gotham, 10, false)
-
-    local BottomInfoFrame = Instance.new("Frame", ProfileCard)
-    BottomInfoFrame.Size = UDim2.new(1, -16, 0, 50); BottomInfoFrame.Position = UDim2.new(0, 8, 0, 60); BottomInfoFrame.BackgroundTransparency = 1
-    Instance.new("UIListLayout", BottomInfoFrame).Padding = UDim.new(0, 2)
-
-    local GameLbl = CreateMarqueeLabel(BottomInfoFrame, "🎮  Loading...", T.SubText, Enum.Font.Gotham, 10, true)
-    task.spawn(function() local ok, info = pcall(function() return MarketplaceService:GetProductInfo(game.PlaceId) end); GameLbl.Text = "🎮  " .. (ok and info.Name or game.Name) end)
-
-    local KeyContainer = Instance.new("Frame", BottomInfoFrame)
-    KeyContainer.LayoutOrder = 2; KeyContainer.Size = UDim2.new(1, 0, 0, 14); KeyContainer.BackgroundTransparency = 1
-    
-    local KeyLbl = Instance.new("TextLabel", KeyContainer)
-    KeyLbl.Size = UDim2.new(1, 0, 1, 0); KeyLbl.BackgroundTransparency = 1; KeyLbl.Font = Enum.Font.Gotham; KeyLbl.TextSize = 10; KeyLbl.TextXAlignment = Enum.TextXAlignment.Left; KeyLbl.TextWrapped = true; KeyLbl.TextYAlignment = Enum.TextYAlignment.Center
-
-    task.spawn(function()
-        while KeyContainer and KeyContainer.Parent do
-            if BottleLib.KeyStatus.IsGlobal then
-                KeyLbl.Text = "🔑  Key: Bottle is kind\nbeyond word!!\nI really Love him"
-                KeyLbl.TextColor3 = T.Accent; KeyContainer.Size = UDim2.new(1, 0, 0, 40); KeyLbl.TextYAlignment = Enum.TextYAlignment.Top
-            elseif BottleLib.KeyStatus.ExpiresAt then
-                KeyContainer.Size = UDim2.new(1, 0, 0, 14); KeyLbl.TextYAlignment = Enum.TextYAlignment.Center
-                local rem = BottleLib.KeyStatus.ExpiresAt - os.time()
-                if rem <= 0 then KeyLbl.Text = "Key Duration : Expired"; KeyLbl.TextColor3 = T.Red
-                elseif rem >= 86400 then KeyLbl.Text = string.format("Key Duration : %d Days", math.floor(rem/86400)); KeyLbl.TextColor3 = T.Accent
-                else local h = math.floor(rem / 3600); local m = math.floor((rem % 3600) / 60); local s = rem % 60; KeyLbl.Text = string.format("Key Duration : %02d:%02d:%02d", h, m, s); KeyLbl.TextColor3 = (rem < 3600) and T.Red or T.Yellow end
-            else KeyContainer.Size = UDim2.new(1, 0, 0, 14); KeyLbl.TextYAlignment = Enum.TextYAlignment.Center; KeyLbl.Text = "Key Duration : N/A"; KeyLbl.TextColor3 = T.SubText end
-            task.wait(1)
-        end
-    end)
-
-    local DiscordLbl = Instance.new("TextLabel", ProfileCard)
-    DiscordLbl.Size = UDim2.new(1, 0, 0, 14); DiscordLbl.Position = UDim2.new(0, 0, 1, -16); DiscordLbl.BackgroundTransparency = 1
-    DiscordLbl.Text = "📣 Join our Discord!"; DiscordLbl.TextColor3 = Color3.fromRGB(120, 120, 255); DiscordLbl.Font = Enum.Font.GothamMedium; DiscordLbl.TextSize = 9
-    
-    ProfileCard.MouseButton1Click:Connect(function() 
-        pcall(function() setclipboard(SECRETS.Discord) end)
-        if DiscordLbl and DiscordLbl.Parent then
-            DiscordLbl.Text = "✅ Copied!"
-            DiscordLbl.TextColor3 = T.Green
-            task.wait(1.5)
-            if DiscordLbl and DiscordLbl.Parent then
-                DiscordLbl.Text = "📣 Join our Discord!"
-                DiscordLbl.TextColor3 = Color3.fromRGB(120, 120, 255) 
-            end
-        end
-    end)
-
-    local tabList = {}; local currentTab = nil
-
-    function WindowObj:CreateTab(TabName)
-        local tabBtn = Instance.new("TextButton", TabScrollContainer)
-        tabBtn.Size = UDim2.new(0.87, 0, 0, 33); tabBtn.BackgroundColor3 = T.Sidebar; tabBtn.Text = TabName; tabBtn.TextColor3 = T.SubText; tabBtn.Font = Enum.Font.GothamBold; tabBtn.TextSize = 12; tabBtn.AutoButtonColor = false
-        Instance.new("UICorner", tabBtn).CornerRadius = UDim.new(0, 4)
-
-        tabBtn.MouseEnter:Connect(function() if currentTab and currentTab.Btn ~= tabBtn then TweenService:Create(tabBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(20,20,20)}):Play() end end)
-        tabBtn.MouseLeave:Connect(function() if currentTab and currentTab.Btn ~= tabBtn then TweenService:Create(tabBtn, TweenInfo.new(0.2), {BackgroundColor3 = T.Sidebar}):Play() end end)
-
-        local line = Instance.new("Frame", tabBtn)
-        line.Size = UDim2.new(0, 3, 0.6, 0); line.Position = UDim2.new(0, 0, 0.2, 0); line.BackgroundColor3 = T.Accent; line.BackgroundTransparency = 1
-        Instance.new("UICorner", line).CornerRadius = UDim.new(1, 0)
-
-        local scroll = Instance.new("ScrollingFrame", ContentContainer)
-        scroll.Size = UDim2.new(1, 0, 1, 0); scroll.Position = UDim2.new(0, 0, 0, 0)
-        scroll.BackgroundTransparency = 1; scroll.ScrollBarThickness = 2; scroll.ScrollBarImageColor3 = T.Accent; scroll.BorderSizePixel = 0; scroll.Visible = false
+    while cursor ~= nil and not bestServer and State.IsRunning do
+        local url = ("https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Asc&limit=100"):format(game.PlaceId)
+        if cursor ~= "" then url = url .. "&cursor=" .. cursor end
+        local ok, raw = pcall(function() return game:HttpGet(url) end)
         
-        -- 🔴 [Fix: Spaced Layout] เพิ่ม Padding ภายในเนื้อหาแต่ละแท็บให้สวยงาม
-        local layout = Instance.new("UIListLayout", scroll); layout.SortOrder = Enum.SortOrder.LayoutOrder; layout.Padding = UDim.new(0, 8)
-        local contentPad = Instance.new("UIPadding", scroll)
-        contentPad.PaddingTop = UDim.new(0, 10); contentPad.PaddingBottom = UDim.new(0, 10)
-        contentPad.PaddingLeft = UDim.new(0, 15); contentPad.PaddingRight = UDim.new(0, 15)
-
-        layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function() scroll.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 20) end)
-
-        tabBtn.MouseButton1Click:Connect(function()
-            if currentTab then TweenService:Create(currentTab.Btn, TweenInfo.new(0.18), {BackgroundColor3 = T.Sidebar, TextColor3 = T.SubText}):Play(); TweenService:Create(currentTab.Line, TweenInfo.new(0.18), {BackgroundTransparency = 1}):Play(); currentTab.Frame.Visible = false end
-            currentTab = {Btn = tabBtn, Frame = scroll, Line = line}
-            TweenService:Create(tabBtn, TweenInfo.new(0.18), {BackgroundColor3 = Color3.fromRGB(26,26,26), TextColor3 = T.Text}):Play(); TweenService:Create(line, TweenInfo.new(0.18), {BackgroundTransparency = 0}):Play(); scroll.Visible = true
-            if WindowObj.ActiveDropdown then WindowObj.ActiveDropdown.Visible = false; WindowObj.ActiveDropdown = nil; GlobalOverlayClose.Visible = false end
-        end)
-
-        table.insert(tabList, {Btn = tabBtn, Frame = scroll, Line = line})
-        if #tabList == 1 then tabBtn.BackgroundColor3 = Color3.fromRGB(26,26,26); tabBtn.TextColor3 = T.Text; line.BackgroundTransparency = 0; scroll.Visible = true; currentTab = {Btn = tabBtn, Frame = scroll, Line = line} end
-
-        local TabObj = {}
-        function TabObj:CreateSection(text)
-            local l = Instance.new("TextLabel", scroll)
-            l.Size = UDim2.new(1, 0, 0, 22); l.BackgroundTransparency = 1; l.Text = text; l.TextColor3 = T.Accent; l.Font = Enum.Font.GothamBlack; l.TextSize = 11; l.TextXAlignment = Enum.TextXAlignment.Left
-        end
-
-        function TabObj:CreateLabel(text)
-            local l = Instance.new("TextLabel", scroll); l.Size = UDim2.new(1, 0, 0, 22); l.BackgroundTransparency = 1; l.Text = text; l.TextColor3 = T.SubText; l.Font = Enum.Font.GothamMedium; l.TextSize = 11; l.TextXAlignment = Enum.TextXAlignment.Left
-            local LblObj = {}
-            function LblObj:SetText(newText) l.Text = newText end
-            return LblObj
-        end
-
-        function TabObj:CreateSeparator()
-            local frame = Instance.new("Frame", scroll); frame.Size = UDim2.new(1, 0, 0, 2); frame.BackgroundColor3 = T.Element; frame.BorderSizePixel = 0
-            Instance.new("UICorner", frame).CornerRadius = UDim.new(1,0)
-        end
-
-        function TabObj:CreateToggle(label, init, callback)
-            local btn = Instance.new("TextButton", scroll)
-            btn.Size = UDim2.new(1, 0, 0, 34); btn.BackgroundColor3 = T.Element; btn.Text = "    "..label; btn.TextColor3 = T.Text; btn.Font = Enum.Font.GothamSemibold; btn.TextSize = 12; btn.TextXAlignment = Enum.TextXAlignment.Left; btn.AutoButtonColor = false
-            Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
-            local dot = Instance.new("Frame", btn); dot.Size = UDim2.new(0, 10, 0, 10); dot.Position = UDim2.new(1, -22, 0.5, -5); dot.BackgroundColor3 = init and T.Accent or Color3.fromRGB(60,60,60)
-            Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
-            local state = init
-            local ToggleObj = {}
-            function ToggleObj:Set(newState)
-                state = newState; TweenService:Create(dot, TweenInfo.new(0.18), {BackgroundColor3 = state and T.Accent or Color3.fromRGB(60,60,60)}):Play(); callback(state)
-            end
-            btn.MouseButton1Click:Connect(function() ToggleObj:Set(not state) end)
-            return ToggleObj
-        end
-
-        function TabObj:CreateSlider(label, min, max, default, callback)
-            local frame = Instance.new("Frame", scroll); frame.Size = UDim2.new(1, 0, 0, 48); frame.BackgroundColor3 = T.Element; Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 4)
-            local lbl = Instance.new("TextLabel", frame); lbl.Size = UDim2.new(1, -10, 0, 18); lbl.Position = UDim2.new(0, 8, 0, 4); lbl.BackgroundTransparency = 1; lbl.TextColor3 = T.Text; lbl.Font = Enum.Font.GothamBold; lbl.TextSize = 11; lbl.TextXAlignment = Enum.TextXAlignment.Left
-            local track = Instance.new("TextButton", frame); track.Size = UDim2.new(1, -20, 0, 6); track.Position = UDim2.new(0, 10, 0, 34); track.BackgroundColor3 = Color3.fromRGB(50,50,50); track.Text = ""; track.AutoButtonColor = false; Instance.new("UICorner", track).CornerRadius = UDim.new(1, 0)
-            local fill = Instance.new("Frame", track); fill.Size = UDim2.new(math.clamp((default-min)/(max-min), 0, 1), 0, 1, 0); fill.BackgroundColor3 = T.Accent; Instance.new("UICorner", fill).CornerRadius = UDim.new(1, 0)
-            local function update(v) local res = callback(v); lbl.Text = label..": "..(res or v) end
-            update(default)
-            local drag = false
-            track.MouseButton1Down:Connect(function() drag = true end)
-            local c1 = UserInputService.InputEnded:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 then drag = false end end)
-            local c2 = UserInputService.InputChanged:Connect(function(i) if drag and i.UserInputType == Enum.UserInputType.MouseMovement then local p = math.clamp((UserInputService:GetMouseLocation().X - track.AbsolutePosition.X) / track.AbsoluteSize.X, 0, 1); fill.Size = UDim2.new(p, 0, 1, 0); update(math.floor(min + (max-min)*p)) end end)
-            local ok, wfr = pcall(function() return UserInputService.WindowFocusReleased end)
-            if ok and wfr then local c3 = wfr:Connect(function() drag = false end); table.insert(BottleLib.Connections, c3) end
-            table.insert(BottleLib.Connections, c1); table.insert(BottleLib.Connections, c2)
-        end
-
-        function TabObj:CreateDropdown(placeholder, optionsList, callback)
-            local frame = Instance.new("Frame", scroll); frame.Size = UDim2.new(1, 0, 0, 34); frame.BackgroundColor3 = T.Element; Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 4)
-            local Input = Instance.new("TextBox", frame); Input.Size = UDim2.new(1, -20, 1, 0); Input.Position = UDim2.new(0, 10, 0, 0); Input.BackgroundTransparency = 1; Input.Text = ""; Input.PlaceholderText = "🔍 " .. placeholder; Input.TextColor3 = T.Text; Input.PlaceholderColor3 = T.SubText; Input.Font = Enum.Font.GothamSemibold; Input.TextSize = 11; Input.TextXAlignment = Enum.TextXAlignment.Left
-            local DropOverlay = Instance.new("Frame", ScreenGui); DropOverlay.Size = UDim2.new(0, 220, 0, 160); DropOverlay.BackgroundColor3 = Color3.fromRGB(14,14,14); DropOverlay.Visible = false; DropOverlay.ZIndex = 80; Instance.new("UICorner", DropOverlay).CornerRadius = UDim.new(0, 6); Instance.new("UIStroke", DropOverlay).Color = T.Accent
-            local DScroll = Instance.new("ScrollingFrame", DropOverlay); DScroll.Size = UDim2.new(1,-4,1,-4); DScroll.Position = UDim2.new(0,2,0,2); DScroll.BackgroundTransparency = 1; DScroll.ScrollBarThickness = 3; DScroll.ScrollBarImageColor3 = T.Accent; DScroll.BorderSizePixel = 0; DScroll.ZIndex = 81; Instance.new("UIListLayout", DScroll).SortOrder = Enum.SortOrder.LayoutOrder
-
-            local selectedFromList = false 
-            local function RefreshList(filter)
-                for _, c in ipairs(DScroll:GetChildren()) do if c:IsA("TextButton") then c:Destroy() end end
-                local count = 0
-                for _, item in ipairs(optionsList) do
-                    if not filter or filter == "" or string.find(string.lower(item), string.lower(filter)) then
-                        count = count + 1
-                        local b = Instance.new("TextButton", DScroll); b.Size = UDim2.new(1,0,0,30); b.BackgroundColor3 = Color3.fromRGB(22,22,22); b.Text = "  "..item; b.TextColor3 = T.Text; b.Font = Enum.Font.GothamMedium; b.TextSize = 11; b.TextXAlignment = Enum.TextXAlignment.Left; b.ZIndex = 82
-                        b.MouseButton1Click:Connect(function() 
-                            selectedFromList = true
-                            Input.Text = item; callback(item)
-                            DropOverlay.Visible = false; WindowObj.ActiveDropdown = nil; GlobalOverlayClose.Visible = false 
-                        end)
+        if ok and raw then
+            local data = HttpService:JSONDecode(raw)
+            if data and data.data then
+                for _, srv in ipairs(data.data) do
+                    if srv.id ~= game.JobId and srv.playing < srv.maxPlayers and srv.playing > 0 then
+                        if targetCount > 0 then 
+                            if srv.playing == targetCount then bestServer = srv.id; break end
+                        else
+                            if srv.playing < lowestPlayers then lowestPlayers = srv.playing; bestServer = srv.id end
+                            if srv.playing <= 2 then bestServer = srv.id; break end
+                        end
                     end
                 end
-                DScroll.CanvasSize = UDim2.new(0,0,0, count * 30 + 4)
-            end
-
-            Input.Focused:Connect(function()
-                if WindowObj.ActiveDropdown and WindowObj.ActiveDropdown ~= DropOverlay then WindowObj.ActiveDropdown.Visible = false end
-                WindowObj.ActiveDropdown = DropOverlay
-                local pos = frame.AbsolutePosition; local sz = frame.AbsoluteSize
-                local yPos = pos.Y + sz.Y + 4; if yPos + 160 > ScreenGui.AbsoluteSize.Y then yPos = pos.Y - 160 - 4 end
-                DropOverlay.Position = UDim2.new(0, pos.X, 0, yPos); DropOverlay.Size = UDim2.new(0, math.max(sz.X, 220), 0, 160)
-                RefreshList(Input.Text); DropOverlay.Visible = true; GlobalOverlayClose.Visible = true
-            end)
-            Input:GetPropertyChangedSignal("Text"):Connect(function() if DropOverlay.Visible and not selectedFromList then RefreshList(Input.Text) end end)
-            
-            Input.FocusLost:Connect(function() 
-                if selectedFromList then selectedFromList = false; return end
-                if Input.Text ~= "" then callback(Input.Text) end 
-            end)
-        end
-
-        function TabObj:CreateDualKeyRow(l1, l2, callback1, callback2)
-            local frame = Instance.new("Frame", scroll); frame.Size = UDim2.new(1, 0, 0, 36); frame.BackgroundColor3 = T.Element; Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 4)
-            local function Pair(labelStr, ox, cb)
-                local l = Instance.new("TextLabel", frame); l.Size = UDim2.new(0.22, 0, 1, 0); l.Position = UDim2.new(ox, 4, 0, 0); l.BackgroundTransparency = 1; l.Text = labelStr; l.TextColor3 = T.SubText; l.Font = Enum.Font.GothamMedium; l.TextSize = 10
-                local b = Instance.new("TextBox", frame); b.Size = UDim2.new(0.18, 0, 0.65, 0); b.Position = UDim2.new(ox+0.22, 0, 0.175, 0); b.BackgroundColor3 = T.ElemDark; b.TextColor3 = T.Accent; b.Font = Enum.Font.GothamBold; b.Text = ""; b.ClearTextOnFocus = false; Instance.new("UICorner", b).CornerRadius = UDim.new(0, 4)
-                b.FocusLost:Connect(function() local t = b.Text; if t == "" or t == " " then cb(""); return end; local ok = pcall(function() return Enum.KeyCode[t:upper()] end); if ok then cb(t:upper()); b.Text = t:upper() else b.Text = "" end end)
-            end
-            Pair(l1, 0.02, callback1); Pair(l2, 0.52, callback2)
-        end
-
-        function TabObj:CreateDualNumRow(l1, l2, callback1, callback2)
-            local frame = Instance.new("Frame", scroll); frame.Size = UDim2.new(1, 0, 0, 36); frame.BackgroundColor3 = T.Element; Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 4)
-            local function Pair(labelStr, ox, cb)
-                local l = Instance.new("TextLabel", frame); l.Size = UDim2.new(0.28, 0, 1, 0); l.Position = UDim2.new(ox, 4, 0, 0); l.BackgroundTransparency = 1; l.Text = labelStr; l.TextColor3 = T.SubText; l.Font = Enum.Font.GothamMedium; l.TextSize = 10
-                local b = Instance.new("TextBox", frame); b.Size = UDim2.new(0.18, 0, 0.65, 0); b.Position = UDim2.new(ox+0.28, 0, 0.175, 0); b.BackgroundColor3 = T.ElemDark; b.TextColor3 = T.Accent; b.Font = Enum.Font.GothamBold; b.Text = "0"; b.ClearTextOnFocus = false; Instance.new("UICorner", b).CornerRadius = UDim.new(0, 4)
-                b.FocusLost:Connect(function() local v = tonumber(b.Text); if v then cb(v) else b.Text = "0" end end)
-            end
-            Pair(l1, 0.02, callback1); Pair(l2, 0.52, callback2)
-        end
-
-        function TabObj:CreateButton(text, callback)
-            local btn = Instance.new("TextButton", scroll); btn.Size = UDim2.new(1, 0, 0, 34); btn.BackgroundColor3 = T.Element; btn.Text = text; btn.TextColor3 = T.Text; btn.Font = Enum.Font.GothamSemibold; btn.TextSize = 12; btn.AutoButtonColor = false; Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
-            btn.MouseButton1Click:Connect(function() local t1 = TweenService:Create(btn, TweenInfo.new(0.1), {BackgroundColor3 = T.Accent}); local t2 = TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = T.Element}); t1:Play(); t1.Completed:Connect(function() t2:Play() end); callback(btn) end)
-        end
-        return TabObj
+                if bestServer and (targetCount > 0 or lowestPlayers <= 2) then break end
+                cursor = data.nextPageCursor
+            else break end
+        else break end
+        task.wait(0.2)
     end
-
-    if WindowConfig.AutoMinimize then ToggleMinimize(true) end
-    return WindowObj
+    
+    if bestServer then 
+        SafeSetStatus("Status: Teleporting...")
+        TeleportService:TeleportToPlaceInstance(game.PlaceId, bestServer, player) 
+    else
+        SafeSetStatus("Status: Hop Failed (Cooldown)")
+    end
 end
 
-return BottleLib
+CfgTab:CreateSection("SERVER HOP")
+CfgTab:CreateToggle("Auto Server Hop", State.AutoHop, function(v) State.AutoHop = v end)
+CfgTab:CreateDualNumRow("Max Players:", "Target:", function(v) State.MaxPlayersHop = v end, function(v) State.TargetPlayersHop = v end)
+CfgTab:CreateButton("🌍 Manual Server Hop", function(btn)
+    task.spawn(function() ExecuteServerHop(State.TargetPlayersHop) end)
+end)
+
+CfgTab:CreateSection("DATA")
+CfgTab:CreateButton("💾 Save Config", function(btn) SaveConfig() end)
+
+-- ==========================================
+-- 6. ระบบเบื้องหลัง (Ultra-Optimized)
+-- ==========================================
+
+local function GetEquippedWeaponName()
+    local c = player.Character
+    if c then
+        local t = c:FindFirstChildOfClass("Tool")
+        if t then return t.Name end
+    end
+    return State.EquipItemName
+end
+
+table.insert(Connections, RunService.Heartbeat:Connect(function()
+    if not State.IsRunning or not State.AutoSlap then 
+        if SlapCircle then SlapCircle:Destroy(); SlapCircle = nil end
+        return 
+    end
+    
+    local myRoot = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    if myRoot and not IsSafeZone(myRoot.Position) then
+        if not SlapCircle then
+            SlapCircle = Instance.new("Part"); SlapCircle.Name = "AutoSlapRangeVisual"; SlapCircle.Shape = Enum.PartType.Cylinder
+            SlapCircle.Material = Enum.Material.Neon; SlapCircle.Color = Color3.fromHex("#e60852")
+            SlapCircle.Transparency = 0.75; SlapCircle.CanCollide = false; SlapCircle.Anchored = true; SlapCircle.CastShadow = false
+            SlapCircle.Parent = workspace
+        end
+        SlapCircle.Size = Vector3.new(0.1, State.AutoAimRange*2, State.AutoAimRange*2)
+        SlapCircle.CFrame = CFrame.new(myRoot.Position - Vector3.new(0,2.8,0)) * CFrame.Angles(0, 0, math.rad(90))
+    else
+        if SlapCircle then SlapCircle:Destroy(); SlapCircle = nil end
+    end
+end))
+
+-- ⚔️ Auto Slap
+local SlapRequest = ReplicatedStorage:FindFirstChild("SlapRequest")
+task.spawn(function()
+    while State.IsRunning do
+        if not State.AutoSlap then 
+            SafeSetStatus("Status: Idle")
+            task.wait(0.5); continue 
+        end
+        
+        local char = player.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        local hum  = char and char:FindFirstChild("Humanoid")
+        
+        if root and hum and hum.Health > 0 and not IsSafeZone(root.Position) then
+            local closest, shortest = nil, State.AutoAimRange
+            local targets = {}
+            
+            for _, p in ipairs(Players:GetPlayers()) do
+                if p ~= player and p.Character then table.insert(targets, p.Character) end
+            end
+            for _, fn in ipairs({"SpawnedEntities","Mobs","Enemies","Live","NPCs"}) do
+                local f = workspace:FindFirstChild(fn)
+                if f then
+                    for _, obj in ipairs(f:GetChildren()) do
+                        if obj:IsA("Model") and obj ~= char and not Players:GetPlayerFromCharacter(obj) then table.insert(targets, obj) end
+                    end
+                end
+            end
+            
+            for _, tChar in ipairs(targets) do
+                local tRoot = tChar:FindFirstChild("HumanoidRootPart")
+                local tHum  = tChar:FindFirstChild("Humanoid")
+                if tRoot and tHum and tHum.Health > 0 then
+                    local d = (root.Position - tRoot.Position).Magnitude
+                    if d <= shortest then shortest = d; closest = tChar end
+                end
+            end
+            
+            if closest and closest:FindFirstChild("HumanoidRootPart") then
+                SafeSetStatus("Status: Attacking " .. closest.Name)
+                root.CFrame = CFrame.lookAt(root.Position, Vector3.new(closest.HumanoidRootPart.Position.X, root.Position.Y, closest.HumanoidRootPart.Position.Z))
+                if shortest <= 8 then
+                    pcall(function()
+                        local wn = GetEquippedWeaponName()
+                        if wn ~= "" and wn ~= "(No items found)" then
+                            if SlapRequest then SlapRequest:FireServer(wn) end
+                            local tool = char:FindFirstChild(wn)
+                            if tool and tool:IsA("Tool") then tool:Activate() end
+                        else
+                            if SlapRequest then SlapRequest:FireServer("Combat") end
+                        end
+                    end)
+                    task.wait(0.3)
+                else task.wait(0.1) end
+            else 
+                SafeSetStatus("Status: Searching for target...")
+                task.wait(0.1) 
+            end
+        else task.wait(0.2) end
+    end
+end)
+
+-- ⌨️ Auto Skill
+local function pressKey(keyStr)
+    if keyStr and keyStr ~= "" and keyStr ~= " " then
+        pcall(function()
+            if VirtualInputManager then
+                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode[keyStr], false, game)
+                task.wait(0.05)
+                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode[keyStr], false, game)
+            end
+        end)
+    end
+end
+
+task.spawn(function()
+    while State.IsRunning do
+        if State.AutoKey then
+            local myRoot = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+            local myHum  = player.Character and player.Character:FindFirstChild("Humanoid")
+            if myRoot and myHum and myHum.Health > 0 and not IsSafeZone(myRoot.Position) then
+                if State.Key1 ~= "" then pressKey(State.Key1) end
+                task.wait(State.KeyDelay)
+                if not State.AutoKey or not State.IsRunning then continue end
+                if State.Key2 ~= "" then pressKey(State.Key2) end
+                task.wait(State.KeyDelay)
+            else task.wait(0.5) end
+        else task.wait(0.2) end
+    end
+end)
+
+-- 🟡 [Fix 4: Refined Morph Logic]
+task.spawn(function()
+    local morphRemote = ReplicatedStorage:WaitForChild("MorphRequest", 5)
+    while State.IsRunning do
+        if State.AutoMorph and State.MorphName ~= "" and morphRemote then
+            local pChar = player.Character
+            local hum = pChar and pChar:FindFirstChild("Humanoid")
+            
+            if pChar and hum and hum.Health > 0 then
+                local mp = pChar:FindFirstChild("MorphName")
+                local currentVal = mp and mp.Value or ""
+                
+                if currentVal ~= State.MorphName then
+                    pcall(function()
+                        morphRemote:FireServer(State.MorphName)
+                        local PM = ReplicatedStorage:FindFirstChild("PowerManager")
+                        if PM then require(PM):SetActivePower(State.MorphName) end
+                    end)
+                    task.wait(2) 
+                end
+            end
+        end
+        task.wait(0.5)
+    end
+end)
+
+-- 🔴 [Fix 5: Strict Tool Checking]
+task.spawn(function()
+    local equipRemote = ReplicatedStorage:WaitForChild("EquipItemEvent", 5)
+    while State.IsRunning do
+        if State.AutoEquip and State.EquipItemName ~= "" and State.EquipItemName ~= "(No items found)" then
+            local pChar = player.Character
+            local hum = pChar and pChar:FindFirstChild("Humanoid")
+            if pChar and hum and hum.Health > 0 then
+                -- หา Tool ที่ถืออยู่จริงๆ
+                local isHolding = false
+                local heldItem = pChar:FindFirstChild(State.EquipItemName)
+                if heldItem and heldItem:IsA("Tool") then isHolding = true end
+                
+                if not isHolding then
+                    local toolInBackpack = player.Backpack:FindFirstChild(State.EquipItemName)
+                    if toolInBackpack and toolInBackpack:IsA("Tool") then 
+                        pcall(function() hum:EquipTool(toolInBackpack) end)
+                    else
+                        if equipRemote then pcall(function() equipRemote:FireServer(State.EquipItemName) end); task.wait(0.5) end
+                        local toolAfter = player.Backpack:FindFirstChild(State.EquipItemName)
+                        if toolAfter and toolAfter:IsA("Tool") then pcall(function() hum:EquipTool(toolAfter) end) end
+                    end
+                end
+            end
+        end
+        task.wait(0.5)
+    end
+end)
+
+-- 📦 Auto Chest
+task.spawn(function()
+    while State.IsRunning do
+        if State.AutoOpenChest then
+            pcall(function()
+                local gui = player:FindFirstChild("PlayerGui") and player.PlayerGui:FindFirstChild("LootBoxGui")
+                local fr = gui and gui:FindFirstChild("LootBoxFrame")
+                if fr and fr.Visible then
+                    local absPos = fr.AbsolutePosition; local absSize = fr.AbsoluteSize; local inset = GuiService:GetGuiInset()
+                    local cx = absPos.X + (absSize.X / 2); local cy = absPos.Y + (absSize.Y / 2) + inset.Y
+                    for i = 1, 5 do
+                        if not State.AutoOpenChest or not State.IsRunning then break end
+                        VirtualInputManager:SendMouseButtonEvent(cx, cy, 0, true, game, 1); task.wait(0.05)
+                        VirtualInputManager:SendMouseButtonEvent(cx, cy, 0, false, game, 1); task.wait(0.2)
+                    end
+                end
+            end)
+        end
+        task.wait(0.5)
+    end
+end)
+
+-- 💀 Auto Reset
+task.spawn(function()
+    while State.IsRunning do
+        if State.AutoReset then
+            local cRoot = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+            local cHum  = player.Character and player.Character:FindFirstChild("Humanoid")
+            if cRoot and cHum and cHum.Health > 0 then
+                if not IsSafeZone(cRoot.Position) then cHum.Health = 0 end
+            end
+        end
+        task.wait(1)
+    end
+end)
+
+-- 🌍 Auto Server Hop (With Cooldown)
+task.spawn(function()
+    local hopCooldown = false
+    while State.IsRunning do
+        if State.AutoHop and not hopCooldown and (#Players:GetPlayers() - 1) > State.MaxPlayersHop then
+            hopCooldown = true
+            ExecuteServerHop(State.TargetPlayersHop)
+            task.wait(15) 
+            hopCooldown = false
+        end
+        task.wait(3)
+    end
+end)
+
+-- Anti-AFK
+table.insert(Connections, player.Idled:Connect(function() 
+    if State.AntiIdle and State.IsRunning then VirtualUser:CaptureController(); VirtualUser:ClickButton2(Vector2.new()) end 
+end))
+
+print("[BottleHub] Anime Knockout Script Started Successfully!")
