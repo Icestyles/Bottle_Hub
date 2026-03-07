@@ -1,6 +1,6 @@
 --!nocheck
 --[[
-    BOTTLEHUB LIBRARY V5.0 (Restored All Features: VIP + CleanUp + Minimize Buttons)
+    BOTTLEHUB LIBRARY V6.0 (Perfected UI & Animations & Key Status)
 ]]
 
 local BottleLib = {}
@@ -17,14 +17,12 @@ local MarketplaceService = game:GetService("MarketplaceService")
 local player = Players.LocalPlayer
 while not player do task.wait(0.1); player = Players.LocalPlayer end
 
--- 🚨🚨🚨 [จุดสำคัญ: ต้องแก้ลิงก์ตรงนี้ก่อนอัปโหลดขึ้น GitHub!] 🚨🚨🚨
+-- 🚨🚨🚨 [เปลี่ยนลิงก์ตรงนี้ก่อนอัปโหลดขึ้น GitHub!] 🚨🚨🚨
 local SECRETS = {
-    -- ลิงก์จาก GAS ของคุณ (อย่าลืมว่าต้องตั้ง Execute as: Me และ Access: Anyone)
     GAS_URL = "https://script.google.com/macros/s/AKfycbwqBhoPBpobkOctEfriGGaWDUFWPw_VJSnB2ecPEmneBj0E2tr88L_rlEjxyvcWBDyt/exec",
-    Discord = "https://discord.gg/JbSUQCxW2w",
+    Discord = "https://discord.gg/JbSUQCxW2w"
 }
 
--- ตัวแปรเก็บฟังก์ชันสำหรับหยุดทำงานตอนกดปุ่มแดง
 BottleLib.CleanUpEvent = Instance.new("BindableEvent")
 
 -- ============================================================
@@ -47,9 +45,7 @@ function BottleLib:InitKeySystem()
         return res
     end
 
-    -- เช็ค Cloud VIP
     local function CheckCloudVIP()
-        -- เพิ่ม &secret=xxxx ถ้า GAS ของคุณต้องการ
         local url = string.format("%s?action=check_vip&userId=%s", SECRETS.GAS_URL, tostring(player.UserId))
         local res = MakeRequest(url)
         if res and res.Body then
@@ -89,14 +85,12 @@ function BottleLib:InitKeySystem()
 
     local function RemoveStoredKey() pcall(function() delfile(KEY_STORAGE_FILE) end) end
 
--- 1. เช็ค VIP จาก Google Sheets (Cloud VIP)
     if CheckCloudVIP() then
         BottleLib.KeyStatus = { Valid = true, ExpiresAt = nil, IsGlobal = true }
         print("[BottleHub] VIP Access Granted via Bottle!")
         return true
     end
 
-    -- 2. เช็ค Key เดิมในเครื่อง
     local d = LoadStoredKey()
     if d and d.hwid == GetHWID() then
         if d.expiresAt and type(d.expiresAt) == "number" and os.time() >= d.expiresAt then
@@ -113,7 +107,9 @@ function BottleLib:InitKeySystem()
         if isExpired then player:Kick("BottleHub: Key Expired"); return false end
     end
 
-    -- 3. สร้างหน้าต่างกรอก Key
+    -- ==========================================
+    -- สร้างหน้าต่าง Key
+    -- ==========================================
     local KeyVerified = false
     local VerifyEvent = Instance.new("BindableEvent")
 
@@ -122,9 +118,16 @@ function BottleLib:InitKeySystem()
     KeyScreen.Name = "BOTTLEHUB_KEY_SYSTEM"; KeyScreen.Parent = (gethui and gethui()) or CoreGui
 
     local MF = Instance.new("Frame", KeyScreen)
-    MF.Size = UDim2.new(0, 400, 0, 220); MF.Position = UDim2.new(0.5, -200, 0.5, -110)
+    MF.Size = UDim2.new(0, 380, 0, 200) -- เล็กกว่าปกติเพื่อทำ Animation เด้ง
+    MF.Position = UDim2.new(0.5, -190, 0.5, -100)
     MF.BackgroundColor3 = Color3.fromRGB(12,12,12); MF.Active = true; MF.Draggable = true
     Instance.new("UICorner", MF).CornerRadius = UDim.new(0, 12); Instance.new("UIStroke", MF).Color = Color3.fromRGB(35,35,35)
+
+    -- แอนิเมชันตอนเปิดหน้าต่าง Key
+    TweenService:Create(MF, TweenInfo.new(0.45, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+        Size = UDim2.new(0, 400, 0, 220), 
+        Position = UDim2.new(0.5, -200, 0.5, -110)
+    }):Play()
 
     local CloseBtn = Instance.new("TextButton", MF)
     CloseBtn.Size = UDim2.new(0,14,0,14); CloseBtn.Position = UDim2.new(0,15,0,15); CloseBtn.BackgroundColor3 = Color3.fromRGB(255,75,75); CloseBtn.Text = ""
@@ -141,6 +144,8 @@ function BottleLib:InitKeySystem()
 
     local InputBox = Instance.new("TextBox", InputBg)
     InputBox.Size = UDim2.new(1,-24,1,0); InputBox.Position = UDim2.new(0,12,0,0); InputBox.BackgroundTransparency = 1
+    InputBox.Text = "" -- 🛠️ แก้บัคคำว่า TextBox โผล่
+    InputBox.ClearTextOnFocus = false
     InputBox.PlaceholderText = "Enter License Key"; InputBox.TextColor3 = Color3.fromRGB(240,240,240); InputBox.Font = Enum.Font.GothamMedium; InputBox.TextSize = 14
     
     InputBox.Focused:Connect(function()
@@ -216,12 +221,17 @@ function BottleLib:CreateWindow(WindowConfig)
     local ScreenGui = Instance.new("ScreenGui"); ScreenGui.Name = "BOTTLEHUB_MAIN"; ScreenGui.Parent = (gethui and gethui()) or CoreGui
 
     local MainFrame = Instance.new("Frame", ScreenGui)
-    MainFrame.Size = UDim2.new(0, 660, 0, 520); MainFrame.Position = UDim2.new(0.5, -330, 0.5, -260)
+    MainFrame.Size = UDim2.new(0, 600, 0, 480) -- เล็กกว่าปกติเพื่อทำ Animation
+    MainFrame.Position = UDim2.new(0.5, -330, 0.5, -260)
     MainFrame.BackgroundColor3 = T.Main; MainFrame.Active = true; MainFrame.Draggable = true
     Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 8)
     local MFStroke = Instance.new("UIStroke", MainFrame); MFStroke.Color = T.Accent; MFStroke.Thickness = 1.5
 
-    -- ปุ่ม MiniButton (โชว์ตอนย่อจอ)
+    -- แอนิเมชันเปิดหน้าต่าง Hub หลัก
+    TweenService:Create(MainFrame, TweenInfo.new(0.5, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+        Size = UDim2.new(0, 660, 0, 520)
+    }):Play()
+
     local MiniButton = Instance.new("ImageButton", ScreenGui)
     MiniButton.Size = UDim2.new(0, 42, 0, 42); MiniButton.Position = UDim2.new(0, 10, 0, 10); MiniButton.Image = "rbxassetid://78690743314126"
     MiniButton.BackgroundColor3 = T.Main; MiniButton.Visible = false
@@ -240,9 +250,7 @@ function BottleLib:CreateWindow(WindowConfig)
     local SbCover = Instance.new("Frame", Sidebar)
     SbCover.Size = UDim2.new(0, 10, 1, 0); SbCover.Position = UDim2.new(1, -10, 0, 0); SbCover.BackgroundColor3 = T.Sidebar; SbCover.BorderSizePixel = 0
 
-    -- ==========================================
-    -- 🛑 กู้คืนปุ่ม แดง (ปิด) และ เหลือง (ย่อจอ)
-    -- ==========================================
+    -- ปุ่ม แดง / เหลือง (ปิดและย่อ)
     local function MakeDot(xOff, color, label)
         local b = Instance.new("TextButton", Sidebar)
         b.Size = UDim2.new(0, 13, 0, 13); b.Position = UDim2.new(0, xOff, 0, 14)
@@ -256,9 +264,8 @@ function BottleLib:CreateWindow(WindowConfig)
     local RedDot    = MakeDot(14, Color3.fromRGB(255, 69,  58), "X")
     local YellowDot = MakeDot(33, Color3.fromRGB(255, 159, 10), "-")
 
-    -- ฟังก์ชัน CleanUp สั่งให้หน้าเกมหยุดลูปทุกอย่างและลบ UI
     RedDot.MouseButton1Click:Connect(function()
-        BottleLib.CleanUpEvent:Fire() -- ส่งสัญญาณไปบอกหน้าเกมให้หยุดลูป
+        BottleLib.CleanUpEvent:Fire() 
         ScreenGui:Destroy()
     end)
     YellowDot.MouseButton1Click:Connect(function() ToggleMinimize(true) end)
@@ -319,17 +326,53 @@ function BottleLib:CreateWindow(WindowConfig)
     local GameLbl = CreateMarqueeLabel(BottomInfoFrame, "🎮  Loading...", T.SubText, Enum.Font.Gotham, 10, true)
     task.spawn(function() local ok, info = pcall(function() return MarketplaceService:GetProductInfo(game.PlaceId) end); GameLbl.Text = "🎮  " .. (ok and info.Name or game.Name) end)
 
-    local KeyLbl = Instance.new("TextLabel", BottomInfoFrame)
-    KeyLbl.Size = UDim2.new(1, 0, 0, 14); KeyLbl.BackgroundTransparency = 1; KeyLbl.Font = Enum.Font.Gotham; KeyLbl.TextSize = 10; KeyLbl.TextXAlignment = Enum.TextXAlignment.Left
+    -- 🛠️ แก้ไขรูปแบบการแสดงผล Key (VIP Text & Key Duration)
+    local KeyContainer = Instance.new("Frame", BottomInfoFrame)
+    KeyContainer.LayoutOrder = 2
+    KeyContainer.Size = UDim2.new(1, 0, 0, 14)
+    KeyContainer.BackgroundTransparency = 1
+    
+    local KeyLbl = Instance.new("TextLabel", KeyContainer)
+    KeyLbl.Size = UDim2.new(1, 0, 1, 0)
+    KeyLbl.BackgroundTransparency = 1
+    KeyLbl.Font = Enum.Font.Gotham
+    KeyLbl.TextSize = 10
+    KeyLbl.TextXAlignment = Enum.TextXAlignment.Left
+    KeyLbl.TextWrapped = true
+    KeyLbl.TextYAlignment = Enum.TextYAlignment.Center
+
     task.spawn(function()
         while true do
-            if BottleLib.KeyStatus.IsGlobal then KeyLbl.Text = "🔑  VIP Access"; KeyLbl.TextColor3 = T.Accent; KeyLbl.Size = UDim2.new(1, 0, 0, 14)
+            if BottleLib.KeyStatus.IsGlobal then
+                -- รูปแบบสำหรับ VIP / Global Key
+                KeyLbl.Text = "🔑  Key: Bottle is kind\nbeyond word!!\nI really Love him"
+                KeyLbl.TextColor3 = T.Accent
+                KeyContainer.Size = UDim2.new(1, 0, 0, 40)
+                KeyLbl.TextYAlignment = Enum.TextYAlignment.Top
             elseif BottleLib.KeyStatus.ExpiresAt then
+                -- รูปแบบสำหรับ Key ธรรมดา
+                KeyContainer.Size = UDim2.new(1, 0, 0, 14)
+                KeyLbl.TextYAlignment = Enum.TextYAlignment.Center
                 local rem = BottleLib.KeyStatus.ExpiresAt - os.time()
-                if rem <= 0 then KeyLbl.Text = "🔑  Expired"; KeyLbl.TextColor3 = T.Red
-                elseif rem >= 86400 then KeyLbl.Text = string.format("🔑  %d Days", math.floor(rem/86400)); KeyLbl.TextColor3 = T.Accent
-                else local h = math.floor(rem / 3600); local m = math.floor((rem % 3600) / 60); local s = rem % 60; KeyLbl.Text = string.format("🔑  %02d:%02d:%02d", h, m, s); KeyLbl.TextColor3 = (rem < 3600) and T.Red or T.Yellow end
-            else KeyLbl.Text = "🔑  N/A"; KeyLbl.TextColor3 = T.SubText end
+                if rem <= 0 then
+                    KeyLbl.Text = "Key Duration : Expired"
+                    KeyLbl.TextColor3 = T.Red
+                elseif rem >= 86400 then
+                    KeyLbl.Text = string.format("Key Duration : %d Days", math.floor(rem/86400))
+                    KeyLbl.TextColor3 = T.Accent
+                else
+                    local h = math.floor(rem / 3600)
+                    local m = math.floor((rem % 3600) / 60)
+                    local s = rem % 60
+                    KeyLbl.Text = string.format("Key Duration : %02d:%02d:%02d", h, m, s)
+                    KeyLbl.TextColor3 = (rem < 3600) and T.Red or T.Yellow
+                end
+            else
+                KeyContainer.Size = UDim2.new(1, 0, 0, 14)
+                KeyLbl.TextYAlignment = Enum.TextYAlignment.Center
+                KeyLbl.Text = "Key Duration : N/A"
+                KeyLbl.TextColor3 = T.SubText
+            end
             task.wait(1)
         end
     end)
