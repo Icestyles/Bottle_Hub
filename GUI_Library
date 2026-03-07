@@ -1,6 +1,6 @@
 --!nocheck
 --[[
-    BOTTLEHUB LIBRARY V9.1 (Free Drag & Spaced Layout)
+    BOTTLEHUB LIBRARY V9.2 (Flawless Free Drag & Spaced Layout)
 ]]
 
 local BottleLib = {}
@@ -235,27 +235,36 @@ function BottleLib:CreateWindow(WindowConfig)
         Size = UDim2.new(0, 660, 0, 520), Position = UDim2.new(0.5, -330, 0.5, -260)
     }):Play()
 
-    -- 🔴 [Fix: DragBar & Free Drag Reversion]
-    -- ให้หน้าต่างลากได้อย่างอิสระ แต่ยังคงใช้ระบบ DragBar เพื่อไม่ให้ทับซ้อนปุ่มอื่นๆ
-    local DragBar = Instance.new("Frame", MainFrame)
-    DragBar.Size = UDim2.new(1, -195, 0, 24); DragBar.Position = UDim2.new(0, 195, 0, 0)
-    DragBar.BackgroundTransparency = 1; DragBar.Active = true
+    -- 🔴 [Fix: Flawless Free Drag] ใช้ TextButton ล่องหนเป็นตัวรับ Input ลาก (ไม่บังปุ่มข้างใน)
+    local DragHandle = Instance.new("TextButton", MainFrame)
+    DragHandle.Name = "DragHandle"
+    DragHandle.Size = UDim2.new(1, -60, 0, 40) -- คลุมด้านบน 40px เว้นปุ่มซ้าย 60px
+    DragHandle.Position = UDim2.new(0, 60, 0, 0)
+    DragHandle.BackgroundTransparency = 1
+    DragHandle.Text = ""
+    DragHandle.ZIndex = 50 -- ให้อยู่เหนือสุด
 
     local dragging, dragInput, dragStart, startPos
-    DragBar.InputBegan:Connect(function(input)
+    DragHandle.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             dragging = true; dragStart = input.Position; startPos = MainFrame.Position
-            input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then dragging = false end end)
         end
     end)
-    DragBar.InputChanged:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then dragInput = input end
+    DragHandle.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
+    end)
+    DragHandle.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            dragInput = input
+        end
     end)
     
     local dragConn = UserInputService.InputChanged:Connect(function(input)
         if input == dragInput and dragging then
             local delta = input.Position - dragStart
-            -- ยกเลิก math.clamp ออก เพื่อให้ลากได้อย่างอิสระทะลุจอได้
+            -- ลากอิสระทะลุจอได้
             MainFrame.Position = UDim2.new(
                 startPos.X.Scale, startPos.X.Offset + delta.X,
                 startPos.Y.Scale, startPos.Y.Offset + delta.Y
@@ -263,6 +272,12 @@ function BottleLib:CreateWindow(WindowConfig)
         end
     end)
     table.insert(BottleLib.Connections, dragConn)
+    
+    -- ป้องกันค้างเวลาสลับหน้าจอ (Alt+Tab)
+    local ok, wfr = pcall(function() return UserInputService.WindowFocusReleased end)
+    if ok and wfr then 
+        table.insert(BottleLib.Connections, wfr:Connect(function() dragging = false end)) 
+    end
 
     local MiniButton = Instance.new("ImageButton", ScreenGui)
     MiniButton.Size = UDim2.new(0, 42, 0, 42); MiniButton.Position = UDim2.new(0, 10, 0, 10); MiniButton.Image = "rbxassetid://78690743314126"
@@ -300,10 +315,10 @@ function BottleLib:CreateWindow(WindowConfig)
     local SbTitle = Instance.new("TextLabel", Sidebar)
     SbTitle.Text = HubName; SbTitle.Size = UDim2.new(1,0,0,36); SbTitle.Position = UDim2.new(0,-6,0,36); SbTitle.BackgroundTransparency = 1; SbTitle.TextColor3 = T.Accent; SbTitle.Font = Enum.Font.GothamBlack; SbTitle.TextSize = 15
 
-    -- 🔴 [Fix: Spaced Layout] ปรับ ContentContainer ให้มี Margin ทั้ง 4 ด้าน (12px รอบทิศ)
+    -- 🔴 [Fix: Spaced Layout] จัดระยะขอบรอบ Content 12px ให้โปร่งสบายตา
     local ContentContainer = Instance.new("Frame", MainFrame)
-    ContentContainer.Size = UDim2.new(0, 441, 1, -24)  -- เว้นขวา 12, บน 12, ล่าง 12
-    ContentContainer.Position = UDim2.new(0, 207, 0, 12) -- เริ่มต้นที่ระยะ 207 (195 + 12 margin)
+    ContentContainer.Size = UDim2.new(0, 441, 1, -24)  -- ความกว้าง 441 (660-195-12-12) หักขอบบนล่าง 24px
+    ContentContainer.Position = UDim2.new(0, 207, 0, 12) -- ขยับออกมาจาก Sidebar 12px และบน 12px
     ContentContainer.BackgroundColor3 = T.Content; ContentContainer.BorderSizePixel = 0
     Instance.new("UICorner", ContentContainer).CornerRadius = UDim.new(0, 6)
 
@@ -440,7 +455,7 @@ function BottleLib:CreateWindow(WindowConfig)
         scroll.Size = UDim2.new(1, 0, 1, 0); scroll.Position = UDim2.new(0, 0, 0, 0)
         scroll.BackgroundTransparency = 1; scroll.ScrollBarThickness = 2; scroll.ScrollBarImageColor3 = T.Accent; scroll.BorderSizePixel = 0; scroll.Visible = false
         
-        -- 🔴 [Fix: Spaced Layout] เพิ่ม Padding ภายในเนื้อหาแต่ละแท็บ
+        -- 🔴 [Fix: Spaced Layout] เพิ่ม Padding ภายในเนื้อหาแต่ละแท็บให้สวยงาม
         local layout = Instance.new("UIListLayout", scroll); layout.SortOrder = Enum.SortOrder.LayoutOrder; layout.Padding = UDim.new(0, 8)
         local contentPad = Instance.new("UIPadding", scroll)
         contentPad.PaddingTop = UDim.new(0, 10); contentPad.PaddingBottom = UDim.new(0, 10)
