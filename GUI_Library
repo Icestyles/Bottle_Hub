@@ -1,6 +1,6 @@
 --!nocheck
 --[[
-    BOTTLEHUB LIBRARY V9.3 (Flawless Free Drag & Spaced Layout)
+    BOTTLEHUB LIBRARY V10 (The Ultimate Drag & Minimize Fix)
 ]]
 
 local BottleLib = {}
@@ -235,28 +235,39 @@ function BottleLib:CreateWindow(WindowConfig)
         Size = UDim2.new(0, 660, 0, 520), Position = UDim2.new(0.5, -330, 0.5, -260)
     }):Play()
 
-    -- 🔴 [Fix: Smart Fullscreen Drag] 
-    -- คลุม MainFrame ทั้งหมดให้อยู่ระดับต่ำสุด (ZIndex 0) ทำให้ปุ่มอื่นๆ ทับอยู่ด้านบนและไม่แย่ง Input กัน
-    local DragHandle = Instance.new("TextButton", MainFrame)
-    DragHandle.Name = "DragHandle"
-    DragHandle.Size = UDim2.new(1, 0, 1, 0) 
-    DragHandle.Position = UDim2.new(0, 0, 0, 0)
-    DragHandle.BackgroundTransparency = 1
-    DragHandle.Text = ""
-    DragHandle.ZIndex = 0 
+    -- ============================================================
+    -- 🔴 [THE ULTIMATE DRAG FIX]
+    -- ============================================================
+    -- ลบ DragBar ออก ใช้การเช็คพิกัดเมาส์ (Absolute Position) เทียบกับกล่อง Feature
+    -- เพื่อให้สามารถคลิก "พื้นที่ว่าง" ลากได้ทั้งหมด!
+    
+    local ContentContainer = Instance.new("Frame", MainFrame)
+    ContentContainer.Size = UDim2.new(0, 441, 1, -24)  
+    ContentContainer.Position = UDim2.new(0, 207, 0, 12) 
+    ContentContainer.BackgroundColor3 = T.Content; ContentContainer.BorderSizePixel = 0
+    Instance.new("UICorner", ContentContainer).CornerRadius = UDim.new(0, 6)
 
     local dragging, dragInput, dragStart, startPos
-    DragHandle.InputBegan:Connect(function(input)
+    
+    MainFrame.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true; dragStart = input.Position; startPos = MainFrame.Position
+            local mousePos = input.Position
+            local cPos = ContentContainer.AbsolutePosition
+            local cSize = ContentContainer.AbsoluteSize
+            
+            -- ตรวจสอบว่าเมาส์ *ไม่ได้* คลิกอยู่ในพื้นที่ ContentContainer (Feature Container)
+            local isInsideContent = mousePos.X >= cPos.X and mousePos.X <= (cPos.X + cSize.X) and mousePos.Y >= cPos.Y and mousePos.Y <= (cPos.Y + cSize.Y)
+            
+            if not isInsideContent then
+                dragging = true
+                dragStart = input.Position
+                startPos = MainFrame.Position
+                input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then dragging = false end end)
+            end
         end
     end)
-    DragHandle.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = false
-        end
-    end)
-    DragHandle.InputChanged:Connect(function(input)
+    
+    MainFrame.InputChanged:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
             dragInput = input
         end
@@ -265,10 +276,7 @@ function BottleLib:CreateWindow(WindowConfig)
     local dragConn = UserInputService.InputChanged:Connect(function(input)
         if input == dragInput and dragging then
             local delta = input.Position - dragStart
-            MainFrame.Position = UDim2.new(
-                startPos.X.Scale, startPos.X.Offset + delta.X,
-                startPos.Y.Scale, startPos.Y.Offset + delta.Y
-            )
+            MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
         end
     end)
     table.insert(BottleLib.Connections, dragConn)
@@ -277,6 +285,7 @@ function BottleLib:CreateWindow(WindowConfig)
     if ok and wfr then 
         table.insert(BottleLib.Connections, wfr:Connect(function() dragging = false end)) 
     end
+    -- ============================================================
 
     local MiniButton = Instance.new("ImageButton", ScreenGui)
     MiniButton.Size = UDim2.new(0, 42, 0, 42); MiniButton.Position = UDim2.new(0, 10, 0, 10); MiniButton.Image = "rbxassetid://78690743314126"
@@ -285,8 +294,15 @@ function BottleLib:CreateWindow(WindowConfig)
 
     local function ToggleMinimize(hide) MainFrame.Visible = not hide; MiniButton.Visible = hide end
     MiniButton.MouseButton1Click:Connect(function() ToggleMinimize(false) end)
-    local minConn = UserInputService.InputBegan:Connect(function(i, gp)
-        if not gp and i.KeyCode == Enum.KeyCode.LeftControl then ToggleMinimize(MainFrame.Visible) end
+
+    -- 🔴 [THE ULTIMATE LEFT CTRL FIX]
+    -- ดักจับว่าผู้เล่น "ไม่ได้กำลังพิมพ์อยู่ในช่องแชท" เพื่อให้กดย่อหน้าต่างได้แบบ 100%
+    local minConn = UserInputService.InputBegan:Connect(function(i)
+        if i.KeyCode == Enum.KeyCode.LeftControl then 
+            if not UserInputService:GetFocusedTextBox() then
+                ToggleMinimize(MainFrame.Visible) 
+            end
+        end
     end)
     table.insert(BottleLib.Connections, minConn)
 
@@ -299,10 +315,10 @@ function BottleLib:CreateWindow(WindowConfig)
 
     local function MakeDot(xOff, color, label)
         local b = Instance.new("TextButton", Sidebar)
-        b.Size = UDim2.new(0, 13, 0, 13); b.Position = UDim2.new(0, xOff, 0, 14); b.BackgroundColor3 = color; b.Text = ""; b.AutoButtonColor = false; b.ZIndex = 10
+        b.Size = UDim2.new(0, 13, 0, 13); b.Position = UDim2.new(0, xOff, 0, 14); b.BackgroundColor3 = color; b.Text = ""; b.AutoButtonColor = false
         Instance.new("UICorner", b).CornerRadius = UDim.new(1, 0)
         local l = Instance.new("TextLabel", b)
-        l.Size = UDim2.new(1,0,1,0); l.BackgroundTransparency = 1; l.Text = label; l.TextColor3 = Color3.new(1,1,1); l.Font = Enum.Font.GothamBold; l.TextSize = 9; l.ZIndex = 11
+        l.Size = UDim2.new(1,0,1,0); l.BackgroundTransparency = 1; l.Text = label; l.TextColor3 = Color3.new(1,1,1); l.Font = Enum.Font.GothamBold; l.TextSize = 9
         return b
     end
     local RedDot = MakeDot(14, Color3.fromRGB(255, 69, 58), "X")
@@ -312,14 +328,7 @@ function BottleLib:CreateWindow(WindowConfig)
     YellowDot.MouseButton1Click:Connect(function() ToggleMinimize(true) end)
 
     local SbTitle = Instance.new("TextLabel", Sidebar)
-    SbTitle.Text = HubName; SbTitle.Size = UDim2.new(1,0,0,36); SbTitle.Position = UDim2.new(0,-6,0,36); SbTitle.BackgroundTransparency = 1; SbTitle.TextColor3 = T.Accent; SbTitle.Font = Enum.Font.GothamBlack; SbTitle.TextSize = 15; SbTitle.ZIndex = 10
-
-    -- 🔴 [Spaced Layout Fix]
-    local ContentContainer = Instance.new("Frame", MainFrame)
-    ContentContainer.Size = UDim2.new(0, 441, 1, -24)  
-    ContentContainer.Position = UDim2.new(0, 207, 0, 12) 
-    ContentContainer.BackgroundColor3 = T.Content; ContentContainer.BorderSizePixel = 0; ContentContainer.Active = true; ContentContainer.ZIndex = 5
-    Instance.new("UICorner", ContentContainer).CornerRadius = UDim.new(0, 6)
+    SbTitle.Text = HubName; SbTitle.Size = UDim2.new(1,0,0,36); SbTitle.Position = UDim2.new(0,-6,0,36); SbTitle.BackgroundTransparency = 1; SbTitle.TextColor3 = T.Accent; SbTitle.Font = Enum.Font.GothamBlack; SbTitle.TextSize = 15
 
     local WindowObj = {}
     WindowObj.ActiveDropdown = nil 
@@ -337,8 +346,7 @@ function BottleLib:CreateWindow(WindowConfig)
 
     local PROFILE_H = 135 
     local TabScrollContainer = Instance.new("ScrollingFrame", Sidebar)
-    TabScrollContainer.Size = UDim2.new(1, 0, 1, -(PROFILE_H + 40)); TabScrollContainer.Position = UDim2.new(0, 0, 0, 40); TabScrollContainer.BackgroundTransparency = 1; TabScrollContainer.ScrollBarThickness = 0; TabScrollContainer.BorderSizePixel = 0; TabScrollContainer.ZIndex = 10
-    TabScrollContainer.Active = true 
+    TabScrollContainer.Size = UDim2.new(1, 0, 1, -(PROFILE_H + 40)); TabScrollContainer.Position = UDim2.new(0, 0, 0, 40); TabScrollContainer.BackgroundTransparency = 1; TabScrollContainer.ScrollBarThickness = 0; TabScrollContainer.BorderSizePixel = 0
     
     local TabListLayout = Instance.new("UIListLayout", TabScrollContainer)
     TabListLayout.SortOrder = Enum.SortOrder.LayoutOrder; TabListLayout.Padding = UDim.new(0, 5)
@@ -351,24 +359,24 @@ function BottleLib:CreateWindow(WindowConfig)
     end)
 
     local ProfileCard = Instance.new("TextButton", Sidebar)
-    ProfileCard.Size = UDim2.new(0, 181, 0, PROFILE_H); ProfileCard.Position = UDim2.new(0, 7, 1, -(PROFILE_H + 10)); ProfileCard.BackgroundColor3 = Color3.fromRGB(20, 20, 20); ProfileCard.Text = ""; ProfileCard.AutoButtonColor = false; ProfileCard.ZIndex = 10
+    ProfileCard.Size = UDim2.new(0, 181, 0, PROFILE_H); ProfileCard.Position = UDim2.new(0, 7, 1, -(PROFILE_H + 10)); ProfileCard.BackgroundColor3 = Color3.fromRGB(20, 20, 20); ProfileCard.Text = ""; ProfileCard.AutoButtonColor = false
     Instance.new("UICorner", ProfileCard).CornerRadius = UDim.new(0, 8)
     local PCStroke = Instance.new("UIStroke", ProfileCard); PCStroke.Color = Color3.fromRGB(42,42,42)
 
     local AvatarImg = Instance.new("ImageLabel", ProfileCard)
-    AvatarImg.Size = UDim2.new(0, 46, 0, 46); AvatarImg.Position = UDim2.new(0, 8, 0, 8); AvatarImg.BackgroundColor3 = Color3.fromRGB(35,35,35); AvatarImg.ZIndex = 11
+    AvatarImg.Size = UDim2.new(0, 46, 0, 46); AvatarImg.Position = UDim2.new(0, 8, 0, 8); AvatarImg.BackgroundColor3 = Color3.fromRGB(35,35,35)
     Instance.new("UICorner", AvatarImg).CornerRadius = UDim.new(1, 0)
     task.spawn(function() local ok, img = pcall(function() return Players:GetUserThumbnailAsync(player.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size420x420) end); if ok then AvatarImg.Image = img end end)
 
     local InfoFrame = Instance.new("Frame", ProfileCard)
-    InfoFrame.Size = UDim2.new(1, -68, 0, 46); InfoFrame.Position = UDim2.new(0, 62, 0, 8); InfoFrame.BackgroundTransparency = 1; InfoFrame.ZIndex = 11
+    InfoFrame.Size = UDim2.new(1, -68, 0, 46); InfoFrame.Position = UDim2.new(0, 62, 0, 8); InfoFrame.BackgroundTransparency = 1
     Instance.new("UIListLayout", InfoFrame).Padding = UDim.new(0, 2)
 
     local function CreateMarqueeLabel(parent, text, col, fnt, sz, allowScroll)
         local container = Instance.new("Frame", parent)
-        container.Size = UDim2.new(1, 0, 0, sz + 4); container.BackgroundTransparency = 1; container.ClipsDescendants = true; container.ZIndex = 11
+        container.Size = UDim2.new(1, 0, 0, sz + 4); container.BackgroundTransparency = 1; container.ClipsDescendants = true
         local l = Instance.new("TextLabel", container)
-        l.Size = UDim2.new(1, 0, 1, 0); l.BackgroundTransparency = 1; l.Text = text; l.TextColor3 = col; l.Font = fnt; l.TextSize = sz; l.TextXAlignment = Enum.TextXAlignment.Left; l.ZIndex = 12
+        l.Size = UDim2.new(1, 0, 1, 0); l.BackgroundTransparency = 1; l.Text = text; l.TextColor3 = col; l.Font = fnt; l.TextSize = sz; l.TextXAlignment = Enum.TextXAlignment.Left
         if allowScroll then
             task.spawn(function()
                 task.wait(0.1)
@@ -392,17 +400,17 @@ function BottleLib:CreateWindow(WindowConfig)
     CreateMarqueeLabel(InfoFrame, "@"..player.Name, T.SubText, Enum.Font.Gotham, 10, false)
 
     local BottomInfoFrame = Instance.new("Frame", ProfileCard)
-    BottomInfoFrame.Size = UDim2.new(1, -16, 0, 50); BottomInfoFrame.Position = UDim2.new(0, 8, 0, 60); BottomInfoFrame.BackgroundTransparency = 1; BottomInfoFrame.ZIndex = 11
+    BottomInfoFrame.Size = UDim2.new(1, -16, 0, 50); BottomInfoFrame.Position = UDim2.new(0, 8, 0, 60); BottomInfoFrame.BackgroundTransparency = 1
     Instance.new("UIListLayout", BottomInfoFrame).Padding = UDim.new(0, 2)
 
     local GameLbl = CreateMarqueeLabel(BottomInfoFrame, "🎮  Loading...", T.SubText, Enum.Font.Gotham, 10, true)
     task.spawn(function() local ok, info = pcall(function() return MarketplaceService:GetProductInfo(game.PlaceId) end); GameLbl.Text = "🎮  " .. (ok and info.Name or game.Name) end)
 
     local KeyContainer = Instance.new("Frame", BottomInfoFrame)
-    KeyContainer.LayoutOrder = 2; KeyContainer.Size = UDim2.new(1, 0, 0, 14); KeyContainer.BackgroundTransparency = 1; KeyContainer.ZIndex = 11
+    KeyContainer.LayoutOrder = 2; KeyContainer.Size = UDim2.new(1, 0, 0, 14); KeyContainer.BackgroundTransparency = 1
     
     local KeyLbl = Instance.new("TextLabel", KeyContainer)
-    KeyLbl.Size = UDim2.new(1, 0, 1, 0); KeyLbl.BackgroundTransparency = 1; KeyLbl.Font = Enum.Font.Gotham; KeyLbl.TextSize = 10; KeyLbl.TextXAlignment = Enum.TextXAlignment.Left; KeyLbl.TextWrapped = true; KeyLbl.TextYAlignment = Enum.TextYAlignment.Center; KeyLbl.ZIndex = 12
+    KeyLbl.Size = UDim2.new(1, 0, 1, 0); KeyLbl.BackgroundTransparency = 1; KeyLbl.Font = Enum.Font.Gotham; KeyLbl.TextSize = 10; KeyLbl.TextXAlignment = Enum.TextXAlignment.Left; KeyLbl.TextWrapped = true; KeyLbl.TextYAlignment = Enum.TextYAlignment.Center
 
     task.spawn(function()
         while KeyContainer and KeyContainer.Parent do
@@ -422,7 +430,7 @@ function BottleLib:CreateWindow(WindowConfig)
 
     local DiscordLbl = Instance.new("TextLabel", ProfileCard)
     DiscordLbl.Size = UDim2.new(1, 0, 0, 14); DiscordLbl.Position = UDim2.new(0, 0, 1, -16); DiscordLbl.BackgroundTransparency = 1
-    DiscordLbl.Text = "📣 Join our Discord!"; DiscordLbl.TextColor3 = Color3.fromRGB(120, 120, 255); DiscordLbl.Font = Enum.Font.GothamMedium; DiscordLbl.TextSize = 9; DiscordLbl.ZIndex = 11
+    DiscordLbl.Text = "📣 Join our Discord!"; DiscordLbl.TextColor3 = Color3.fromRGB(120, 120, 255); DiscordLbl.Font = Enum.Font.GothamMedium; DiscordLbl.TextSize = 9
     
     ProfileCard.MouseButton1Click:Connect(function() 
         pcall(function() setclipboard(SECRETS.Discord) end)
@@ -441,19 +449,19 @@ function BottleLib:CreateWindow(WindowConfig)
 
     function WindowObj:CreateTab(TabName)
         local tabBtn = Instance.new("TextButton", TabScrollContainer)
-        tabBtn.Size = UDim2.new(0.87, 0, 0, 33); tabBtn.BackgroundColor3 = T.Sidebar; tabBtn.Text = TabName; tabBtn.TextColor3 = T.SubText; tabBtn.Font = Enum.Font.GothamBold; tabBtn.TextSize = 12; tabBtn.AutoButtonColor = false; tabBtn.ZIndex = 11
+        tabBtn.Size = UDim2.new(0.87, 0, 0, 33); tabBtn.BackgroundColor3 = T.Sidebar; tabBtn.Text = TabName; tabBtn.TextColor3 = T.SubText; tabBtn.Font = Enum.Font.GothamBold; tabBtn.TextSize = 12; tabBtn.AutoButtonColor = false
         Instance.new("UICorner", tabBtn).CornerRadius = UDim.new(0, 4)
 
         tabBtn.MouseEnter:Connect(function() if currentTab and currentTab.Btn ~= tabBtn then TweenService:Create(tabBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(20,20,20)}):Play() end end)
         tabBtn.MouseLeave:Connect(function() if currentTab and currentTab.Btn ~= tabBtn then TweenService:Create(tabBtn, TweenInfo.new(0.2), {BackgroundColor3 = T.Sidebar}):Play() end end)
 
         local line = Instance.new("Frame", tabBtn)
-        line.Size = UDim2.new(0, 3, 0.6, 0); line.Position = UDim2.new(0, 0, 0.2, 0); line.BackgroundColor3 = T.Accent; line.BackgroundTransparency = 1; line.ZIndex = 12
+        line.Size = UDim2.new(0, 3, 0.6, 0); line.Position = UDim2.new(0, 0, 0.2, 0); line.BackgroundColor3 = T.Accent; line.BackgroundTransparency = 1
         Instance.new("UICorner", line).CornerRadius = UDim.new(1, 0)
 
         local scroll = Instance.new("ScrollingFrame", ContentContainer)
         scroll.Size = UDim2.new(1, 0, 1, 0); scroll.Position = UDim2.new(0, 0, 0, 0)
-        scroll.BackgroundTransparency = 1; scroll.ScrollBarThickness = 2; scroll.ScrollBarImageColor3 = T.Accent; scroll.BorderSizePixel = 0; scroll.Visible = false; scroll.ZIndex = 6
+        scroll.BackgroundTransparency = 1; scroll.ScrollBarThickness = 2; scroll.ScrollBarImageColor3 = T.Accent; scroll.BorderSizePixel = 0; scroll.Visible = false
         
         local layout = Instance.new("UIListLayout", scroll); layout.SortOrder = Enum.SortOrder.LayoutOrder; layout.Padding = UDim.new(0, 8)
         local contentPad = Instance.new("UIPadding", scroll)
@@ -475,26 +483,26 @@ function BottleLib:CreateWindow(WindowConfig)
         local TabObj = {}
         function TabObj:CreateSection(text)
             local l = Instance.new("TextLabel", scroll)
-            l.Size = UDim2.new(1, 0, 0, 22); l.BackgroundTransparency = 1; l.Text = text; l.TextColor3 = T.Accent; l.Font = Enum.Font.GothamBlack; l.TextSize = 11; l.TextXAlignment = Enum.TextXAlignment.Left; l.ZIndex = 7
+            l.Size = UDim2.new(1, 0, 0, 22); l.BackgroundTransparency = 1; l.Text = text; l.TextColor3 = T.Accent; l.Font = Enum.Font.GothamBlack; l.TextSize = 11; l.TextXAlignment = Enum.TextXAlignment.Left
         end
 
         function TabObj:CreateLabel(text)
-            local l = Instance.new("TextLabel", scroll); l.Size = UDim2.new(1, 0, 0, 22); l.BackgroundTransparency = 1; l.Text = text; l.TextColor3 = T.SubText; l.Font = Enum.Font.GothamMedium; l.TextSize = 11; l.TextXAlignment = Enum.TextXAlignment.Left; l.ZIndex = 7
+            local l = Instance.new("TextLabel", scroll); l.Size = UDim2.new(1, 0, 0, 22); l.BackgroundTransparency = 1; l.Text = text; l.TextColor3 = T.SubText; l.Font = Enum.Font.GothamMedium; l.TextSize = 11; l.TextXAlignment = Enum.TextXAlignment.Left
             local LblObj = {}
             function LblObj:SetText(newText) l.Text = newText end
             return LblObj
         end
 
         function TabObj:CreateSeparator()
-            local frame = Instance.new("Frame", scroll); frame.Size = UDim2.new(1, 0, 0, 2); frame.BackgroundColor3 = T.Element; frame.BorderSizePixel = 0; frame.ZIndex = 7
+            local frame = Instance.new("Frame", scroll); frame.Size = UDim2.new(1, 0, 0, 2); frame.BackgroundColor3 = T.Element; frame.BorderSizePixel = 0
             Instance.new("UICorner", frame).CornerRadius = UDim.new(1,0)
         end
 
         function TabObj:CreateToggle(label, init, callback)
             local btn = Instance.new("TextButton", scroll)
-            btn.Size = UDim2.new(1, 0, 0, 34); btn.BackgroundColor3 = T.Element; btn.Text = "    "..label; btn.TextColor3 = T.Text; btn.Font = Enum.Font.GothamSemibold; btn.TextSize = 12; btn.TextXAlignment = Enum.TextXAlignment.Left; btn.AutoButtonColor = false; btn.ZIndex = 7
+            btn.Size = UDim2.new(1, 0, 0, 34); btn.BackgroundColor3 = T.Element; btn.Text = "    "..label; btn.TextColor3 = T.Text; btn.Font = Enum.Font.GothamSemibold; btn.TextSize = 12; btn.TextXAlignment = Enum.TextXAlignment.Left; btn.AutoButtonColor = false
             Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
-            local dot = Instance.new("Frame", btn); dot.Size = UDim2.new(0, 10, 0, 10); dot.Position = UDim2.new(1, -22, 0.5, -5); dot.BackgroundColor3 = init and T.Accent or Color3.fromRGB(60,60,60); dot.ZIndex = 8
+            local dot = Instance.new("Frame", btn); dot.Size = UDim2.new(0, 10, 0, 10); dot.Position = UDim2.new(1, -22, 0.5, -5); dot.BackgroundColor3 = init and T.Accent or Color3.fromRGB(60,60,60)
             Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
             local state = init
             local ToggleObj = {}
@@ -506,10 +514,10 @@ function BottleLib:CreateWindow(WindowConfig)
         end
 
         function TabObj:CreateSlider(label, min, max, default, callback)
-            local frame = Instance.new("Frame", scroll); frame.Size = UDim2.new(1, 0, 0, 48); frame.BackgroundColor3 = T.Element; Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 4); frame.ZIndex = 7
-            local lbl = Instance.new("TextLabel", frame); lbl.Size = UDim2.new(1, -10, 0, 18); lbl.Position = UDim2.new(0, 8, 0, 4); lbl.BackgroundTransparency = 1; lbl.TextColor3 = T.Text; lbl.Font = Enum.Font.GothamBold; lbl.TextSize = 11; lbl.TextXAlignment = Enum.TextXAlignment.Left; lbl.ZIndex = 8
-            local track = Instance.new("TextButton", frame); track.Size = UDim2.new(1, -20, 0, 6); track.Position = UDim2.new(0, 10, 0, 34); track.BackgroundColor3 = Color3.fromRGB(50,50,50); track.Text = ""; track.AutoButtonColor = false; Instance.new("UICorner", track).CornerRadius = UDim.new(1, 0); track.ZIndex = 8
-            local fill = Instance.new("Frame", track); fill.Size = UDim2.new(math.clamp((default-min)/(max-min), 0, 1), 0, 1, 0); fill.BackgroundColor3 = T.Accent; Instance.new("UICorner", fill).CornerRadius = UDim.new(1, 0); fill.ZIndex = 9
+            local frame = Instance.new("Frame", scroll); frame.Size = UDim2.new(1, 0, 0, 48); frame.BackgroundColor3 = T.Element; Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 4)
+            local lbl = Instance.new("TextLabel", frame); lbl.Size = UDim2.new(1, -10, 0, 18); lbl.Position = UDim2.new(0, 8, 0, 4); lbl.BackgroundTransparency = 1; lbl.TextColor3 = T.Text; lbl.Font = Enum.Font.GothamBold; lbl.TextSize = 11; lbl.TextXAlignment = Enum.TextXAlignment.Left
+            local track = Instance.new("TextButton", frame); track.Size = UDim2.new(1, -20, 0, 6); track.Position = UDim2.new(0, 10, 0, 34); track.BackgroundColor3 = Color3.fromRGB(50,50,50); track.Text = ""; track.AutoButtonColor = false; Instance.new("UICorner", track).CornerRadius = UDim.new(1, 0)
+            local fill = Instance.new("Frame", track); fill.Size = UDim2.new(math.clamp((default-min)/(max-min), 0, 1), 0, 1, 0); fill.BackgroundColor3 = T.Accent; Instance.new("UICorner", fill).CornerRadius = UDim.new(1, 0)
             local function update(v) local res = callback(v); lbl.Text = label..": "..(res or v) end
             update(default)
             local drag = false
@@ -522,8 +530,8 @@ function BottleLib:CreateWindow(WindowConfig)
         end
 
         function TabObj:CreateDropdown(placeholder, optionsList, callback)
-            local frame = Instance.new("Frame", scroll); frame.Size = UDim2.new(1, 0, 0, 34); frame.BackgroundColor3 = T.Element; Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 4); frame.ZIndex = 7
-            local Input = Instance.new("TextBox", frame); Input.Size = UDim2.new(1, -20, 1, 0); Input.Position = UDim2.new(0, 10, 0, 0); Input.BackgroundTransparency = 1; Input.Text = ""; Input.PlaceholderText = "🔍 " .. placeholder; Input.TextColor3 = T.Text; Input.PlaceholderColor3 = T.SubText; Input.Font = Enum.Font.GothamSemibold; Input.TextSize = 11; Input.TextXAlignment = Enum.TextXAlignment.Left; Input.ZIndex = 8
+            local frame = Instance.new("Frame", scroll); frame.Size = UDim2.new(1, 0, 0, 34); frame.BackgroundColor3 = T.Element; Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 4)
+            local Input = Instance.new("TextBox", frame); Input.Size = UDim2.new(1, -20, 1, 0); Input.Position = UDim2.new(0, 10, 0, 0); Input.BackgroundTransparency = 1; Input.Text = ""; Input.PlaceholderText = "🔍 " .. placeholder; Input.TextColor3 = T.Text; Input.PlaceholderColor3 = T.SubText; Input.Font = Enum.Font.GothamSemibold; Input.TextSize = 11; Input.TextXAlignment = Enum.TextXAlignment.Left
             local DropOverlay = Instance.new("Frame", ScreenGui); DropOverlay.Size = UDim2.new(0, 220, 0, 160); DropOverlay.BackgroundColor3 = Color3.fromRGB(14,14,14); DropOverlay.Visible = false; DropOverlay.ZIndex = 80; Instance.new("UICorner", DropOverlay).CornerRadius = UDim.new(0, 6); Instance.new("UIStroke", DropOverlay).Color = T.Accent
             local DScroll = Instance.new("ScrollingFrame", DropOverlay); DScroll.Size = UDim2.new(1,-4,1,-4); DScroll.Position = UDim2.new(0,2,0,2); DScroll.BackgroundTransparency = 1; DScroll.ScrollBarThickness = 3; DScroll.ScrollBarImageColor3 = T.Accent; DScroll.BorderSizePixel = 0; DScroll.ZIndex = 81; Instance.new("UIListLayout", DScroll).SortOrder = Enum.SortOrder.LayoutOrder
 
@@ -562,27 +570,27 @@ function BottleLib:CreateWindow(WindowConfig)
         end
 
         function TabObj:CreateDualKeyRow(l1, l2, callback1, callback2)
-            local frame = Instance.new("Frame", scroll); frame.Size = UDim2.new(1, 0, 0, 36); frame.BackgroundColor3 = T.Element; Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 4); frame.ZIndex = 7
+            local frame = Instance.new("Frame", scroll); frame.Size = UDim2.new(1, 0, 0, 36); frame.BackgroundColor3 = T.Element; Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 4)
             local function Pair(labelStr, ox, cb)
-                local l = Instance.new("TextLabel", frame); l.Size = UDim2.new(0.22, 0, 1, 0); l.Position = UDim2.new(ox, 4, 0, 0); l.BackgroundTransparency = 1; l.Text = labelStr; l.TextColor3 = T.SubText; l.Font = Enum.Font.GothamMedium; l.TextSize = 10; l.ZIndex = 8
-                local b = Instance.new("TextBox", frame); b.Size = UDim2.new(0.18, 0, 0.65, 0); b.Position = UDim2.new(ox+0.22, 0, 0.175, 0); b.BackgroundColor3 = T.ElemDark; b.TextColor3 = T.Accent; b.Font = Enum.Font.GothamBold; b.Text = ""; b.ClearTextOnFocus = false; Instance.new("UICorner", b).CornerRadius = UDim.new(0, 4); b.ZIndex = 8
+                local l = Instance.new("TextLabel", frame); l.Size = UDim2.new(0.22, 0, 1, 0); l.Position = UDim2.new(ox, 4, 0, 0); l.BackgroundTransparency = 1; l.Text = labelStr; l.TextColor3 = T.SubText; l.Font = Enum.Font.GothamMedium; l.TextSize = 10
+                local b = Instance.new("TextBox", frame); b.Size = UDim2.new(0.18, 0, 0.65, 0); b.Position = UDim2.new(ox+0.22, 0, 0.175, 0); b.BackgroundColor3 = T.ElemDark; b.TextColor3 = T.Accent; b.Font = Enum.Font.GothamBold; b.Text = ""; b.ClearTextOnFocus = false; Instance.new("UICorner", b).CornerRadius = UDim.new(0, 4)
                 b.FocusLost:Connect(function() local t = b.Text; if t == "" or t == " " then cb(""); return end; local ok = pcall(function() return Enum.KeyCode[t:upper()] end); if ok then cb(t:upper()); b.Text = t:upper() else b.Text = "" end end)
             end
             Pair(l1, 0.02, callback1); Pair(l2, 0.52, callback2)
         end
 
         function TabObj:CreateDualNumRow(l1, l2, callback1, callback2)
-            local frame = Instance.new("Frame", scroll); frame.Size = UDim2.new(1, 0, 0, 36); frame.BackgroundColor3 = T.Element; Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 4); frame.ZIndex = 7
+            local frame = Instance.new("Frame", scroll); frame.Size = UDim2.new(1, 0, 0, 36); frame.BackgroundColor3 = T.Element; Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 4)
             local function Pair(labelStr, ox, cb)
-                local l = Instance.new("TextLabel", frame); l.Size = UDim2.new(0.28, 0, 1, 0); l.Position = UDim2.new(ox, 4, 0, 0); l.BackgroundTransparency = 1; l.Text = labelStr; l.TextColor3 = T.SubText; l.Font = Enum.Font.GothamMedium; l.TextSize = 10; l.ZIndex = 8
-                local b = Instance.new("TextBox", frame); b.Size = UDim2.new(0.18, 0, 0.65, 0); b.Position = UDim2.new(ox+0.28, 0, 0.175, 0); b.BackgroundColor3 = T.ElemDark; b.TextColor3 = T.Accent; b.Font = Enum.Font.GothamBold; b.Text = "0"; b.ClearTextOnFocus = false; Instance.new("UICorner", b).CornerRadius = UDim.new(0, 4); b.ZIndex = 8
+                local l = Instance.new("TextLabel", frame); l.Size = UDim2.new(0.28, 0, 1, 0); l.Position = UDim2.new(ox, 4, 0, 0); l.BackgroundTransparency = 1; l.Text = labelStr; l.TextColor3 = T.SubText; l.Font = Enum.Font.GothamMedium; l.TextSize = 10
+                local b = Instance.new("TextBox", frame); b.Size = UDim2.new(0.18, 0, 0.65, 0); b.Position = UDim2.new(ox+0.28, 0, 0.175, 0); b.BackgroundColor3 = T.ElemDark; b.TextColor3 = T.Accent; b.Font = Enum.Font.GothamBold; b.Text = "0"; b.ClearTextOnFocus = false; Instance.new("UICorner", b).CornerRadius = UDim.new(0, 4)
                 b.FocusLost:Connect(function() local v = tonumber(b.Text); if v then cb(v) else b.Text = "0" end end)
             end
             Pair(l1, 0.02, callback1); Pair(l2, 0.52, callback2)
         end
 
         function TabObj:CreateButton(text, callback)
-            local btn = Instance.new("TextButton", scroll); btn.Size = UDim2.new(1, 0, 0, 34); btn.BackgroundColor3 = T.Element; btn.Text = text; btn.TextColor3 = T.Text; btn.Font = Enum.Font.GothamSemibold; btn.TextSize = 12; btn.AutoButtonColor = false; Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4); btn.ZIndex = 7
+            local btn = Instance.new("TextButton", scroll); btn.Size = UDim2.new(1, 0, 0, 34); btn.BackgroundColor3 = T.Element; btn.Text = text; btn.TextColor3 = T.Text; btn.Font = Enum.Font.GothamSemibold; btn.TextSize = 12; btn.AutoButtonColor = false; Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
             btn.MouseButton1Click:Connect(function() local t1 = TweenService:Create(btn, TweenInfo.new(0.1), {BackgroundColor3 = T.Accent}); local t2 = TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = T.Element}); t1:Play(); t1.Completed:Connect(function() t2:Play() end); callback(btn) end)
         end
         return TabObj
