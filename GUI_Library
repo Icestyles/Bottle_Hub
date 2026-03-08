@@ -32,9 +32,6 @@ BottleLib.CleanUpEvent.Event:Connect(function()
     BottleLib.Connections = {}
 end)
 
--- ============================================================
--- 🔐 1. KEY SYSTEM MODULE
--- ============================================================
 function BottleLib:InitKeySystem()
     local KEY_STORAGE_FILE = "BottleHub_KeyStorage.json"
 
@@ -206,9 +203,6 @@ function BottleLib:InitKeySystem()
     return true
 end
 
--- ============================================================
--- 🎨 2. GUI SYSTEM MODULE
--- ============================================================
 function BottleLib:CreateWindow(WindowConfig)
     BottleLib.CleanUpEvent:Fire()
 
@@ -238,9 +232,6 @@ function BottleLib:CreateWindow(WindowConfig)
     -- ============================================================
     -- 🔴 [THE ULTIMATE DRAG FIX]
     -- ============================================================
-    -- ลบ DragBar ออก ใช้การเช็คพิกัดเมาส์ (Absolute Position) เทียบกับกล่อง Feature
-    -- เพื่อให้สามารถคลิก "พื้นที่ว่าง" ลากได้ทั้งหมด!
-    
     local ContentContainer = Instance.new("Frame", MainFrame)
     ContentContainer.Size = UDim2.new(0, 441, 1, -24)  
     ContentContainer.Position = UDim2.new(0, 207, 0, 12) 
@@ -255,7 +246,7 @@ function BottleLib:CreateWindow(WindowConfig)
             local cPos = ContentContainer.AbsolutePosition
             local cSize = ContentContainer.AbsoluteSize
             
-            -- ตรวจสอบว่าเมาส์ *ไม่ได้* คลิกอยู่ในพื้นที่ ContentContainer (Feature Container)
+            -- ตรวจสอบว่าเมาส์ไม่ได้คลิกในโซนขวา (ContentContainer)
             local isInsideContent = mousePos.X >= cPos.X and mousePos.X <= (cPos.X + cSize.X) and mousePos.Y >= cPos.Y and mousePos.Y <= (cPos.Y + cSize.Y)
             
             if not isInsideContent then
@@ -295,8 +286,9 @@ function BottleLib:CreateWindow(WindowConfig)
     local function ToggleMinimize(hide) MainFrame.Visible = not hide; MiniButton.Visible = hide end
     MiniButton.MouseButton1Click:Connect(function() ToggleMinimize(false) end)
 
+    -- ============================================================
     -- 🔴 [THE ULTIMATE LEFT CTRL FIX]
-    -- ดักจับว่าผู้เล่น "ไม่ได้กำลังพิมพ์อยู่ในช่องแชท" เพื่อให้กดย่อหน้าต่างได้แบบ 100%
+    -- ============================================================
     local minConn = UserInputService.InputBegan:Connect(function(i)
         if i.KeyCode == Enum.KeyCode.LeftControl then 
             if not UserInputService:GetFocusedTextBox() then
@@ -305,6 +297,7 @@ function BottleLib:CreateWindow(WindowConfig)
         end
     end)
     table.insert(BottleLib.Connections, minConn)
+    -- ============================================================
 
     local Sidebar = Instance.new("Frame", MainFrame)
     Sidebar.Size = UDim2.new(0, 195, 1, 0); Sidebar.BackgroundColor3 = T.Sidebar; Sidebar.BorderSizePixel = 0
