@@ -1,25 +1,24 @@
 --!nocheck
 --[[
-    BOTTLEHUB LIBRARY V10.5  (FINAL FIX ATTEMPT)
+    BOTTLEHUB LIBRARY V10.5  (FINAL)
     ─────────────────────────────────────────────────────────────
-    ROOT CAUSE สุดท้าย (ยืนยันจากการที่ Key System ใช้ Draggable=true แล้วทำงานได้):
-      UIS.InputBegan / InputChanged / InputEnded สำหรับ MOUSE ไม่ fire
-      ใน gethui() container เลย → ทุก approach ก่อนหน้าพึ่ง UIS mouse events → พังทั้งหมด
-      GuiObject events เท่านั้นที่ reliable ใน gethui()
-    ─────────────────────────────────────────────────────────────
-    FIX 1  DRAG
-      ก่อน: UIS.InputBegan/Changed (mouse) → ไม่ fire ใน gethui()
-      หลัง: MainFrame.Draggable = true  (engine-level, proven ทำงานได้จาก Key System)
+    FIX 1  DRAG STUTTER
+      Draggable=true ใน gethui() มี stutter เพราะ Roblox internal drag
+      system ไม่ smooth ใน custom container
+      → ลบ Draggable=true ออก
+      → ใช้ DragStrip TextButton (sibling ของ Sidebar, ZIndex=2)
+        + GuiObject mouse events: MouseButton1Down/MouseMoved/MouseButton1Up
+        (approach เดียวกับ Slider ที่ confirmed ทำงานได้แล้ว)
+      → จัด ZIndex: DragStrip=2, Dots=5, tabBtn=4, ProfileCard=3
 
-    FIX 2  SLIDER
-      ก่อน: UIS.InputBegan/Changed (mouse) → ไม่ fire ใน gethui()
-      หลัง: trackHit.MouseButton1Down(x,y) / MouseMoved(x,y) / MouseButton1Up(x,y)
-             ทั้งหมดเป็น GuiObject events → reliable ใน gethui()
-             ไม่แตะ UIS เลย ไม่มี AbsolutePosition ไม่มี GetMouseLocation
-
-    FIX 3  LEFT CTRL
-      ก่อน: GetFocusedTextBox() คืน non-nil ตลอดใน executor → early return ทุกครั้ง
-      หลัง: ลบ GetFocusedTextBox check ออกทั้งหมด เหลือแค่ Heartbeat + IsKeyDown()
+    FIX 2  NEW COMPONENT: CreateSelector
+      แสดงชุด pills/chips ที่ toggle selected state ได้
+      ใช้สำหรับ: เลือก skill (1,2,4,5), เลือก mode, เลือก option ต่างๆ
+      selected = accent color glow, unselected = dark
+      รองรับ multiSelect และ singleSelect
+      API: SelectorObj:Get() → {selected items}
+           SelectorObj:Set({items}) → set programmatically
+           SelectorObj:Add(item) / :Remove(item) → เพิ่ม/ลบ option
 ]]
 
 local BottleLib = {}
@@ -300,12 +299,54 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
     Instance.new("UICorner", ContentContainer).CornerRadius = UDim.new(0,6)
 
     -- ──────────────────────────────────────────────────────────
-    -- [FIX 1] DRAG — V10.5
-    --   MainFrame.Draggable = true  (engine-level property)
-    --   proven ทำงานได้ใน gethui() จาก Key System ที่ใช้วิธีเดียวกัน
-    --   ไม่ต้องใช้ UIS events, TopBar, MouseEnter/Leave ใดๆ ทั้งสิ้น
+    -- [FIX 1] DRAG — ลบ Draggable=true, ใช้ DragStrip + GuiObject events
+    --
+    -- Draggable=true ใน gethui() มี stutter เพราะ Roblox internal drag
+    -- ใช้ DragStrip TextButton (sibling ของ Sidebar) + MouseButton1Down/Moved/Up
+    -- แบบเดียวกับ Slider ที่ confirmed ทำงานได้แล้ว
+    --
+    -- ZIndex plan:
+    --   DragStrip = 2  (ทับ Sidebar background ZIndex=1)
+    --   Dots       = 5  (อยู่เหนือ DragStrip → คลิกได้ปกติ)
+    --   tabBtn     = 4  (อยู่เหนือ DragStrip → คลิกได้ปกติ)
+    --   ProfileCard= 3  (อยู่เหนือ DragStrip → คลิกได้ปกติ)
     -- ──────────────────────────────────────────────────────────
-    MainFrame.Draggable = true
+    local dragStrip = Instance.new("TextButton", MainFrame)
+    dragStrip.Name               = "DragStrip"
+    dragStrip.Size               = UDim2.new(0, 195, 1, 0)
+    dragStrip.Position           = UDim2.new(0, 0, 0, 0)
+    dragStrip.BackgroundTransparency = 1
+    dragStrip.Text               = ""
+    dragStrip.ZIndex             = 2
+    dragStrip.AutoButtonColor    = false
+
+    local isDragging  = false
+    local dragStartX  = 0
+    local dragStartY  = 0
+    local dragOffsetX = 0
+    local dragOffsetY = 0
+
+    dragStrip.MouseButton1Down:Connect(function(x, y)
+        isDragging = true
+        dragStartX  = x
+        dragStartY  = y
+        dragOffsetX = MainFrame.Position.X.Offset
+        dragOffsetY = MainFrame.Position.Y.Offset
+    end)
+
+    dragStrip.MouseMoved:Connect(function(x, y)
+        if not isDragging then return end
+        local dx = x - dragStartX
+        local dy = y - dragStartY
+        MainFrame.Position = UDim2.new(
+            MainFrame.Position.X.Scale, dragOffsetX + dx,
+            MainFrame.Position.Y.Scale, dragOffsetY + dy
+        )
+    end)
+
+    dragStrip.MouseButton1Up:Connect(function()
+        isDragging = false
+    end)
 
     -- ──────────────────────────────────────────────────────────
     -- Minimize
@@ -368,6 +409,9 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
     end
     local RedDot    = MakeDot(14, Color3.fromRGB(255,69,58),  "X")
     local YellowDot = MakeDot(33, Color3.fromRGB(255,159,10), "-")
+    -- [FIX 1] ZIndex=5 → อยู่เหนือ DragStrip (ZIndex=2) → คลิกได้ปกติ
+    RedDot.ZIndex    = 5
+    YellowDot.ZIndex = 5
     RedDot.MouseButton1Click:Connect(function()
         BottleLib.CleanUpEvent:Fire(); ScreenGui:Destroy()
     end)
@@ -415,6 +459,8 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
     ProfileCard.Position = UDim2.new(0,7,1,-(PROFILE_H+10))
     ProfileCard.BackgroundColor3 = Color3.fromRGB(20,20,20)
     ProfileCard.Text = ""; ProfileCard.AutoButtonColor = false
+    -- [FIX 1] ZIndex=3 → อยู่เหนือ DragStrip (ZIndex=2)
+    ProfileCard.ZIndex = 3
     Instance.new("UICorner", ProfileCard).CornerRadius = UDim.new(0,8)
     Instance.new("UIStroke", ProfileCard).Color = Color3.fromRGB(42,42,42)
 
@@ -549,6 +595,8 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
         tabBtn.Text = TabName; tabBtn.TextColor3 = T.SubText
         tabBtn.Font = Enum.Font.GothamBold; tabBtn.TextSize = 12
         tabBtn.AutoButtonColor = false
+        -- [FIX 1] ZIndex=4 → อยู่เหนือ DragStrip (ZIndex=2) → คลิก tab ได้ปกติ
+        tabBtn.ZIndex = 4
         Instance.new("UICorner", tabBtn).CornerRadius = UDim.new(0,4)
 
         tabBtn.MouseEnter:Connect(function()
@@ -879,6 +927,212 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
             local BtnObj = {}
             function BtnObj:Set(newText) btn.Text = newText end
             return BtnObj
+        end
+
+        -- ──────────────────────────────────────────────────────
+        -- CreateSelector
+        --
+        -- แสดงชุด pills/chips ที่ toggle selected state ได้
+        -- ใช้สำหรับเลือก skill, mode, option ต่างๆ
+        -- selected pill = accent color, unselected = dark
+        --
+        -- params:
+        --   label      : string  — หัวข้อแสดงเหนือ pills
+        --   options    : table   — {"1","2","3","4","5"} หรือ {"Q","E","R","F"}
+        --   multiSelect: bool    — true = เลือกได้หลายอัน, false = เลือกได้อันเดียว
+        --   callback   : function(selectedList, lastChanged)
+        --                selectedList = table ของ options ที่ selected ทั้งหมด
+        --                lastChanged  = option ที่เพิ่งเปลี่ยน
+        --
+        -- returns SelectorObj:
+        --   :Get()          → table ของ selected options
+        --   :Set({opts})    → set selection ด้วยโค้ด
+        --   :Add(opt)       → เพิ่ม option ใหม่ใน selector
+        --   :Remove(opt)    → ลบ option ออกจาก selector
+        -- ──────────────────────────────────────────────────────
+        function TabObj:CreateSelector(label, options, multiSelect, callback)
+            -- outer frame — ใช้ AutomaticSize เพื่อรองรับ wrap
+            local frame = Instance.new("Frame", scroll)
+            frame.Size = UDim2.new(1,0,0,0)
+            frame.AutomaticSize = Enum.AutomaticSize.Y
+            frame.BackgroundColor3 = T.Element
+            frame.BorderSizePixel = 0
+            Instance.new("UICorner", frame).CornerRadius = UDim.new(0,4)
+            local outerPad = Instance.new("UIPadding", frame)
+            outerPad.PaddingTop    = UDim.new(0,8)
+            outerPad.PaddingBottom = UDim.new(0,8)
+            outerPad.PaddingLeft   = UDim.new(0,10)
+            outerPad.PaddingRight  = UDim.new(0,10)
+            local outerLayout = Instance.new("UIListLayout", frame)
+            outerLayout.SortOrder       = Enum.SortOrder.LayoutOrder
+            outerLayout.FillDirection   = Enum.FillDirection.Vertical
+            outerLayout.Padding         = UDim.new(0,6)
+
+            -- header label
+            local headerLbl = Instance.new("TextLabel", frame)
+            headerLbl.LayoutOrder       = 1
+            headerLbl.Size              = UDim2.new(1,0,0,16)
+            headerLbl.BackgroundTransparency = 1
+            headerLbl.Text              = label
+            headerLbl.TextColor3        = T.SubText
+            headerLbl.Font              = Enum.Font.GothamBold
+            headerLbl.TextSize          = 11
+            headerLbl.TextXAlignment    = Enum.TextXAlignment.Left
+
+            -- pills container (wrapping row)
+            local pillsFrame = Instance.new("Frame", frame)
+            pillsFrame.LayoutOrder   = 2
+            pillsFrame.Size          = UDim2.new(1,0,0,0)
+            pillsFrame.AutomaticSize = Enum.AutomaticSize.Y
+            pillsFrame.BackgroundTransparency = 1
+            pillsFrame.BorderSizePixel = 0
+            local pillLayout = Instance.new("UIListLayout", pillsFrame)
+            pillLayout.FillDirection  = Enum.FillDirection.Horizontal
+            pillLayout.Wraps          = true
+            pillLayout.Padding        = UDim.new(0,6)
+            pillLayout.SortOrder      = Enum.SortOrder.LayoutOrder
+
+            local selected = {}        -- { [optionName] = true }
+            local pillButtons = {}     -- { [optionName] = TextButton }
+
+            local function isSelected(opt)
+                return selected[opt] == true
+            end
+
+            local function getSelectedList()
+                local list = {}
+                -- คืน ordered list ตาม options original order
+                for _, opt in ipairs(options) do
+                    if selected[opt] then table.insert(list, opt) end
+                end
+                return list
+            end
+
+            local function updatePillVisual(opt)
+                local btn = pillButtons[opt]
+                if not btn then return end
+                if isSelected(opt) then
+                    TweenService:Create(btn, TweenInfo.new(0.15), {
+                        BackgroundColor3 = T.Accent,
+                        TextColor3       = Color3.fromRGB(255,255,255),
+                    }):Play()
+                    -- glow stroke
+                    local stroke = btn:FindFirstChildWhichIsA("UIStroke")
+                    if stroke then
+                        TweenService:Create(stroke, TweenInfo.new(0.15), {
+                            Transparency = 0
+                        }):Play()
+                    end
+                else
+                    TweenService:Create(btn, TweenInfo.new(0.15), {
+                        BackgroundColor3 = T.ElemDark,
+                        TextColor3       = T.SubText,
+                    }):Play()
+                    local stroke = btn:FindFirstChildWhichIsA("UIStroke")
+                    if stroke then
+                        TweenService:Create(stroke, TweenInfo.new(0.15), {
+                            Transparency = 1
+                        }):Play()
+                    end
+                end
+            end
+
+            local function createPill(opt, order)
+                local btn = Instance.new("TextButton", pillsFrame)
+                btn.LayoutOrder         = order
+                btn.Size                = UDim2.new(0,0,0,28) -- auto width via AutomaticSize
+                btn.AutomaticSize       = Enum.AutomaticSize.X
+                btn.BackgroundColor3    = T.ElemDark
+                btn.TextColor3          = T.SubText
+                btn.Font                = Enum.Font.GothamBold
+                btn.TextSize            = 12
+                btn.Text                = "  " .. opt .. "  "  -- padding ด้วย spaces
+                btn.AutoButtonColor     = false
+                Instance.new("UICorner", btn).CornerRadius = UDim.new(1, 0)  -- pill shape
+                local stroke = Instance.new("UIStroke", btn)
+                stroke.Color        = T.Accent
+                stroke.Thickness    = 1.5
+                stroke.Transparency = 1  -- hidden when unselected
+
+                btn.MouseButton1Click:Connect(function()
+                    if multiSelect then
+                        -- toggle
+                        selected[opt] = not selected[opt]
+                    else
+                        -- single select: deselect others
+                        for k in pairs(selected) do selected[k] = false end
+                        selected[opt] = true
+                    end
+                    updatePillVisual(opt)
+                    -- update all visuals ถ้า single (deselect others)
+                    if not multiSelect then
+                        for k in pairs(pillButtons) do updatePillVisual(k) end
+                    end
+                    pcall(callback, getSelectedList(), opt)
+                end)
+
+                -- hover effect
+                btn.MouseEnter:Connect(function()
+                    if not isSelected(opt) then
+                        TweenService:Create(btn, TweenInfo.new(0.1), {
+                            BackgroundColor3 = Color3.fromRGB(35,35,35)
+                        }):Play()
+                    end
+                end)
+                btn.MouseLeave:Connect(function()
+                    if not isSelected(opt) then
+                        TweenService:Create(btn, TweenInfo.new(0.1), {
+                            BackgroundColor3 = T.ElemDark
+                        }):Play()
+                    end
+                end)
+
+                pillButtons[opt] = btn
+                updatePillVisual(opt)
+            end
+
+            for i, opt in ipairs(options) do
+                createPill(opt, i)
+            end
+
+            -- ── SelectorObj API ──────────────────────────────
+            local SelectorObj = {}
+
+            function SelectorObj:Get()
+                return getSelectedList()
+            end
+
+            function SelectorObj:Set(items)
+                -- clear all
+                for k in pairs(selected) do selected[k] = false end
+                -- set given items
+                if type(items) == "table" then
+                    for _, opt in ipairs(items) do
+                        selected[opt] = true
+                    end
+                elseif type(items) == "string" then
+                    selected[items] = true
+                end
+                for k in pairs(pillButtons) do updatePillVisual(k) end
+            end
+
+            function SelectorObj:Add(opt)
+                if pillButtons[opt] then return end  -- already exists
+                table.insert(options, opt)
+                createPill(opt, #options)
+            end
+
+            function SelectorObj:Remove(opt)
+                if not pillButtons[opt] then return end
+                pillButtons[opt]:Destroy()
+                pillButtons[opt] = nil
+                selected[opt] = nil
+                for i, v in ipairs(options) do
+                    if v == opt then table.remove(options, i); break end
+                end
+            end
+
+            return SelectorObj
         end
 
         return TabObj
