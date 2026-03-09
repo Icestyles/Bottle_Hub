@@ -1,14 +1,16 @@
 --!nocheck
 --[[
-    BOTTLEHUB LIBRARY V11.7 (PERFECT LAYOUT & GUARD PATCH)
+    BOTTLEHUB LIBRARY V11.7 (COMPACT & GLASSMORPHISM PATCH)
     ─────────────────────────────────────────────────────────────
-    FIX 1: NOTIFICATION SPLIT SYSTEM
-      - Normal Notification -> โผล่มุมขวาล่างของจอ (Bottom Right)
-      - Permission Notification -> โผล่กลาง GUI พร้อมพื้นหลังดำจางๆ (Dim Overlay) บล็อกการคลิก
-    
-    FIX 2: COMPACT PROFILE CARD
-      - ใช้ความสูงเดิม (220px) แต่จัดสรรพื้นที่ใส่ FPS/Ping, Rejoin, Hop, Sub-Place ได้ครบถ้วน
-      - คลิกที่บริเวณโปรไฟล์เพื่อ Copy UserID ได้
+    1. COMPACT PROFILE CARD (175px)
+       - รวม FPS/Ping ไว้กับ UserID
+       - รวม Sub-Place ไว้กับ Game Name
+       - ปุ่ม Quick Actions (Rejoin/Hop) เรียงข้างปุ่ม Discord
+    2. SMART NOTIFICATION
+       - No Permission: เด้งกลางจอ + Dim Overlay ดำเต็มจอ
+       - Normal: เด้งมุมขวาล่าง
+    3. GLASSMORPHISM
+       - ContentContainer ปรับความจาง (BackgroundTransparency = 0.75)
 ]]
 
 local BottleLib = {}
@@ -42,7 +44,7 @@ BottleLib.CleanUpEvent.Event:Connect(function()
 end)
 
 -- ============================================================
--- 🔔 NOTIFICATION SYSTEM (SPLIT LOGIC)
+-- 🔔 SMART NOTIFICATION SYSTEM
 -- ============================================================
 function BottleLib:Notify(msg)
     local parentGui = (gethui and gethui()) or CoreGui
@@ -52,7 +54,7 @@ function BottleLib:Notify(msg)
     local isPermError = (msg == "You do not have permission to use this Premium feature.")
 
     if isPermError then
-        -- 🔴 1. PERMISSION ERROR (กลาง GUI + จอดำ)
+        -- ⛔ PERMISSION ERROR (โผล่กลางจอ + จอดำ Overlay)
         local mainWin = sg:FindFirstChild("MainFrame")
         if not mainWin then return end
 
@@ -75,7 +77,7 @@ function BottleLib:Notify(msg)
         Instance.new("UICorner", notif).CornerRadius = UDim.new(0, 6)
         
         local stroke = Instance.new("UIStroke", notif)
-        stroke.Color = Color3.fromRGB(255, 69, 58) -- สีแดงเตือน
+        stroke.Color = Color3.fromRGB(255, 69, 58)
         stroke.Transparency = 1
 
         local icon = Instance.new("TextLabel", notif)
@@ -118,14 +120,14 @@ function BottleLib:Notify(msg)
         end)
 
     else
-        -- 🟢 2. NORMAL NOTIFICATION (ขวาล่างสุดของจอ)
+        -- 🔔 NORMAL NOTIFICATION (โผล่มุมขวาล่างสุด)
         local container = sg:FindFirstChild("NotifyContainer")
         if not container then
             container = Instance.new("Frame", sg)
             container.Name = "NotifyContainer"
             container.Size = UDim2.new(0, 260, 1, -20)
             container.Position = UDim2.new(1, -20, 1, -20)
-            container.AnchorPoint = Vector2.new(1, 1) -- แกนอยู่ที่มุมขวาล่าง
+            container.AnchorPoint = Vector2.new(1, 1) 
             container.BackgroundTransparency = 1
             container.ZIndex = 100
             
@@ -449,7 +451,8 @@ function BottleLib:CreateWindow(WindowConfig)
     local MainFrame = Instance.new("Frame", ScreenGui)
     MainFrame.Name = "MainFrame" 
     MainFrame.Size = UDim2.new(0,600,0,480); MainFrame.Position = UDim2.new(0.5,-300,0.5,-240)
-    MainFrame.BackgroundColor3 = T.Main; MainFrame.Active = true
+    -- 🔴 [FIX] ทำให้ตัวกรอบใสขึ้นนิดหน่อย เพื่อให้ Layer ถัดไปสวยขึ้น
+    MainFrame.BackgroundColor3 = T.Main; MainFrame.BackgroundTransparency = 0.1; MainFrame.Active = true
     Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0,8)
     local MFStroke = Instance.new("UIStroke", MainFrame)
     MFStroke.Color = T.Accent; MFStroke.Thickness = 1.5
@@ -462,32 +465,53 @@ function BottleLib:CreateWindow(WindowConfig)
     ContentContainer.Size     = UDim2.new(0,441,1,-24)
     ContentContainer.Position = UDim2.new(0,207,0,12)
     ContentContainer.BackgroundColor3 = T.Content; ContentContainer.BorderSizePixel = 0
+    -- 🔴 [FIX] ทำให้ส่วนที่เก็บ Feature ใส 75% ตามที่สั่ง (BackgroundTransparency = 0.75)
+    ContentContainer.BackgroundTransparency = 0.75
     Instance.new("UICorner", ContentContainer).CornerRadius = UDim.new(0,6)
 
-    -- ──────────────────────────────────────────────────────────
-    -- 🛠️ DRAG SYSTEM
-    -- ──────────────────────────────────────────────────────────
-    local dragging = false; local dragStart = nil; local startPos = nil
-    MainFrame.InputBegan:Connect(function(input, gp)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            local relX = input.Position.X - MainFrame.AbsolutePosition.X
-            local relY = input.Position.Y - MainFrame.AbsolutePosition.Y
-            if relY <= 40 or relX <= 195 then
-                dragging = true; dragStart = input.Position; startPos = MainFrame.Position
+    local dragStrip = Instance.new("TextButton", MainFrame)
+    dragStrip.Name               = "DragStrip"
+    dragStrip.Size               = UDim2.new(0, 195, 1, 0)
+    dragStrip.Position           = UDim2.new(0, 0, 0, 0)
+    dragStrip.BackgroundTransparency = 1
+    dragStrip.Text               = ""
+    dragStrip.ZIndex             = 2
+    dragStrip.AutoButtonColor    = false
+
+    local DRAG_THRESHOLD = 6   
+    local isMouseDown     = false
+    local isDragging      = false
+    local dragStartX      = 0
+    local dragStartY      = 0
+    local dragOffsetX     = 0
+    local dragOffsetY     = 0
+
+    dragStrip.MouseButton1Down:Connect(function(x, y)
+        isMouseDown = true; isDragging  = false
+        dragStartX  = x; dragStartY  = y
+        dragOffsetX = MainFrame.Position.X.Offset; dragOffsetY = MainFrame.Position.Y.Offset
+    end)
+
+    dragStrip.MouseMoved:Connect(function(x, y)
+        if not isMouseDown then return end
+        local dx = x - dragStartX
+        local dy = y - dragStartY
+        if not isDragging then
+            if math.abs(dx) > DRAG_THRESHOLD or math.abs(dy) > DRAG_THRESHOLD then
+                isDragging = true
+            else
+                return
             end
         end
+        MainFrame.Position = UDim2.new(
+            MainFrame.Position.X.Scale, dragOffsetX + dx,
+            MainFrame.Position.Y.Scale, dragOffsetY + dy
+        )
     end)
-    UserInputService.InputChanged:Connect(function(input)
-        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-            local delta = input.Position - dragStart
-            MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-        end
+
+    dragStrip.MouseButton1Up:Connect(function()
+        isMouseDown = false; isDragging  = false
     end)
-    UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = false end
-    end)
-    local ok, wfr = pcall(function() return UserInputService.WindowFocusReleased end)
-    if ok and wfr then table.insert(BottleLib.Connections, wfr:Connect(function() dragging = false end)) end
 
     local MiniButton = Instance.new("ImageButton", ScreenGui)
     MiniButton.Size = UDim2.new(0,42,0,42); MiniButton.Position = UDim2.new(0,10,0,10)
@@ -526,8 +550,8 @@ function BottleLib:CreateWindow(WindowConfig)
         GlobalOverlayClose.Visible = false
     end)
 
-    -- 🔴 [FIX] คืนขนาด PROFILE CARD เป็น 220px
-    local PROFILE_H = 220
+    -- 🔴 [FIX] คืนขนาดกลับไปที่ 175px (Compact)
+    local PROFILE_H = 175
     local TabScrollContainer = Instance.new("ScrollingFrame", Sidebar); TabScrollContainer.Size = UDim2.new(1,0,1,-(PROFILE_H+46)); TabScrollContainer.Position = UDim2.new(0,0,0,46); TabScrollContainer.BackgroundTransparency = 1; TabScrollContainer.ScrollBarThickness = 0; TabScrollContainer.BorderSizePixel = 0
     local TabListLayout = Instance.new("UIListLayout", TabScrollContainer); TabListLayout.SortOrder = Enum.SortOrder.LayoutOrder; TabListLayout.Padding = UDim.new(0,5); TabListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
     local TabPad = Instance.new("UIPadding", TabScrollContainer); TabPad.PaddingTop = UDim.new(0,10); TabPad.PaddingBottom = UDim.new(0,10)
@@ -551,13 +575,14 @@ function BottleLib:CreateWindow(WindowConfig)
 
     -- 🔴 [NEW] CLICK TO COPY USER ID
     local CopyIdBtn = Instance.new("TextButton", ProfileCard)
-    CopyIdBtn.Size = UDim2.new(1,0,0,76)
+    CopyIdBtn.Size = UDim2.new(1,0,0,72)
     CopyIdBtn.Position = UDim2.new(0,0,0,0)
     CopyIdBtn.BackgroundTransparency = 1
     CopyIdBtn.Text = ""
     CopyIdBtn.ZIndex = 10
     CopyIdBtn.MouseButton1Click:Connect(function()
         pcall(function() setclipboard(tostring(player.UserId)) end)
+        -- โชว์ Notify แบบธรรมดา (Bottom Right)
         BottleLib:Notify("Copied User ID: " .. tostring(player.UserId))
     end)
 
@@ -583,115 +608,11 @@ function BottleLib:CreateWindow(WindowConfig)
 
     CreateMarqueeLabel(NameBlock, player.DisplayName, T.Text, Enum.Font.GothamBold, 13, true,  1)
     CreateMarqueeLabel(NameBlock, "@"..player.Name, T.SubText, Enum.Font.Gotham, 10, false, 2)
+    
+    -- 🔴 [FIX] รวม FPS / Ping เข้ามาในบรรทัด User ID
     local UIDRow = Instance.new("Frame", NameBlock); UIDRow.LayoutOrder = 3; UIDRow.Size = UDim2.new(1,0,0,13); UIDRow.BackgroundTransparency = 1; UIDRow.ZIndex = 5
-    local UIDLbl = Instance.new("TextLabel", UIDRow); UIDLbl.Size = UDim2.new(1,0,1,0); UIDLbl.BackgroundTransparency = 1; UIDLbl.Font = Enum.Font.Gotham; UIDLbl.TextSize = 9; UIDLbl.TextXAlignment = Enum.TextXAlignment.Left; UIDLbl.TextColor3 = Color3.fromRGB(70,70,70); UIDLbl.Text = "🆔  " .. tostring(player.UserId); UIDLbl.ZIndex = 6
-
-    local DivA = Instance.new("Frame", ProfileCard); DivA.Size = UDim2.new(1,-16,0,1); DivA.Position = UDim2.new(0,8,0,76); DivA.BackgroundColor3 = Color3.fromRGB(38,38,38); DivA.BorderSizePixel = 0; DivA.ZIndex = 4
-    
-    -- 🔴 [FIX] COMPACT INFO BLOCK (Fits perfectly in 220px height)
-    local InfoBlock = Instance.new("Frame", ProfileCard); 
-    InfoBlock.Size = UDim2.new(1,-16,0,96); 
-    InfoBlock.Position = UDim2.new(0,8,0,82); 
-    InfoBlock.BackgroundTransparency = 1; InfoBlock.ZIndex = 4
-    
-    local ibLayout = Instance.new("UIListLayout", InfoBlock); 
-    ibLayout.SortOrder = Enum.SortOrder.LayoutOrder; 
-    ibLayout.Padding = UDim.new(0, 3);  -- บีบระยะห่างให้พอดี
-    ibLayout.VerticalAlignment = Enum.VerticalAlignment.Top
-
-    local GameLbl = CreateMarqueeLabel(InfoBlock, "🎮  Loading...", T.SubText, Enum.Font.Gotham, 10, true, 1)
-    local SubPlaceLbl = CreateMarqueeLabel(InfoBlock, "📍  Loading...", T.SubText, Enum.Font.Gotham, 10, true, 2)
-
-    task.spawn(function() 
-        local ok, info = pcall(function() return MarketplaceService:GetProductInfo(game.PlaceId) end)
-        local pubName = ok and info.Name or game.Name
-        if GameLbl and GameLbl.Parent then GameLbl.Text = "🎮  " .. pubName end
-        if SubPlaceLbl and SubPlaceLbl.Parent then
-            if game.Name ~= pubName and game.Name ~= "Place1" then
-                SubPlaceLbl.Text = "📍  " .. game.Name .. " (" .. game.PlaceId .. ")"
-            else
-                SubPlaceLbl.Text = "📍  Place ID: " .. game.PlaceId
-            end
-        end
-    end)
-
-    local KeyRow = Instance.new("Frame", InfoBlock)
-    KeyRow.LayoutOrder = 3
-    KeyRow.Size = UDim2.new(1,0,0,0)
-    KeyRow.AutomaticSize = Enum.AutomaticSize.Y
-    KeyRow.BackgroundTransparency = 1
-    KeyRow.ZIndex = 4
-
-    local KeyBadge = Instance.new("Frame", KeyRow)
-    KeyBadge.Position = UDim2.new(0,0,0,0)
-    KeyBadge.Size = UDim2.new(0,0,0,0)
-    KeyBadge.AutomaticSize = Enum.AutomaticSize.XY
-    KeyBadge.BackgroundColor3 = Color3.fromRGB(28,28,28)
-    KeyBadge.BorderSizePixel = 0
-    KeyBadge.ZIndex = 5
-    Instance.new("UICorner", KeyBadge).CornerRadius = UDim.new(0,4)
-    
-    local kbPad = Instance.new("UIPadding", KeyBadge)
-    kbPad.PaddingLeft = UDim.new(0,7); kbPad.PaddingRight = UDim.new(0,7)
-    kbPad.PaddingTop = UDim.new(0,2); kbPad.PaddingBottom = UDim.new(0,2)
-    
-    local KeyBadgeStroke = Instance.new("UIStroke", KeyBadge)
-    KeyBadgeStroke.Thickness = 1
-    
-    local KeyLbl = Instance.new("TextLabel", KeyBadge)
-    KeyLbl.Size = UDim2.new(0,0,0,0)
-    KeyLbl.AutomaticSize = Enum.AutomaticSize.XY
-    KeyLbl.BackgroundTransparency = 1
-    KeyLbl.Font = Enum.Font.GothamBold
-    KeyLbl.TextSize = 9
-    KeyLbl.TextXAlignment = Enum.TextXAlignment.Left
-    KeyLbl.TextYAlignment = Enum.TextYAlignment.Center
-    KeyLbl.ZIndex = 6
-
-    task.spawn(function()
-        while KeyRow and KeyRow.Parent do
-            local tier = BottleLib.KeyStatus.Tier or "Basic"
-            local isFull = (tier == "Full")
-
-            if BottleLib.KeyStatus.IsGlobal then
-                KeyBadge.BackgroundColor3 = isFull and Color3.fromRGB(25,8,8) or Color3.fromRGB(26,26,26)
-                KeyBadgeStroke.Color = isFull and T.Accent or Color3.fromRGB(100,100,100)
-                KeyLbl.TextColor3 = isFull and T.Accent or Color3.fromRGB(200,200,200)
-                KeyLbl.Text = isFull and "🔑  Weekend!!!\nfor Premium Access" or "🔑  Bottle is kind\nbeyond word!!\nI really Love him"
-            elseif BottleLib.KeyStatus.ExpiresAt then
-                local rem = BottleLib.KeyStatus.ExpiresAt - os.time()
-                if rem <= 0 then 
-                    KeyBadge.BackgroundColor3 = Color3.fromRGB(35,10,10); KeyBadgeStroke.Color = T.Red; KeyLbl.TextColor3 = T.Red; KeyLbl.Text = "🔑  Expired"
-                elseif rem >= 86400 then 
-                    KeyBadge.BackgroundColor3 = isFull and Color3.fromRGB(10,28,10) or Color3.fromRGB(26,26,26)
-                    KeyBadgeStroke.Color = isFull and T.Accent or Color3.fromRGB(100,100,100)
-                    KeyLbl.TextColor3 = isFull and T.Accent or Color3.fromRGB(200,200,200)
-                    KeyLbl.Text = "🔑 Duration | " .. math.floor(rem/86400) .. " Days"
-                else 
-                    local h = math.floor(rem/3600); local m = math.floor((rem%3600)/60); local s = rem%60; local col = (rem < 3600) and T.Red or T.Yellow
-                    KeyBadge.BackgroundColor3 = Color3.fromRGB(30,26,8); KeyBadgeStroke.Color = col; KeyLbl.TextColor3 = col; KeyLbl.Text = "🔑 Duration | " .. string.format("%02d:%02d:%02d", h, m, s) 
-                end
-            else 
-                KeyBadge.BackgroundColor3 = isFull and Color3.fromRGB(25,8,8) or Color3.fromRGB(26,26,26)
-                KeyBadgeStroke.Color = isFull and T.Accent or Color3.fromRGB(50,50,50)
-                KeyLbl.TextColor3 = isFull and T.Accent or T.SubText
-                KeyLbl.Text = isFull and "🔑 VIP Access" or "🔑 Basic Access"
-            end
-            
-            task.wait(1)
-        end
-    end)
-
-    -- 🔴 [NEW] FPS & PING STATS
-    local StatsRow = Instance.new("TextLabel", InfoBlock)
-    StatsRow.LayoutOrder = 4
-    StatsRow.Size = UDim2.new(1,0,0,12)
-    StatsRow.BackgroundTransparency = 1
-    StatsRow.TextColor3 = T.SubText
-    StatsRow.Font = Enum.Font.GothamMedium
-    StatsRow.TextSize = 9
-    StatsRow.TextXAlignment = Enum.TextXAlignment.Left
-    StatsRow.Text = "📈 FPS: --  |  📶 Ping: --ms"
+    local UIDLbl = Instance.new("TextLabel", UIDRow); UIDLbl.Size = UDim2.new(1,0,1,0); UIDLbl.BackgroundTransparency = 1; UIDLbl.Font = Enum.Font.Gotham; UIDLbl.TextSize = 9; UIDLbl.TextXAlignment = Enum.TextXAlignment.Left; UIDLbl.TextColor3 = Color3.fromRGB(120,120,120); UIDLbl.ZIndex = 6
+    UIDLbl.Text = "🆔 " .. tostring(player.UserId) .. " | 📈 -- | 📶 --"
 
     local lastUpdate = tick()
     local frames = 0
@@ -709,55 +630,139 @@ function BottleLib:CreateWindow(WindowConfig)
                     ping = math.floor(tonumber(stats:match("%d+%.?%d*")) or 0)
                 end)
             end
-            if StatsRow and StatsRow.Parent then
-                StatsRow.Text = string.format("📈 FPS: %d  |  📶 Ping: %dms", fps, ping)
+            if UIDLbl and UIDLbl.Parent then
+                UIDLbl.Text = string.format("🆔 %s | 📈 %d | 📶 %d", player.UserId, fps, ping)
             end
         end
     end)
 
-    -- 🔴 [NEW] QUICK ACTIONS (REJOIN & HOP)
-    local QuickActRow = Instance.new("Frame", InfoBlock)
-    QuickActRow.LayoutOrder = 5
-    QuickActRow.Size = UDim2.new(1,0,0,18)
-    QuickActRow.BackgroundTransparency = 1
-    local qaLayout = Instance.new("UIListLayout", QuickActRow)
-    qaLayout.FillDirection = Enum.FillDirection.Horizontal
-    qaLayout.Padding = UDim.new(0, 5)
+    local DivA = Instance.new("Frame", ProfileCard); DivA.Size = UDim2.new(1,-16,0,1); DivA.Position = UDim2.new(0,8,0,76); DivA.BackgroundColor3 = Color3.fromRGB(38,38,38); DivA.BorderSizePixel = 0; DivA.ZIndex = 4
+    
+    -- 🔴 [FIX] รวมพื้นที่ให้พอดี 175px
+    local InfoBlock = Instance.new("Frame", ProfileCard); 
+    InfoBlock.Size = UDim2.new(1,-16,0,60); 
+    InfoBlock.Position = UDim2.new(0,8,0,80); 
+    InfoBlock.BackgroundTransparency = 1; InfoBlock.ZIndex = 4
+    local ibLayout = Instance.new("UIListLayout", InfoBlock); ibLayout.SortOrder = Enum.SortOrder.LayoutOrder; ibLayout.Padding = UDim.new(0,4); ibLayout.VerticalAlignment = Enum.VerticalAlignment.Top
 
-    local function makeQABtn(text, icon)
-        local btn = Instance.new("TextButton", QuickActRow)
-        btn.Size = UDim2.new(0.5, -2, 1, 0)
-        btn.BackgroundColor3 = Color3.fromRGB(24,24,24)
-        btn.Text = icon .. " " .. text
-        btn.TextColor3 = T.Text
-        btn.Font = Enum.Font.GothamBold
-        btn.TextSize = 9
-        btn.AutoButtonColor = false
-        Instance.new("UICorner", btn).CornerRadius = UDim.new(0,4)
-        local stroke = Instance.new("UIStroke", btn)
-        stroke.Color = Color3.fromRGB(50,50,50)
-        btn.MouseEnter:Connect(function() TweenService:Create(btn, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(35,35,35)}):Play() end)
-        btn.MouseLeave:Connect(function() TweenService:Create(btn, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(24,24,24)}):Play() end)
-        return btn
-    end
+    -- 🔴 [FIX] รวม Game กับ SubPlace ใน Marquee เดียวกัน
+    local GameLbl = CreateMarqueeLabel(InfoBlock, "🎮  Loading...", T.SubText, Enum.Font.Gotham, 10, true, 1)
+    task.spawn(function() 
+        local ok, info = pcall(function() return MarketplaceService:GetProductInfo(game.PlaceId) end)
+        local pubName = ok and info.Name or game.Name
+        if GameLbl and GameLbl.Parent then
+            if game.Name ~= pubName and game.Name ~= "Place1" then
+                GameLbl.Text = "🎮 " .. pubName .. "   |   📍 " .. game.Name .. " (" .. game.PlaceId .. ")"
+            else
+                GameLbl.Text = "🎮 " .. pubName .. "   |   📍 ID: " .. game.PlaceId
+            end
+        end
+    end)
 
-    local RejoinBtn = makeQABtn("Rejoin", "🔄")
-    local HopBtn = makeQABtn("Hop", "🌍")
+    local KeyRow = Instance.new("Frame", InfoBlock); KeyRow.LayoutOrder = 2; KeyRow.Size = UDim2.new(1,0,0,0); KeyRow.AutomaticSize = Enum.AutomaticSize.Y; KeyRow.BackgroundTransparency = 1; KeyRow.ZIndex = 4
+    local KeyBadge = Instance.new("Frame", KeyRow); KeyBadge.Position = UDim2.new(0,0,0,0); KeyBadge.Size = UDim2.new(0,0,0,0); KeyBadge.AutomaticSize = Enum.AutomaticSize.XY; KeyBadge.BackgroundColor3 = Color3.fromRGB(28,28,28); KeyBadge.BorderSizePixel = 0; KeyBadge.ZIndex = 5; Instance.new("UICorner", KeyBadge).CornerRadius = UDim.new(0,4)
+    local kbPad = Instance.new("UIPadding", KeyBadge); kbPad.PaddingLeft = UDim.new(0,7); kbPad.PaddingRight = UDim.new(0,7); kbPad.PaddingTop = UDim.new(0,3); kbPad.PaddingBottom = UDim.new(0,3)
+    local KeyBadgeStroke = Instance.new("UIStroke", KeyBadge); KeyBadgeStroke.Thickness = 1
+    local KeyLbl = Instance.new("TextLabel", KeyBadge); KeyLbl.Size = UDim2.new(0,0,0,0); KeyLbl.AutomaticSize = Enum.AutomaticSize.XY; KeyLbl.BackgroundTransparency = 1; KeyLbl.Font = Enum.Font.GothamBold; KeyLbl.TextSize = 9; KeyLbl.TextXAlignment = Enum.TextXAlignment.Left; KeyLbl.TextYAlignment = Enum.TextYAlignment.Center; KeyLbl.ZIndex = 6
 
-    local function isPremiumQA()
+    task.spawn(function()
+        while KeyRow and KeyRow.Parent do
+            local tier = BottleLib.KeyStatus.Tier or "Basic"
+            local isFull = (tier == "Full")
+
+            if BottleLib.KeyStatus.IsGlobal then
+                KeyBadge.BackgroundColor3 = isFull and Color3.fromRGB(25,8,8) or Color3.fromRGB(26,26,26)
+                KeyBadgeStroke.Color = isFull and T.Accent or Color3.fromRGB(100,100,100)
+                KeyLbl.TextColor3 = isFull and T.Accent or Color3.fromRGB(200,200,200)
+                KeyLbl.Text = isFull and "🔑 Weekend!!!\nfor Premium Access" or "🔑 Bottle is kind\nbeyond word!!\nI really Love him"
+            elseif BottleLib.KeyStatus.ExpiresAt then
+                local rem = BottleLib.KeyStatus.ExpiresAt - os.time()
+                if rem <= 0 then 
+                    KeyBadge.BackgroundColor3 = Color3.fromRGB(35,10,10); KeyBadgeStroke.Color = T.Red; KeyLbl.TextColor3 = T.Red; KeyLbl.Text = "🔑 Expired"
+                elseif rem >= 86400 then 
+                    KeyBadge.BackgroundColor3 = isFull and Color3.fromRGB(10,28,10) or Color3.fromRGB(26,26,26)
+                    KeyBadgeStroke.Color = isFull and T.Accent or Color3.fromRGB(100,100,100)
+                    KeyLbl.TextColor3 = isFull and T.Accent or Color3.fromRGB(200,200,200)
+                    KeyLbl.Text = "🔑 Duration | " .. math.floor(rem/86400) .. " Days"
+                else 
+                    local h = math.floor(rem/3600); local m = math.floor((rem%3600)/60); local s = rem%60; local col = (rem < 3600) and T.Red or T.Yellow
+                    KeyBadge.BackgroundColor3 = Color3.fromRGB(30,26,8); KeyBadgeStroke.Color = col; KeyLbl.TextColor3 = col; KeyLbl.Text = "🔑 Duration | " .. string.format("%02d:%02d:%02d", h, m, s) 
+                end
+            else 
+                KeyBadge.BackgroundColor3 = isFull and Color3.fromRGB(25,8,8) or Color3.fromRGB(26,26,26)
+                KeyBadgeStroke.Color = isFull and T.Accent or Color3.fromRGB(50,50,50)
+                KeyLbl.TextColor3 = isFull and T.Accent or T.SubText
+                KeyLbl.Text = isFull and "🔑 VIP Access" or "🔑 Basic Access"
+            end
+            task.wait(1)
+        end
+    end)
+
+    local DivB = Instance.new("Frame", ProfileCard); DivB.Size = UDim2.new(1,-16,0,1); DivB.Position = UDim2.new(0,8,1,-31); DivB.BackgroundColor3 = Color3.fromRGB(38,38,38); DivB.BorderSizePixel = 0; DivB.ZIndex = 4
+
+    -- 🔴 [NEW] QUICK ACTIONS + DISCORD (รวมในบรรทัดล่างสุด)
+    local RejoinBtn = Instance.new("TextButton", ProfileCard)
+    RejoinBtn.Size = UDim2.new(0, 24, 0, 22)
+    RejoinBtn.Position = UDim2.new(0, 8, 1, -26)
+    RejoinBtn.BackgroundColor3 = Color3.fromRGB(24,24,24)
+    RejoinBtn.Text = "🔄"
+    RejoinBtn.TextColor3 = T.Text
+    RejoinBtn.Font = Enum.Font.GothamBold
+    RejoinBtn.TextSize = 12
+    RejoinBtn.AutoButtonColor = false
+    RejoinBtn.ZIndex = 4
+    Instance.new("UICorner", RejoinBtn).CornerRadius = UDim.new(0,4)
+    Instance.new("UIStroke", RejoinBtn).Color = Color3.fromRGB(50,50,50)
+
+    local HopBtn = Instance.new("TextButton", ProfileCard)
+    HopBtn.Size = UDim2.new(0, 24, 0, 22)
+    HopBtn.Position = UDim2.new(0, 36, 1, -26)
+    HopBtn.BackgroundColor3 = Color3.fromRGB(24,24,24)
+    HopBtn.Text = "🌍"
+    HopBtn.TextColor3 = T.Text
+    HopBtn.Font = Enum.Font.GothamBold
+    HopBtn.TextSize = 12
+    HopBtn.AutoButtonColor = false
+    HopBtn.ZIndex = 4
+    Instance.new("UICorner", HopBtn).CornerRadius = UDim.new(0,4)
+    Instance.new("UIStroke", HopBtn).Color = Color3.fromRGB(50,50,50)
+
+    local DiscordBtn = Instance.new("TextButton", ProfileCard)
+    DiscordBtn.Size = UDim2.new(1, -72, 0, 22)
+    DiscordBtn.Position = UDim2.new(0, 64, 1, -26)
+    DiscordBtn.BackgroundColor3 = Color3.fromRGB(24,24,42)
+    DiscordBtn.Text = "📣 Discord"
+    DiscordBtn.TextColor3 = Color3.fromRGB(120,120,240)
+    DiscordBtn.Font = Enum.Font.GothamBold
+    DiscordBtn.TextSize = 10
+    DiscordBtn.AutoButtonColor = false
+    DiscordBtn.ZIndex = 4
+    Instance.new("UICorner", DiscordBtn).CornerRadius = UDim.new(0,4)
+    local dbStroke = Instance.new("UIStroke", DiscordBtn); dbStroke.Color = Color3.fromRGB(50,50,90)
+
+    -- Hover effects
+    RejoinBtn.MouseEnter:Connect(function() TweenService:Create(RejoinBtn, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(35,35,35)}):Play() end)
+    RejoinBtn.MouseLeave:Connect(function() TweenService:Create(RejoinBtn, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(24,24,24)}):Play() end)
+    HopBtn.MouseEnter:Connect(function() TweenService:Create(HopBtn, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(35,35,35)}):Play() end)
+    HopBtn.MouseLeave:Connect(function() TweenService:Create(HopBtn, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(24,24,24)}):Play() end)
+    DiscordBtn.MouseEnter:Connect(function() TweenService:Create(DiscordBtn, TweenInfo.new(0.15), { BackgroundColor3 = Color3.fromRGB(36,36,65), TextColor3 = Color3.fromRGB(160,160,255) }):Play(); TweenService:Create(dbStroke, TweenInfo.new(0.15), { Color = Color3.fromRGB(90,90,180) }):Play() end)
+    DiscordBtn.MouseLeave:Connect(function() TweenService:Create(DiscordBtn, TweenInfo.new(0.15), { BackgroundColor3 = Color3.fromRGB(24,24,42), TextColor3 = Color3.fromRGB(120,120,240) }):Play(); TweenService:Create(dbStroke, TweenInfo.new(0.15), { Color = Color3.fromRGB(50,50,90) }):Play() end)
+
+    -- Click Actions
+    local function checkPremiumQA()
         if BottleLib.KeyStatus.Tier == "Full" then return true end
         BottleLib:Notify("You do not have permission to use this Premium feature.")
         return false
     end
 
     RejoinBtn.MouseButton1Click:Connect(function()
-        if not isPremiumQA() then return end
+        if not checkPremiumQA() then return end
         BottleLib:Notify("Rejoining Server...")
         TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, player)
     end)
 
     HopBtn.MouseButton1Click:Connect(function()
-        if not isPremiumQA() then return end
+        if not checkPremiumQA() then return end
         BottleLib:Notify("Searching for new server...")
         task.spawn(function()
             local url = "https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100"
@@ -781,12 +786,6 @@ function BottleLib:CreateWindow(WindowConfig)
         end)
     end)
 
-    local DivB = Instance.new("Frame", ProfileCard); DivB.Size = UDim2.new(1,-16,0,1); DivB.Position = UDim2.new(0,8,1,-38); DivB.BackgroundColor3 = Color3.fromRGB(38,38,38); DivB.BorderSizePixel = 0; DivB.ZIndex = 4
-    local DiscordBtn = Instance.new("TextButton", ProfileCard); DiscordBtn.Size = UDim2.new(1,-16,0,24); DiscordBtn.Position = UDim2.new(0,8,1,-32); DiscordBtn.BackgroundColor3 = Color3.fromRGB(24,24,42); DiscordBtn.Text = "📣  Join our Discord"; DiscordBtn.TextColor3 = Color3.fromRGB(120,120,240); DiscordBtn.Font = Enum.Font.GothamBold; DiscordBtn.TextSize = 10; DiscordBtn.AutoButtonColor = false; DiscordBtn.ZIndex = 4; Instance.new("UICorner", DiscordBtn).CornerRadius = UDim.new(0,6)
-    local dbStroke = Instance.new("UIStroke", DiscordBtn); dbStroke.Color = Color3.fromRGB(50,50,90); dbStroke.Thickness = 1
-
-    DiscordBtn.MouseEnter:Connect(function() TweenService:Create(DiscordBtn, TweenInfo.new(0.15), { BackgroundColor3 = Color3.fromRGB(36,36,65), TextColor3 = Color3.fromRGB(160,160,255) }):Play(); TweenService:Create(dbStroke, TweenInfo.new(0.15), { Color = Color3.fromRGB(90,90,180) }):Play() end)
-    DiscordBtn.MouseLeave:Connect(function() TweenService:Create(DiscordBtn, TweenInfo.new(0.15), { BackgroundColor3 = Color3.fromRGB(24,24,42), TextColor3 = Color3.fromRGB(120,120,240) }):Play(); TweenService:Create(dbStroke, TweenInfo.new(0.15), { Color = Color3.fromRGB(50,50,90) }):Play() end)
     DiscordBtn.MouseButton1Click:Connect(function()
         pcall(function() setclipboard(SECRETS.Discord) end)
         local origText = DiscordBtn.Text; local origColor = DiscordBtn.TextColor3
@@ -842,6 +841,7 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
     local function checkPerm()
         if isPremiumBlock then
             if BottleLib.KeyStatus.Tier == "Full" then return true end
+            -- เด้งเตือนกลางหน้าจอเพราะเป็นการละเมิดสิทธิ์ Permission
             BottleLib:Notify("You do not have permission to use this Premium feature.")
             return false
         end
