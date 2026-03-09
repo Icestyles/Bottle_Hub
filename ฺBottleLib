@@ -1,10 +1,11 @@
 --!nocheck
 --[[
-    BOTTLEHUB LIBRARY V11.5 (SUB-PLACE & UI OPTIMIZATION)
+    BOTTLEHUB LIBRARY V11.6 (SMART PROFILE & QUICK ACTIONS)
     ─────────────────────────────────────────────────────────────
-    NEW FEATURE:
-      - เพิ่มบรรทัด Sub-Place (📍) ใต้ Main Game Name (🎮)
-      - ขยายความสูง Profile Card อัตโนมัติเพื่อให้ UI ดูสมดุล
+    NEW FEATURES:
+      - 📈 Real-time FPS & Ping Counter
+      - ⚡ Quick Actions (Rejoin & Server Hop) restricted to Premium
+      - 📋 Clickable Username/Avatar to Copy UserID
 ]]
 
 local BottleLib = {}
@@ -19,6 +20,7 @@ local HttpService         = game:GetService("HttpService")
 local Players             = game:GetService("Players")
 local RbxAnalyticsService = game:GetService("RbxAnalyticsService")
 local MarketplaceService  = game:GetService("MarketplaceService")
+local TeleportService     = game:GetService("TeleportService")
 
 local player = Players.LocalPlayer
 while not player do task.wait(0.1); player = Players.LocalPlayer end
@@ -459,8 +461,8 @@ function BottleLib:CreateWindow(WindowConfig)
         GlobalOverlayClose.Visible = false
     end)
 
-    -- 🔴 [FIX] PROFILE HEIGHT ขยายเพื่อรองรับข้อความ 3 บรรทัด + SubPlace
-    local PROFILE_H = 220
+    -- 🔴 [FIX] ขยาย Profile Height เพิ่มเพื่อรองรับข้อมูล
+    local PROFILE_H = 270
     local TabScrollContainer = Instance.new("ScrollingFrame", Sidebar); TabScrollContainer.Size = UDim2.new(1,0,1,-(PROFILE_H+46)); TabScrollContainer.Position = UDim2.new(0,0,0,46); TabScrollContainer.BackgroundTransparency = 1; TabScrollContainer.ScrollBarThickness = 0; TabScrollContainer.BorderSizePixel = 0
     local TabListLayout = Instance.new("UIListLayout", TabScrollContainer); TabListLayout.SortOrder = Enum.SortOrder.LayoutOrder; TabListLayout.Padding = UDim.new(0,5); TabListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
     local TabPad = Instance.new("UIPadding", TabScrollContainer); TabPad.PaddingTop = UDim.new(0,10); TabPad.PaddingBottom = UDim.new(0,10)
@@ -481,6 +483,18 @@ function BottleLib:CreateWindow(WindowConfig)
 
     local NameBlock = Instance.new("Frame", ProfileCard); NameBlock.Size = UDim2.new(1,-66,0,52); NameBlock.Position = UDim2.new(0,62,0,20); NameBlock.BackgroundTransparency = 1; NameBlock.ZIndex = 5
     local nbLayout = Instance.new("UIListLayout", NameBlock); nbLayout.SortOrder = Enum.SortOrder.LayoutOrder; nbLayout.Padding = UDim.new(0,2); nbLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+
+    -- 🔴 [NEW] CLICK TO COPY USER ID
+    local CopyIdBtn = Instance.new("TextButton", ProfileCard)
+    CopyIdBtn.Size = UDim2.new(1,0,0,76) -- ครอบคลุมพื้นที่ Banner + Avatar + Name
+    CopyIdBtn.Position = UDim2.new(0,0,0,0)
+    CopyIdBtn.BackgroundTransparency = 1
+    CopyIdBtn.Text = ""
+    CopyIdBtn.ZIndex = 10
+    CopyIdBtn.MouseButton1Click:Connect(function()
+        pcall(function() setclipboard(tostring(player.UserId)) end)
+        BottleLib:Notify("Copied User ID: " .. tostring(player.UserId))
+    end)
 
     local function CreateMarqueeLabel(parent, text, col, fnt, sz, allowScroll, lo)
         local container = Instance.new("Frame", parent); container.LayoutOrder = lo or 0; container.Size = UDim2.new(1,0,0,sz+4); container.BackgroundTransparency = 1; container.ClipsDescendants = true; container.ZIndex = parent.ZIndex or 5
@@ -594,6 +608,105 @@ function BottleLib:CreateWindow(WindowConfig)
         end
     end)
 
+    -- 🔴 [NEW] FPS & PING STATS
+    local StatsRow = Instance.new("TextLabel", InfoBlock)
+    StatsRow.LayoutOrder = 4
+    StatsRow.Size = UDim2.new(1,0,0,14)
+    StatsRow.BackgroundTransparency = 1
+    StatsRow.TextColor3 = T.SubText
+    StatsRow.Font = Enum.Font.GothamMedium
+    StatsRow.TextSize = 10
+    StatsRow.TextXAlignment = Enum.TextXAlignment.Left
+    StatsRow.Text = "📈 FPS: --  |  📶 Ping: --ms"
+
+    local lastUpdate = tick()
+    local frames = 0
+    RunService.RenderStepped:Connect(function()
+        frames = frames + 1
+        if tick() - lastUpdate >= 1 then
+            local fps = frames
+            frames = 0
+            lastUpdate = tick()
+            local ping = 0
+            pcall(function() ping = math.floor(player:GetNetworkPing() * 1000) end)
+            if ping == 0 then
+                pcall(function() 
+                    local stats = game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValueString()
+                    ping = math.floor(tonumber(stats:match("%d+%.?%d*")) or 0)
+                end)
+            end
+            if StatsRow and StatsRow.Parent then
+                StatsRow.Text = string.format("📈 FPS: %d  |  📶 Ping: %dms", fps, ping)
+            end
+        end
+    end)
+
+    -- 🔴 [NEW] QUICK ACTIONS (REJOIN & HOP)
+    local QuickActRow = Instance.new("Frame", InfoBlock)
+    QuickActRow.LayoutOrder = 5
+    QuickActRow.Size = UDim2.new(1,0,0,22)
+    QuickActRow.BackgroundTransparency = 1
+    local qaLayout = Instance.new("UIListLayout", QuickActRow)
+    qaLayout.FillDirection = Enum.FillDirection.Horizontal
+    qaLayout.Padding = UDim.new(0, 6)
+
+    local function makeQABtn(text, icon)
+        local btn = Instance.new("TextButton", QuickActRow)
+        btn.Size = UDim2.new(0.5, -3, 1, 0)
+        btn.BackgroundColor3 = Color3.fromRGB(24,24,24)
+        btn.Text = icon .. " " .. text
+        btn.TextColor3 = T.Text
+        btn.Font = Enum.Font.GothamBold
+        btn.TextSize = 10
+        btn.AutoButtonColor = false
+        Instance.new("UICorner", btn).CornerRadius = UDim.new(0,4)
+        local stroke = Instance.new("UIStroke", btn)
+        stroke.Color = Color3.fromRGB(50,50,50)
+        btn.MouseEnter:Connect(function() TweenService:Create(btn, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(35,35,35)}):Play() end)
+        btn.MouseLeave:Connect(function() TweenService:Create(btn, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(24,24,24)}):Play() end)
+        return btn
+    end
+
+    local RejoinBtn = makeQABtn("Rejoin", "🔄")
+    local HopBtn = makeQABtn("Hop", "🌍")
+
+    local function isPremium()
+        if BottleLib.KeyStatus.Tier == "Full" then return true end
+        BottleLib:Notify("You do not have permission to use this Premium feature.")
+        return false
+    end
+
+    RejoinBtn.MouseButton1Click:Connect(function()
+        if not isPremium() then return end
+        BottleLib:Notify("Rejoining Server...")
+        TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, player)
+    end)
+
+    HopBtn.MouseButton1Click:Connect(function()
+        if not isPremium() then return end
+        BottleLib:Notify("Searching for new server...")
+        task.spawn(function()
+            local url = "https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100"
+            local req = (syn and syn.request) or (http and http.request) or http_request or request
+            if req then
+                local ok, res = pcall(function() return req({Url = url, Method = "GET"}) end)
+                if ok and res and res.Body then
+                    local decoded = HttpService:JSONDecode(res.Body)
+                    if decoded and decoded.data then
+                        for _, v in ipairs(decoded.data) do
+                            if v.id ~= game.JobId and v.playing < v.maxPlayers then
+                                BottleLib:Notify("Teleporting...")
+                                TeleportService:TeleportToPlaceInstance(game.PlaceId, v.id, player)
+                                return
+                            end
+                        end
+                    end
+                end
+            end
+            BottleLib:Notify("Hop Failed: No servers found.")
+        end)
+    end)
+
     local DivB = Instance.new("Frame", ProfileCard); DivB.Size = UDim2.new(1,-16,0,1); DivB.Position = UDim2.new(0,8,1,-38); DivB.BackgroundColor3 = Color3.fromRGB(38,38,38); DivB.BorderSizePixel = 0; DivB.ZIndex = 4
     local DiscordBtn = Instance.new("TextButton", ProfileCard); DiscordBtn.Size = UDim2.new(1,-16,0,24); DiscordBtn.Position = UDim2.new(0,8,1,-32); DiscordBtn.BackgroundColor3 = Color3.fromRGB(24,24,42); DiscordBtn.Text = "📣  Join our Discord"; DiscordBtn.TextColor3 = Color3.fromRGB(120,120,240); DiscordBtn.Font = Enum.Font.GothamBold; DiscordBtn.TextSize = 10; DiscordBtn.AutoButtonColor = false; DiscordBtn.ZIndex = 4; Instance.new("UICorner", DiscordBtn).CornerRadius = UDim.new(0,6)
     local dbStroke = Instance.new("UIStroke", DiscordBtn); dbStroke.Color = Color3.fromRGB(50,50,90); dbStroke.Thickness = 1
@@ -649,7 +762,7 @@ function BottleLib:CreateWindow(WindowConfig)
 end
 
 -- ============================================================
--- 🛠️ BIND UI ELEMENTS (DRY Logic for Standard & Premium)
+-- 🛠️ BIND UI ELEMENTS
 -- ============================================================
 function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, ScreenGui, GlobalOverlayClose)
     local function checkPerm()
