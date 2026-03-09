@@ -1,26 +1,28 @@
 --!nocheck
 --[[
-    BOTTLEHUB LIBRARY V10.3
+    BOTTLEHUB LIBRARY V10.4
     ─────────────────────────────────────────────────────────────
-    ROOT CAUSE ที่แท้จริง (ค้นพบหลัง V10.2):
-      V10.2 ยังพึ่ง UserInputService:GetMouseLocation() สำหรับ bounds check
-      ใน executor ที่ใช้ gethui() → GetMouseLocation() คืน screen coords ที่ไม่ตรงกับ
-      AbsolutePosition ของ GuiObjects → bounds check fail ตลอด → Drag/Slider ไม่ทำงาน
-      UIS.InputBegan สำหรับ keyboard ก็ไม่ reliable ใน executor บางตัว → Ctrl ไม่ทำงาน
+    ROOT CAUSE ที่แท้จริง (ค้นพบหลัง V10.3):
+      V10.3 สร้าง DragHandle ก่อน Sidebar → Sidebar (สร้างทีหลัง, ZIndex เดียวกัน=1)
+      render ทับ DragHandle → DragHandle.MouseButton1Down ไม่มีวันถูก fire
+      + TabScrollContainer เป็น ScrollingFrame ดักจับ input ก่อนเสมอ
+      → ไม่มีทางส่ง click ผ่านลงมาถึง DragHandle ได้เลย
     ─────────────────────────────────────────────────────────────
-    PATCH 1  DRAG       ลบ UIS.InputBegan + GetMouseLocation() bounds check ออก
-                        → ใช้ DragHandle TextButton (ครอบ sidebar area, สร้างก่อน Sidebar)
-                        → MouseButton1Down(x,y) ให้ screen coordinates โดยตรง
-                        → ไม่ต้องใช้ GetMouseLocation() หรือ AbsolutePosition เลย
+    PATCH 1  DRAG
+      ก่อน: DragHandle ZIndex=1 ถูก Sidebar บัง → MouseButton1Down ไม่ fire
+      หลัง: TopBar TextButton ZIndex=10, สร้างหลัง Sidebar → อยู่เหนือทุก element
+             ใช้ TopBar.MouseEnter/MouseLeave เพื่อ track hover (ไม่ต้อง bounds check)
+             ใช้ UIS.InputBegan เมื่อ hover=true → dragStart = input.Position
+             ไม่มี GetMouseLocation(), ไม่มี AbsolutePosition → coordinate-space-safe
 
-    PATCH 2  SLIDER     ลบ UIS.InputBegan + GetMouseLocation() bounds check ออก
-                        → ใช้ trackHit TextButton (ขนาดใหญ่ขึ้น, transparent overlay)
-                        → MouseButton1Down(x,y) สำหรับ detection
-                        → Incremental delta tracking ลด dependency บน AbsolutePosition
+    PATCH 2  SLIDER
+      ก่อน: GetMouseLocation + AbsolutePosition bounds check → coordinate mismatch ใน gethui()
+      หลัง: trackHit.MouseEnter/MouseLeave เพื่อ track hover
+             ใช้ UIS.InputBegan เมื่อ hover=true → dragStart = input.Position
+             ใช้ track.AbsoluteSize.X เพื่อ normalize delta (size ≠ position, safe)
 
-    PATCH 3  LEFT CTRL  ลบ UIS.InputBegan event callback ออก
-                        → ใช้ RunService.Heartbeat + IsKeyDown() polling แทน
-                        → Query function reliable กว่า event callback ในทุก executor
+    PATCH 3  LEFT CTRL  (ไม่เปลี่ยนจาก V10.3)
+      Heartbeat + IsKeyDown() polling → reliable ทุก executor
 ]]
 
 local BottleLib = {}
@@ -301,72 +303,12 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
     Instance.new("UICorner", ContentContainer).CornerRadius = UDim.new(0,6)
 
     -- ──────────────────────────────────────────────────────────
-    -- [PATCH 1] DRAG — V10.3
-    --
-    -- ปัญหาใน V10.2:
-    --   UIS.InputBegan + GetMouseLocation() bounds check
-    --   ใน executor ที่ใช้ gethui() → GetMouseLocation() คืน raw screen coords
-    --   แต่ AbsolutePosition ใช้ coordinate space ของ gethui() container
-    --   → bounds check fail ตลอด → dragging = true ไม่เคยถูก set
-    --
-    -- การแก้ไข V10.3:
-    --   ใช้ DragHandle TextButton (ครอบ sidebar 207px, สร้างก่อน Sidebar)
-    --   Sidebar มี Active=false (default) → click ผ่าน empty area ลงมาถึง DragHandle
-    --   Sidebar's interactive children (tab buttons ฯลฯ) ยังทำงานปกติ (render on top)
-    --   MouseButton1Down(x,y) → x,y คือ absolute screen coords โดยตรง
-    --   ไม่ต้องใช้ GetMouseLocation() หรือ AbsolutePosition เลย
+    -- Drag variables (TopBar สร้างหลัง Sidebar — ดูด้านล่าง)
     -- ──────────────────────────────────────────────────────────
     local dragging    = false
-    local dragStartX  = 0
-    local dragStartY  = 0
-    local startOffX   = 0
-    local startOffY   = 0
-
-    -- DragHandle สร้างก่อน Sidebar → Sidebar render บนทับ DragHandle
-    -- ช่วง 0-207px คือ sidebar area; ContentContainer เริ่มที่ 207px (ไม่ทับกัน)
-    local DragHandle = Instance.new("TextButton", MainFrame)
-    DragHandle.Name = "DragHandle"
-    DragHandle.Size = UDim2.new(0, 207, 1, 0)
-    DragHandle.Position = UDim2.new(0, 0, 0, 0)
-    DragHandle.BackgroundTransparency = 1
-    DragHandle.Text = ""
-    DragHandle.ZIndex = 1
-    DragHandle.AutoButtonColor = false
-
-    -- MouseButton1Down ใช้ Roblox's GUI system โดยตรง (เหมือน MouseButton1Click ที่ทำงานได้)
-    -- x, y = absolute screen coordinates → ไม่ต้อง GetMouseLocation()
-    DragHandle.MouseButton1Down:Connect(function(x, y)
-        dragging  = true
-        dragStartX = x
-        dragStartY = y
-        startOffX  = MainFrame.Position.X.Offset
-        startOffY  = MainFrame.Position.Y.Offset
-    end)
-
-    local dragEndConn = UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-        or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = false
-        end
-    end)
-    table.insert(BottleLib.Connections, dragEndConn)
-
-    -- input.Position ใน MouseMovement คือ absolute screen coords เหมือนกับ MouseButton1Down(x,y)
-    -- delta = current mouse pos - stored start pos → ถูกต้องโดยไม่ต้องใช้ AbsolutePosition
-    local dragMoveConn = UserInputService.InputChanged:Connect(function(input)
-        if dragging and (
-            input.UserInputType == Enum.UserInputType.MouseMovement or
-            input.UserInputType == Enum.UserInputType.Touch
-        ) then
-            local dx = input.Position.X - dragStartX
-            local dy = input.Position.Y - dragStartY
-            MainFrame.Position = UDim2.new(
-                MainFrame.Position.X.Scale, startOffX + dx,
-                MainFrame.Position.Y.Scale, startOffY + dy
-            )
-        end
-    end)
-    table.insert(BottleLib.Connections, dragMoveConn)
+    local dragStartPos             -- Vector3 จาก UIS.InputBegan
+    local frameStartPos            -- UDim2 ณ ขณะเริ่ม drag
+    local mouseOverTopBar = false  -- set โดย TopBar.MouseEnter / MouseLeave
 
     -- ──────────────────────────────────────────────────────────
     -- Minimize
@@ -444,6 +386,76 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
         BottleLib.CleanUpEvent:Fire(); ScreenGui:Destroy()
     end)
     YellowDot.MouseButton1Click:Connect(function() ToggleMinimize(true) end)
+
+    -- ──────────────────────────────────────────────────────────
+    -- [PATCH 1] DRAG — V10.4  (สร้างหลัง Sidebar)
+    --
+    -- ปัญหาใน V10.3:
+    --   DragHandle สร้าง "ก่อน" Sidebar → Sidebar (สร้างทีหลัง, ZIndex เดียวกัน=1)
+    --   render ทับ DragHandle → DragHandle.MouseButton1Down ไม่มีทาง fire ได้
+    --   TabScrollContainer (ScrollingFrame) ดักจับ input ก่อน → click ผ่านลงไม่ถึง
+    --
+    -- การแก้ไข V10.4:
+    --   TopBar TextButton ZIndex=10 สร้าง "หลัง" Sidebar → อยู่เหนือทุก element ใน Sidebar
+    --   ครอบ full-width 40px ที่ top → Tab buttons เริ่มที่ Y=40+ จึงไม่ถูกบัง
+    --   RedDot/YellowDot ตั้ง ZIndex=15 → อยู่เหนือ TopBar → ยังคลิกได้ปกติ
+    --
+    --   ใช้ TopBar.MouseEnter/MouseLeave เพื่อ track hover
+    --   → ไม่ต้อง GetMouseLocation() หรือ AbsolutePosition ในการ check เลย
+    --   ใช้ UIS.InputBegan เมื่อ mouseOverTopBar=true → dragStart = input.Position
+    --   ใช้ UIS.InputChanged → delta จาก input.Position ที่เก็บไว้ (same coordinate space)
+    --   ไม่มี coordinate mismatch ทั้งสิ้น
+    -- ──────────────────────────────────────────────────────────
+
+    -- ยก ZIndex ของ dots ให้สูงกว่า TopBar (ZIndex=10)
+    RedDot.ZIndex    = 15
+    YellowDot.ZIndex = 15
+
+    local TopBar = Instance.new("TextButton", MainFrame)
+    TopBar.Name                = "TopBar"
+    TopBar.Size                = UDim2.new(1, 0, 0, 40)
+    TopBar.Position            = UDim2.new(0, 0, 0, 0)
+    TopBar.BackgroundTransparency = 1
+    TopBar.Text                = ""
+    TopBar.ZIndex              = 10
+    TopBar.AutoButtonColor     = false
+
+    -- MouseEnter/MouseLeave ไม่ต้องคำนวณตำแหน่งเลย — Roblox จัดการให้เอง
+    TopBar.MouseEnter:Connect(function() mouseOverTopBar = true  end)
+    TopBar.MouseLeave:Connect(function() mouseOverTopBar = false end)
+
+    local dragBeginConn = UserInputService.InputBegan:Connect(function(input)
+        if input.UserInputType ~= Enum.UserInputType.MouseButton1
+        and input.UserInputType ~= Enum.UserInputType.Touch then return end
+        if not mouseOverTopBar then return end
+        dragging      = true
+        dragStartPos  = input.Position
+        frameStartPos = MainFrame.Position
+    end)
+    table.insert(BottleLib.Connections, dragBeginConn)
+
+    local dragEndConn = UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
+    end)
+    table.insert(BottleLib.Connections, dragEndConn)
+
+    -- delta = input.Position - dragStartPos (Vector3 arithmetic, same UIS space ทั้งคู่)
+    -- ไม่ต้อง AbsolutePosition, ไม่ต้อง GetMouseLocation()
+    local dragMoveConn = UserInputService.InputChanged:Connect(function(input)
+        if not dragging then return end
+        if input.UserInputType ~= Enum.UserInputType.MouseMovement
+        and input.UserInputType ~= Enum.UserInputType.Touch then return end
+        local dx = input.Position.X - dragStartPos.X
+        local dy = input.Position.Y - dragStartPos.Y
+        MainFrame.Position = UDim2.new(
+            frameStartPos.X.Scale, frameStartPos.X.Offset + dx,
+            frameStartPos.Y.Scale, frameStartPos.Y.Offset + dy
+        )
+    end)
+    table.insert(BottleLib.Connections, dragMoveConn)
 
     local SbTitle = Instance.new("TextLabel", Sidebar)
     SbTitle.Text = HubName; SbTitle.Size = UDim2.new(1,0,0,36)
@@ -733,18 +745,18 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
         end
 
         -- ──────────────────────────────────────────────────────
-        -- [PATCH 2] SLIDER — V10.3
+        -- [PATCH 2] SLIDER — V10.4
         --
-        -- ปัญหาใน V10.2:
-        --   UIS.InputBegan + GetMouseLocation() bounds check บน track
-        --   GetMouseLocation() ไม่ match AbsolutePosition ใน gethui() → drag = true ไม่ถูก set
-        --   InputChanged ใช้ GetMouseLocation() อีกครั้ง → position calculation ผิดหมด
+        -- ปัญหาใน V10.3:
+        --   trackHit.MouseButton1Down(x,y) + track.AbsolutePosition
+        --   AbsolutePosition ใน gethui() ≠ screen coords ที่ x,y จาก MouseButton1Down ใช้
+        --   → ratio calculation ผิด → fill ไม่ขยับในทิศที่ถูก
         --
-        -- การแก้ไข V10.3:
-        --   trackHit TextButton (transparent, ขนาดใหญ่กว่า track 20px สำหรับ hit area)
-        --   MouseButton1Down(x,y) → screen coords โดยตรง, เก็บ AbsolutePosition ณ จุดนั้น
-        --   Incremental delta: แต่ละ frame ใช้ delta จาก position ล่าสุด → smooth ไม่สะดุด
-        --   ไม่ต้องเรียก GetMouseLocation() เลย
+        -- การแก้ไข V10.4:
+        --   trackHit.MouseEnter / MouseLeave เพื่อ track hover แทน bounds check
+        --   UIS.InputBegan เมื่อ mouseOverTrack=true → dragStartPos = input.Position (UIS space)
+        --   dx = input.Position.X - dragStartPos.X (UIS space ทั้งคู่ → ถูกต้อง)
+        --   normalize ด้วย track.AbsoluteSize.X (SIZE ไม่ใช่ POSITION → ไม่มี space mismatch)
         -- ──────────────────────────────────────────────────────
         function TabObj:CreateSlider(label, min, max, default, callback)
             local frame = Instance.new("Frame", scroll)
@@ -757,11 +769,10 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
             lbl.Font = Enum.Font.GothamBold; lbl.TextSize = 11
             lbl.TextXAlignment = Enum.TextXAlignment.Left
 
-            -- visual track (Frame เท่านั้น ไม่รับ input)
+            -- visual track (Frame, ไม่รับ input โดยตรง)
             local track = Instance.new("Frame", frame)
             track.Size = UDim2.new(1,-20,0,6); track.Position = UDim2.new(0,10,0,34)
-            track.BackgroundColor3 = Color3.fromRGB(50,50,50)
-            track.BorderSizePixel = 0
+            track.BackgroundColor3 = Color3.fromRGB(50,50,50); track.BorderSizePixel = 0
             Instance.new("UICorner", track).CornerRadius = UDim.new(1,0)
 
             local fill = Instance.new("Frame", track)
@@ -769,15 +780,12 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
             fill.BackgroundColor3 = T.Accent; fill.BorderSizePixel = 0
             Instance.new("UICorner", fill).CornerRadius = UDim.new(1,0)
 
-            -- [PATCH 2] trackHit: transparent TextButton ขนาดใหญ่กว่า track
-            -- สูง 20px (track สูงแค่ 6px → คลิกยากมาก), ZIndex สูงกว่า track
+            -- trackHit: transparent TextButton ขนาดใหญ่กว่า track, ZIndex=3
             local trackHit = Instance.new("TextButton", frame)
-            trackHit.Size     = UDim2.new(1,-20,0,20)
-            trackHit.Position = UDim2.new(0,10,0,27)  -- Y: 34 - 7 = 27 (centered บน track)
+            trackHit.Size     = UDim2.new(1,-20,0,30)
+            trackHit.Position = UDim2.new(0,10,0,24)
             trackHit.BackgroundTransparency = 1
-            trackHit.Text = ""
-            trackHit.ZIndex = 3
-            trackHit.AutoButtonColor = false
+            trackHit.Text = ""; trackHit.ZIndex = 3; trackHit.AutoButtonColor = false
 
             local function update(v)
                 local res = callback(v)
@@ -785,41 +793,44 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
             end
             update(default)
 
-            local drag          = false
-            local dragRatio     = math.clamp((default-min)/(max-min), 0, 1)
-            local dragMouseX    = 0
-            local dragTrackW    = 1
+            local sliderDragging   = false
+            local sliderStartPos   = nil
+            local sliderStartRatio = math.clamp((default-min)/(max-min), 0, 1)
+            local mouseOverTrack   = false
 
-            -- [PATCH 2] MouseButton1Down(x,y) → x = absolute screen X ของ mouse ณ ขณะคลิก
-            -- AbsolutePosition ที่ใช้ตอนนี้ accurate เพราะอ่าน ณ เวลา click จริงๆ
-            trackHit.MouseButton1Down:Connect(function(x, y)
-                drag        = true
-                dragMouseX  = x
-                dragTrackW  = math.max(track.AbsoluteSize.X, 1)
-                -- คำนวณ ratio ณ จุดที่ click (ใช้ AbsolutePosition ครั้งเดียวตอน mousedown)
-                local ratio = math.clamp((x - track.AbsolutePosition.X) / dragTrackW, 0, 1)
-                dragRatio   = ratio
-                fill.Size   = UDim2.new(ratio, 0, 1, 0)
-                update(math.floor(min + (max-min)*ratio))
+            -- [PATCH 2] MouseEnter/MouseLeave — ไม่มีการคำนวณตำแหน่งเลย
+            trackHit.MouseEnter:Connect(function() mouseOverTrack = true  end)
+            trackHit.MouseLeave:Connect(function() mouseOverTrack = false end)
+
+            local sc0 = UserInputService.InputBegan:Connect(function(input)
+                if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+                if not mouseOverTrack then return end
+                sliderDragging   = true
+                sliderStartPos   = input.Position
+                sliderStartRatio = fill.Size.X.Scale
             end)
 
             local c1 = UserInputService.InputEnded:Connect(function(i)
-                if i.UserInputType == Enum.UserInputType.MouseButton1 then drag = false end
-            end)
-
-            -- [PATCH 2] Incremental delta: แต่ละ event ใช้ delta จาก position ล่าสุด
-            -- ไม่ต้องเรียก GetMouseLocation() เพิ่มเติม ป้องกัน coordinate mismatch
-            local c2 = UserInputService.InputChanged:Connect(function(i)
-                if drag and i.UserInputType == Enum.UserInputType.MouseMovement then
-                    local deltaX   = i.Position.X - dragMouseX
-                    local newRatio = math.clamp(dragRatio + deltaX / dragTrackW, 0, 1)
-                    fill.Size      = UDim2.new(newRatio, 0, 1, 0)
-                    update(math.floor(min + (max-min)*newRatio))
-                    -- อัพเดต reference สำหรับ frame ต่อไป
-                    dragRatio  = newRatio
-                    dragMouseX = i.Position.X
+                if i.UserInputType == Enum.UserInputType.MouseButton1 then
+                    sliderDragging = false
                 end
             end)
+
+            local c2 = UserInputService.InputChanged:Connect(function(i)
+                if not sliderDragging then return end
+                if i.UserInputType ~= Enum.UserInputType.MouseMovement then return end
+                -- dx และ sliderStartPos ทั้งคู่มาจาก UIS → same coordinate space
+                -- track.AbsoluteSize.X คือ SIZE ไม่ใช่ POSITION → ปลอดภัยจาก space mismatch
+                local trackW   = math.max(track.AbsoluteSize.X, 1)
+                local dx       = i.Position.X - sliderStartPos.X
+                local newRatio = math.clamp(sliderStartRatio + dx / trackW, 0, 1)
+                fill.Size      = UDim2.new(newRatio, 0, 1, 0)
+                update(math.floor(min + (max-min)*newRatio))
+                sliderStartPos   = i.Position
+                sliderStartRatio = newRatio
+            end)
+
+            table.insert(BottleLib.Connections, sc0)
             table.insert(BottleLib.Connections, c1)
             table.insert(BottleLib.Connections, c2)
         end
