@@ -1,11 +1,14 @@
 --!nocheck
 --[[
-    BOTTLEHUB LIBRARY V11.6 (SMART PROFILE & QUICK ACTIONS)
+    BOTTLEHUB LIBRARY V11.7 (PERFECT LAYOUT & GUARD PATCH)
     ─────────────────────────────────────────────────────────────
-    NEW FEATURES:
-      - 📈 Real-time FPS & Ping Counter
-      - ⚡ Quick Actions (Rejoin & Server Hop) restricted to Premium
-      - 📋 Clickable Username/Avatar to Copy UserID
+    FIX 1: NOTIFICATION SPLIT SYSTEM
+      - Normal Notification -> โผล่มุมขวาล่างของจอ (Bottom Right)
+      - Permission Notification -> โผล่กลาง GUI พร้อมพื้นหลังดำจางๆ (Dim Overlay) บล็อกการคลิก
+    
+    FIX 2: COMPACT PROFILE CARD
+      - ใช้ความสูงเดิม (220px) แต่จัดสรรพื้นที่ใส่ FPS/Ping, Rejoin, Hop, Sub-Place ได้ครบถ้วน
+      - คลิกที่บริเวณโปรไฟล์เพื่อ Copy UserID ได้
 ]]
 
 local BottleLib = {}
@@ -39,77 +42,143 @@ BottleLib.CleanUpEvent.Event:Connect(function()
 end)
 
 -- ============================================================
--- 🔔 NOTIFICATION SYSTEM (CENTERED ON MAIN GUI)
+-- 🔔 NOTIFICATION SYSTEM (SPLIT LOGIC)
 -- ============================================================
 function BottleLib:Notify(msg)
     local parentGui = (gethui and gethui()) or CoreGui
     local sg = parentGui:FindFirstChild("BOTTLEHUB_MAIN")
     if not sg then return end
-    
-    local mainWin = sg:FindFirstChild("MainFrame")
-    if not mainWin then return end
 
-    local container = mainWin:FindFirstChild("NotifyContainer")
-    if not container then
-        container = Instance.new("Frame", mainWin)
-        container.Name = "NotifyContainer"
-        container.Size = UDim2.new(0, 280, 0, 0)
-        container.Position = UDim2.new(0.5, 0, 0.5, 0)
-        container.AnchorPoint = Vector2.new(0.5, 0.5)
-        container.AutomaticSize = Enum.AutomaticSize.Y
-        container.BackgroundTransparency = 1
-        container.ZIndex = 100
+    local isPermError = (msg == "You do not have permission to use this Premium feature.")
+
+    if isPermError then
+        -- 🔴 1. PERMISSION ERROR (กลาง GUI + จอดำ)
+        local mainWin = sg:FindFirstChild("MainFrame")
+        if not mainWin then return end
+
+        local dimOverlay = Instance.new("TextButton", mainWin)
+        dimOverlay.Size = UDim2.new(1, 0, 1, 0)
+        dimOverlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+        dimOverlay.BackgroundTransparency = 1
+        dimOverlay.Text = ""
+        dimOverlay.AutoButtonColor = false
+        dimOverlay.ZIndex = 98
+        Instance.new("UICorner", dimOverlay).CornerRadius = UDim.new(0, 8)
+
+        local notif = Instance.new("Frame", dimOverlay)
+        notif.Size = UDim2.new(0, 280, 0, 45)
+        notif.Position = UDim2.new(0.5, 0, 0.5, 0)
+        notif.AnchorPoint = Vector2.new(0.5, 0.5)
+        notif.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+        notif.BackgroundTransparency = 1
+        notif.ZIndex = 99
+        Instance.new("UICorner", notif).CornerRadius = UDim.new(0, 6)
         
-        local layout = Instance.new("UIListLayout", container)
-        layout.SortOrder = Enum.SortOrder.LayoutOrder
-        layout.VerticalAlignment = Enum.VerticalAlignment.Center
-        layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-        layout.Padding = UDim.new(0, 10)
-    end
+        local stroke = Instance.new("UIStroke", notif)
+        stroke.Color = Color3.fromRGB(255, 69, 58) -- สีแดงเตือน
+        stroke.Transparency = 1
 
-    local notif = Instance.new("Frame", container)
-    notif.Size = UDim2.new(1, 0, 0, 45)
-    notif.BackgroundColor3 = Color3.fromRGB(20,20,20)
-    notif.BackgroundTransparency = 1
-    Instance.new("UICorner", notif).CornerRadius = UDim.new(0,6)
-    local stroke = Instance.new("UIStroke", notif)
-    stroke.Color = Color3.fromHex("#e60852")
-    stroke.Transparency = 1
+        local icon = Instance.new("TextLabel", notif)
+        icon.Size = UDim2.new(0, 35, 1, 0)
+        icon.BackgroundTransparency = 1
+        icon.Text = "⛔"
+        icon.TextSize = 16
+        icon.TextTransparency = 1
+        icon.ZIndex = 100
 
-    local icon = Instance.new("TextLabel", notif)
-    icon.Size = UDim2.new(0, 35, 1, 0)
-    icon.BackgroundTransparency = 1
-    icon.Text = "⚠️"
-    icon.TextSize = 16
-    icon.TextTransparency = 1
+        local lbl = Instance.new("TextLabel", notif)
+        lbl.Size = UDim2.new(1, -40, 1, 0)
+        lbl.Position = UDim2.new(0, 35, 0, 0)
+        lbl.BackgroundTransparency = 1
+        lbl.Text = msg
+        lbl.TextColor3 = Color3.fromRGB(255, 200, 200)
+        lbl.Font = Enum.Font.GothamBold
+        lbl.TextSize = 11
+        lbl.TextXAlignment = Enum.TextXAlignment.Left
+        lbl.TextWrapped = true
+        lbl.TextTransparency = 1
+        lbl.ZIndex = 100
 
-    local lbl = Instance.new("TextLabel", notif)
-    lbl.Size = UDim2.new(1, -40, 1, 0)
-    lbl.Position = UDim2.new(0, 35, 0, 0)
-    lbl.BackgroundTransparency = 1
-    lbl.Text = msg
-    lbl.TextColor3 = Color3.fromRGB(240,240,240)
-    lbl.Font = Enum.Font.GothamMedium
-    lbl.TextSize = 11
-    lbl.TextXAlignment = Enum.TextXAlignment.Left
-    lbl.TextWrapped = true
-    lbl.TextTransparency = 1
+        TweenService:Create(dimOverlay, TweenInfo.new(0.2), {BackgroundTransparency = 0.4}):Play()
+        TweenService:Create(notif, TweenInfo.new(0.2), {BackgroundTransparency = 0}):Play()
+        TweenService:Create(stroke, TweenInfo.new(0.2), {Transparency = 0}):Play()
+        TweenService:Create(icon, TweenInfo.new(0.2), {TextTransparency = 0}):Play()
+        TweenService:Create(lbl, TweenInfo.new(0.2), {TextTransparency = 0}):Play()
 
-    TweenService:Create(notif, TweenInfo.new(0.3), {BackgroundTransparency=0.05}):Play()
-    TweenService:Create(stroke, TweenInfo.new(0.3), {Transparency=0}):Play()
-    TweenService:Create(icon, TweenInfo.new(0.3), {TextTransparency=0}):Play()
-    TweenService:Create(lbl, TweenInfo.new(0.3), {TextTransparency=0}):Play()
+        task.delay(2.5, function()
+            if dimOverlay and dimOverlay.Parent then
+                TweenService:Create(dimOverlay, TweenInfo.new(0.3), {BackgroundTransparency = 1}):Play()
+                TweenService:Create(notif, TweenInfo.new(0.3), {BackgroundTransparency = 1}):Play()
+                TweenService:Create(stroke, TweenInfo.new(0.3), {Transparency = 1}):Play()
+                TweenService:Create(icon, TweenInfo.new(0.3), {TextTransparency = 1}):Play()
+                TweenService:Create(lbl, TweenInfo.new(0.3), {TextTransparency = 1}):Play()
+                task.wait(0.3)
+                if dimOverlay and dimOverlay.Parent then dimOverlay:Destroy() end
+            end
+        end)
 
-    task.delay(3, function()
-        if notif and notif.Parent then
-            TweenService:Create(notif, TweenInfo.new(0.3), {BackgroundTransparency=1}):Play()
-            TweenService:Create(stroke, TweenInfo.new(0.3), {Transparency=1}):Play()
-            TweenService:Create(icon, TweenInfo.new(0.3), {TextTransparency=1}):Play()
-            TweenService:Create(lbl, TweenInfo.new(0.3), {TextTransparency=1}):Play()
-            task.wait(0.3)
-            if notif and notif.Parent then notif:Destroy() end
+    else
+        -- 🟢 2. NORMAL NOTIFICATION (ขวาล่างสุดของจอ)
+        local container = sg:FindFirstChild("NotifyContainer")
+        if not container then
+            container = Instance.new("Frame", sg)
+            container.Name = "NotifyContainer"
+            container.Size = UDim2.new(0, 260, 1, -20)
+            container.Position = UDim2.new(1, -20, 1, -20)
+            container.AnchorPoint = Vector2.new(1, 1) -- แกนอยู่ที่มุมขวาล่าง
+            container.BackgroundTransparency = 1
+            container.ZIndex = 100
+            
+            local layout = Instance.new("UIListLayout", container)
+            layout.SortOrder = Enum.SortOrder.LayoutOrder
+            layout.VerticalAlignment = Enum.VerticalAlignment.Bottom
+            layout.Padding = UDim.new(0, 10)
         end
-    end)
+
+        local notif = Instance.new("Frame", container)
+        notif.Size = UDim2.new(1, 0, 0, 45)
+        notif.BackgroundColor3 = Color3.fromRGB(20,20,20)
+        notif.BackgroundTransparency = 1
+        Instance.new("UICorner", notif).CornerRadius = UDim.new(0,6)
+        local stroke = Instance.new("UIStroke", notif)
+        stroke.Color = Color3.fromHex("#e60852")
+        stroke.Transparency = 1
+
+        local icon = Instance.new("TextLabel", notif)
+        icon.Size = UDim2.new(0, 35, 1, 0)
+        icon.BackgroundTransparency = 1
+        icon.Text = "🔔"
+        icon.TextSize = 16
+        icon.TextTransparency = 1
+
+        local lbl = Instance.new("TextLabel", notif)
+        lbl.Size = UDim2.new(1, -40, 1, 0)
+        lbl.Position = UDim2.new(0, 35, 0, 0)
+        lbl.BackgroundTransparency = 1
+        lbl.Text = msg
+        lbl.TextColor3 = Color3.fromRGB(240,240,240)
+        lbl.Font = Enum.Font.GothamMedium
+        lbl.TextSize = 11
+        lbl.TextXAlignment = Enum.TextXAlignment.Left
+        lbl.TextWrapped = true
+        lbl.TextTransparency = 1
+
+        TweenService:Create(notif, TweenInfo.new(0.3), {BackgroundTransparency=0.05}):Play()
+        TweenService:Create(stroke, TweenInfo.new(0.3), {Transparency=0}):Play()
+        TweenService:Create(icon, TweenInfo.new(0.3), {TextTransparency=0}):Play()
+        TweenService:Create(lbl, TweenInfo.new(0.3), {TextTransparency=0}):Play()
+
+        task.delay(3, function()
+            if notif and notif.Parent then
+                TweenService:Create(notif, TweenInfo.new(0.3), {BackgroundTransparency=1}):Play()
+                TweenService:Create(stroke, TweenInfo.new(0.3), {Transparency=1}):Play()
+                TweenService:Create(icon, TweenInfo.new(0.3), {TextTransparency=1}):Play()
+                TweenService:Create(lbl, TweenInfo.new(0.3), {TextTransparency=1}):Play()
+                task.wait(0.3)
+                if notif and notif.Parent then notif:Destroy() end
+            end
+        end)
+    end
 end
 
 -- ============================================================
@@ -420,14 +489,10 @@ function BottleLib:CreateWindow(WindowConfig)
     local ok, wfr = pcall(function() return UserInputService.WindowFocusReleased end)
     if ok and wfr then table.insert(BottleLib.Connections, wfr:Connect(function() dragging = false end)) end
 
-    -- ──────────────────────────────────────────────────────────
     local MiniButton = Instance.new("ImageButton", ScreenGui)
     MiniButton.Size = UDim2.new(0,42,0,42); MiniButton.Position = UDim2.new(0,10,0,10)
-    MiniButton.Image = "rbxassetid://78690743314126"
-    MiniButton.BackgroundColor3 = T.Main; MiniButton.Visible = false
-    Instance.new("UICorner", MiniButton).CornerRadius = UDim.new(0,8)
-    Instance.new("UIStroke", MiniButton).Color = T.Accent
-
+    MiniButton.Image = "rbxassetid://78690743314126"; MiniButton.BackgroundColor3 = T.Main; MiniButton.Visible = false
+    Instance.new("UICorner", MiniButton).CornerRadius = UDim.new(0,8); Instance.new("UIStroke", MiniButton).Color = T.Accent
     local function ToggleMinimize(hide) MainFrame.Visible = not hide; MiniButton.Visible = hide end
     MiniButton.MouseButton1Click:Connect(function() ToggleMinimize(false) end)
 
@@ -461,8 +526,8 @@ function BottleLib:CreateWindow(WindowConfig)
         GlobalOverlayClose.Visible = false
     end)
 
-    -- 🔴 [FIX] ขยาย Profile Height เพิ่มเพื่อรองรับข้อมูล
-    local PROFILE_H = 270
+    -- 🔴 [FIX] คืนขนาด PROFILE CARD เป็น 220px
+    local PROFILE_H = 220
     local TabScrollContainer = Instance.new("ScrollingFrame", Sidebar); TabScrollContainer.Size = UDim2.new(1,0,1,-(PROFILE_H+46)); TabScrollContainer.Position = UDim2.new(0,0,0,46); TabScrollContainer.BackgroundTransparency = 1; TabScrollContainer.ScrollBarThickness = 0; TabScrollContainer.BorderSizePixel = 0
     local TabListLayout = Instance.new("UIListLayout", TabScrollContainer); TabListLayout.SortOrder = Enum.SortOrder.LayoutOrder; TabListLayout.Padding = UDim.new(0,5); TabListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
     local TabPad = Instance.new("UIPadding", TabScrollContainer); TabPad.PaddingTop = UDim.new(0,10); TabPad.PaddingBottom = UDim.new(0,10)
@@ -486,7 +551,7 @@ function BottleLib:CreateWindow(WindowConfig)
 
     -- 🔴 [NEW] CLICK TO COPY USER ID
     local CopyIdBtn = Instance.new("TextButton", ProfileCard)
-    CopyIdBtn.Size = UDim2.new(1,0,0,76) -- ครอบคลุมพื้นที่ Banner + Avatar + Name
+    CopyIdBtn.Size = UDim2.new(1,0,0,76)
     CopyIdBtn.Position = UDim2.new(0,0,0,0)
     CopyIdBtn.BackgroundTransparency = 1
     CopyIdBtn.Text = ""
@@ -522,8 +587,17 @@ function BottleLib:CreateWindow(WindowConfig)
     local UIDLbl = Instance.new("TextLabel", UIDRow); UIDLbl.Size = UDim2.new(1,0,1,0); UIDLbl.BackgroundTransparency = 1; UIDLbl.Font = Enum.Font.Gotham; UIDLbl.TextSize = 9; UIDLbl.TextXAlignment = Enum.TextXAlignment.Left; UIDLbl.TextColor3 = Color3.fromRGB(70,70,70); UIDLbl.Text = "🆔  " .. tostring(player.UserId); UIDLbl.ZIndex = 6
 
     local DivA = Instance.new("Frame", ProfileCard); DivA.Size = UDim2.new(1,-16,0,1); DivA.Position = UDim2.new(0,8,0,76); DivA.BackgroundColor3 = Color3.fromRGB(38,38,38); DivA.BorderSizePixel = 0; DivA.ZIndex = 4
-    local InfoBlock = Instance.new("Frame", ProfileCard); InfoBlock.Size = UDim2.new(1,-16,1,-125); InfoBlock.Position = UDim2.new(0,8,0,82); InfoBlock.BackgroundTransparency = 1; InfoBlock.ZIndex = 4
-    local ibLayout = Instance.new("UIListLayout", InfoBlock); ibLayout.SortOrder = Enum.SortOrder.LayoutOrder; ibLayout.Padding = UDim.new(0,5); ibLayout.VerticalAlignment = Enum.VerticalAlignment.Top
+    
+    -- 🔴 [FIX] COMPACT INFO BLOCK (Fits perfectly in 220px height)
+    local InfoBlock = Instance.new("Frame", ProfileCard); 
+    InfoBlock.Size = UDim2.new(1,-16,0,96); 
+    InfoBlock.Position = UDim2.new(0,8,0,82); 
+    InfoBlock.BackgroundTransparency = 1; InfoBlock.ZIndex = 4
+    
+    local ibLayout = Instance.new("UIListLayout", InfoBlock); 
+    ibLayout.SortOrder = Enum.SortOrder.LayoutOrder; 
+    ibLayout.Padding = UDim.new(0, 3);  -- บีบระยะห่างให้พอดี
+    ibLayout.VerticalAlignment = Enum.VerticalAlignment.Top
 
     local GameLbl = CreateMarqueeLabel(InfoBlock, "🎮  Loading...", T.SubText, Enum.Font.Gotham, 10, true, 1)
     local SubPlaceLbl = CreateMarqueeLabel(InfoBlock, "📍  Loading...", T.SubText, Enum.Font.Gotham, 10, true, 2)
@@ -559,7 +633,7 @@ function BottleLib:CreateWindow(WindowConfig)
     
     local kbPad = Instance.new("UIPadding", KeyBadge)
     kbPad.PaddingLeft = UDim.new(0,7); kbPad.PaddingRight = UDim.new(0,7)
-    kbPad.PaddingTop = UDim.new(0,4); kbPad.PaddingBottom = UDim.new(0,4)
+    kbPad.PaddingTop = UDim.new(0,2); kbPad.PaddingBottom = UDim.new(0,2)
     
     local KeyBadgeStroke = Instance.new("UIStroke", KeyBadge)
     KeyBadgeStroke.Thickness = 1
@@ -611,11 +685,11 @@ function BottleLib:CreateWindow(WindowConfig)
     -- 🔴 [NEW] FPS & PING STATS
     local StatsRow = Instance.new("TextLabel", InfoBlock)
     StatsRow.LayoutOrder = 4
-    StatsRow.Size = UDim2.new(1,0,0,14)
+    StatsRow.Size = UDim2.new(1,0,0,12)
     StatsRow.BackgroundTransparency = 1
     StatsRow.TextColor3 = T.SubText
     StatsRow.Font = Enum.Font.GothamMedium
-    StatsRow.TextSize = 10
+    StatsRow.TextSize = 9
     StatsRow.TextXAlignment = Enum.TextXAlignment.Left
     StatsRow.Text = "📈 FPS: --  |  📶 Ping: --ms"
 
@@ -644,20 +718,20 @@ function BottleLib:CreateWindow(WindowConfig)
     -- 🔴 [NEW] QUICK ACTIONS (REJOIN & HOP)
     local QuickActRow = Instance.new("Frame", InfoBlock)
     QuickActRow.LayoutOrder = 5
-    QuickActRow.Size = UDim2.new(1,0,0,22)
+    QuickActRow.Size = UDim2.new(1,0,0,18)
     QuickActRow.BackgroundTransparency = 1
     local qaLayout = Instance.new("UIListLayout", QuickActRow)
     qaLayout.FillDirection = Enum.FillDirection.Horizontal
-    qaLayout.Padding = UDim.new(0, 6)
+    qaLayout.Padding = UDim.new(0, 5)
 
     local function makeQABtn(text, icon)
         local btn = Instance.new("TextButton", QuickActRow)
-        btn.Size = UDim2.new(0.5, -3, 1, 0)
+        btn.Size = UDim2.new(0.5, -2, 1, 0)
         btn.BackgroundColor3 = Color3.fromRGB(24,24,24)
         btn.Text = icon .. " " .. text
         btn.TextColor3 = T.Text
         btn.Font = Enum.Font.GothamBold
-        btn.TextSize = 10
+        btn.TextSize = 9
         btn.AutoButtonColor = false
         Instance.new("UICorner", btn).CornerRadius = UDim.new(0,4)
         local stroke = Instance.new("UIStroke", btn)
@@ -670,20 +744,20 @@ function BottleLib:CreateWindow(WindowConfig)
     local RejoinBtn = makeQABtn("Rejoin", "🔄")
     local HopBtn = makeQABtn("Hop", "🌍")
 
-    local function isPremium()
+    local function isPremiumQA()
         if BottleLib.KeyStatus.Tier == "Full" then return true end
         BottleLib:Notify("You do not have permission to use this Premium feature.")
         return false
     end
 
     RejoinBtn.MouseButton1Click:Connect(function()
-        if not isPremium() then return end
+        if not isPremiumQA() then return end
         BottleLib:Notify("Rejoining Server...")
         TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, player)
     end)
 
     HopBtn.MouseButton1Click:Connect(function()
-        if not isPremium() then return end
+        if not isPremiumQA() then return end
         BottleLib:Notify("Searching for new server...")
         task.spawn(function()
             local url = "https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100"
@@ -762,7 +836,7 @@ function BottleLib:CreateWindow(WindowConfig)
 end
 
 -- ============================================================
--- 🛠️ BIND UI ELEMENTS
+-- 🛠️ BIND UI ELEMENTS (DRY Logic for Standard & Premium)
 -- ============================================================
 function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, ScreenGui, GlobalOverlayClose)
     local function checkPerm()
