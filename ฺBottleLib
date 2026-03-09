@@ -1,15 +1,16 @@
 --!nocheck
 --[[
-    BOTTLEHUB LIBRARY V11.8 (THE ULTIMATE HUD PATCH)
+    BOTTLEHUB LIBRARY V11.8 (THE FINAL LAYOUT PATCH)
     ─────────────────────────────────────────────────────────────
-    FIX 1: DISCORD & QUICK ACTIONS LAYOUT
-      - คืนปุ่ม Discord เป็นปุ่มกว้างเต็มบรรทัด
-      - ย้าย Rejoin / Hop ไปไว้ฝั่งขวาของ Key Badge (ซ้อนกัน 2 บรรทัด)
+    FIX 1: QUICK ACTIONS VISIBILITY
+      - ลบ AutomaticSize ออกจาก KeyRow เพื่อแก้บัค UI หาย
+      - แสดงผล 🔄 Rejoin และ 🌍 Server Hop ฝั่งขวาของ Key ซ้อนกัน 2 บรรทัด
     
-    FIX 2: FPS / PING MONITOR
-      - ย้าย FPS/Ping ไปไว้มุมขวาบนของหน้าต่างหลัก (Main GUI)
-      - เพิ่ม Mini Monitor โชว์ใต้ปุ่ม Minimize เวลาพับจอ
-      - ทำให้ปุ่ม Minimize สามารถลากย้ายที่ได้ (Draggable)
+    FIX 2: FPS & PING TEXT
+      - แสดง "📈 FPS: 60 | 📶 Ping: 50ms" เต็มรูปแบบทั้ง Main GUI และ Mini Monitor
+    
+    FIX 3: PREMIUM FOLDER TAG
+      - เปลี่ยนป้ายเป็น ⭐ Premium Access
 ]]
 
 local BottleLib = {}
@@ -43,7 +44,7 @@ BottleLib.CleanUpEvent.Event:Connect(function()
 end)
 
 -- ============================================================
--- 🔔 NOTIFICATION SYSTEM
+-- 🔔 NOTIFICATION SYSTEM (SPLIT LOGIC)
 -- ============================================================
 function BottleLib:Notify(msg)
     local parentGui = (gethui and gethui()) or CoreGui
@@ -53,30 +54,52 @@ function BottleLib:Notify(msg)
     local isPermError = (msg == "You do not have permission to use this Premium feature.")
 
     if isPermError then
+        -- ⛔ PERMISSION ERROR (โผล่กลางจอ + จอดำ Overlay)
         local mainWin = sg:FindFirstChild("MainFrame")
         if not mainWin then return end
 
         local dimOverlay = Instance.new("TextButton", mainWin)
-        dimOverlay.Size = UDim2.new(1, 0, 1, 0); dimOverlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-        dimOverlay.BackgroundTransparency = 1; dimOverlay.Text = ""; dimOverlay.AutoButtonColor = false
-        dimOverlay.ZIndex = 98; Instance.new("UICorner", dimOverlay).CornerRadius = UDim.new(0, 8)
+        dimOverlay.Size = UDim2.new(1, 0, 1, 0)
+        dimOverlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+        dimOverlay.BackgroundTransparency = 1
+        dimOverlay.Text = ""
+        dimOverlay.AutoButtonColor = false
+        dimOverlay.ZIndex = 98
+        Instance.new("UICorner", dimOverlay).CornerRadius = UDim.new(0, 8)
 
         local notif = Instance.new("Frame", dimOverlay)
-        notif.Size = UDim2.new(0, 280, 0, 45); notif.Position = UDim2.new(0.5, 0, 0.5, 0)
-        notif.AnchorPoint = Vector2.new(0.5, 0.5); notif.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-        notif.BackgroundTransparency = 1; notif.ZIndex = 99; Instance.new("UICorner", notif).CornerRadius = UDim.new(0, 6)
+        notif.Size = UDim2.new(0, 280, 0, 45)
+        notif.Position = UDim2.new(0.5, 0, 0.5, 0)
+        notif.AnchorPoint = Vector2.new(0.5, 0.5)
+        notif.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+        notif.BackgroundTransparency = 1
+        notif.ZIndex = 99
+        Instance.new("UICorner", notif).CornerRadius = UDim.new(0, 6)
         
-        local stroke = Instance.new("UIStroke", notif); stroke.Color = Color3.fromRGB(255, 69, 58); stroke.Transparency = 1
+        local stroke = Instance.new("UIStroke", notif)
+        stroke.Color = Color3.fromRGB(255, 69, 58)
+        stroke.Transparency = 1
 
         local icon = Instance.new("TextLabel", notif)
-        icon.Size = UDim2.new(0, 35, 1, 0); icon.BackgroundTransparency = 1; icon.Text = "⛔"
-        icon.TextSize = 16; icon.TextTransparency = 1; icon.ZIndex = 100
+        icon.Size = UDim2.new(0, 35, 1, 0)
+        icon.BackgroundTransparency = 1
+        icon.Text = "⛔"
+        icon.TextSize = 16
+        icon.TextTransparency = 1
+        icon.ZIndex = 100
 
         local lbl = Instance.new("TextLabel", notif)
-        lbl.Size = UDim2.new(1, -40, 1, 0); lbl.Position = UDim2.new(0, 35, 0, 0)
-        lbl.BackgroundTransparency = 1; lbl.Text = msg; lbl.TextColor3 = Color3.fromRGB(255, 200, 200)
-        lbl.Font = Enum.Font.GothamBold; lbl.TextSize = 11; lbl.TextXAlignment = Enum.TextXAlignment.Left
-        lbl.TextWrapped = true; lbl.TextTransparency = 1; lbl.ZIndex = 100
+        lbl.Size = UDim2.new(1, -40, 1, 0)
+        lbl.Position = UDim2.new(0, 35, 0, 0)
+        lbl.BackgroundTransparency = 1
+        lbl.Text = msg
+        lbl.TextColor3 = Color3.fromRGB(255, 200, 200)
+        lbl.Font = Enum.Font.GothamBold
+        lbl.TextSize = 11
+        lbl.TextXAlignment = Enum.TextXAlignment.Left
+        lbl.TextWrapped = true
+        lbl.TextTransparency = 1
+        lbl.ZIndex = 100
 
         TweenService:Create(dimOverlay, TweenInfo.new(0.2), {BackgroundTransparency = 0.4}):Play()
         TweenService:Create(notif, TweenInfo.new(0.2), {BackgroundTransparency = 0}):Play()
@@ -95,33 +118,52 @@ function BottleLib:Notify(msg)
                 if dimOverlay and dimOverlay.Parent then dimOverlay:Destroy() end
             end
         end)
+
     else
+        -- 🔔 NORMAL NOTIFICATION (โผล่มุมขวาล่างสุด)
         local container = sg:FindFirstChild("NotifyContainer")
         if not container then
             container = Instance.new("Frame", sg)
-            container.Name = "NotifyContainer"; container.Size = UDim2.new(0, 260, 1, -20)
-            container.Position = UDim2.new(1, -20, 1, -20); container.AnchorPoint = Vector2.new(1, 1) 
-            container.BackgroundTransparency = 1; container.ZIndex = 100
+            container.Name = "NotifyContainer"
+            container.Size = UDim2.new(0, 260, 1, -20)
+            container.Position = UDim2.new(1, -20, 1, -20)
+            container.AnchorPoint = Vector2.new(1, 1) 
+            container.BackgroundTransparency = 1
+            container.ZIndex = 100
             
             local layout = Instance.new("UIListLayout", container)
-            layout.SortOrder = Enum.SortOrder.LayoutOrder; layout.VerticalAlignment = Enum.VerticalAlignment.Bottom
+            layout.SortOrder = Enum.SortOrder.LayoutOrder
+            layout.VerticalAlignment = Enum.VerticalAlignment.Bottom
             layout.Padding = UDim.new(0, 10)
         end
 
         local notif = Instance.new("Frame", container)
-        notif.Size = UDim2.new(1, 0, 0, 45); notif.BackgroundColor3 = Color3.fromRGB(20,20,20)
-        notif.BackgroundTransparency = 1; Instance.new("UICorner", notif).CornerRadius = UDim.new(0,6)
-        local stroke = Instance.new("UIStroke", notif); stroke.Color = Color3.fromHex("#e60852"); stroke.Transparency = 1
+        notif.Size = UDim2.new(1, 0, 0, 45)
+        notif.BackgroundColor3 = Color3.fromRGB(20,20,20)
+        notif.BackgroundTransparency = 1
+        Instance.new("UICorner", notif).CornerRadius = UDim.new(0,6)
+        local stroke = Instance.new("UIStroke", notif)
+        stroke.Color = Color3.fromHex("#e60852")
+        stroke.Transparency = 1
 
         local icon = Instance.new("TextLabel", notif)
-        icon.Size = UDim2.new(0, 35, 1, 0); icon.BackgroundTransparency = 1; icon.Text = "🔔"
-        icon.TextSize = 16; icon.TextTransparency = 1
+        icon.Size = UDim2.new(0, 35, 1, 0)
+        icon.BackgroundTransparency = 1
+        icon.Text = "🔔"
+        icon.TextSize = 16
+        icon.TextTransparency = 1
 
         local lbl = Instance.new("TextLabel", notif)
-        lbl.Size = UDim2.new(1, -40, 1, 0); lbl.Position = UDim2.new(0, 35, 0, 0)
-        lbl.BackgroundTransparency = 1; lbl.Text = msg; lbl.TextColor3 = Color3.fromRGB(240,240,240)
-        lbl.Font = Enum.Font.GothamMedium; lbl.TextSize = 11; lbl.TextXAlignment = Enum.TextXAlignment.Left
-        lbl.TextWrapped = true; lbl.TextTransparency = 1
+        lbl.Size = UDim2.new(1, -40, 1, 0)
+        lbl.Position = UDim2.new(0, 35, 0, 0)
+        lbl.BackgroundTransparency = 1
+        lbl.Text = msg
+        lbl.TextColor3 = Color3.fromRGB(240,240,240)
+        lbl.Font = Enum.Font.GothamMedium
+        lbl.TextSize = 11
+        lbl.TextXAlignment = Enum.TextXAlignment.Left
+        lbl.TextWrapped = true
+        lbl.TextTransparency = 1
 
         TweenService:Create(notif, TweenInfo.new(0.3), {BackgroundTransparency=0.05}):Play()
         TweenService:Create(stroke, TweenInfo.new(0.3), {Transparency=0}):Play()
@@ -153,7 +195,8 @@ function BottleLib:ShowLoader(message)
     if _loaderDotsConn then _loaderDotsConn:Disconnect() end
 
     local sg = Instance.new("ScreenGui")
-    sg.Name = "BOTTLEHUB_LOADER"; sg.ResetOnSpawn = false; sg.Parent = (gethui and gethui()) or CoreGui
+    sg.Name = "BOTTLEHUB_LOADER"
+    sg.ResetOnSpawn = false; sg.Parent = (gethui and gethui()) or CoreGui
     _loaderGui = sg
 
     local overlay = Instance.new("Frame", sg)
@@ -181,7 +224,9 @@ function BottleLib:ShowLoader(message)
     arcStroke.Color = Color3.fromRGB(255,255,255); arcStroke.Thickness = 3
     local gradient = Instance.new("UIGradient", arcStroke)
     gradient.Color = ColorSequence.new(Color3.fromHex("#e60852")) 
-    gradient.Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(0.7, 1), NumberSequenceKeypoint.new(1, 1)})
+    gradient.Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(0.7, 1), NumberSequenceKeypoint.new(1, 1)     
+    })
     gradient.Rotation = 180
 
     local angle = 0
@@ -199,7 +244,10 @@ function BottleLib:ShowLoader(message)
     _loaderDotsConn = RunService.Heartbeat:Connect(function(dt)
         if not msgLbl or not msgLbl.Parent then return end
         dotTimer = dotTimer + dt
-        if dotTimer >= 0.4 then dotTimer = 0; dotCount = (dotCount + 1) % 4; msgLbl.Text = message .. string.rep(".", dotCount) end
+        if dotTimer >= 0.4 then 
+            dotTimer = 0; dotCount = (dotCount + 1) % 4
+            msgLbl.Text = message .. string.rep(".", dotCount)
+        end
     end)
 
     task.spawn(function()
@@ -207,7 +255,8 @@ function BottleLib:ShowLoader(message)
         while card and card.Parent do
             alpha = alpha + 0.02 * pulseDir
             if alpha >= 1 then alpha = 1; pulseDir = -1 elseif alpha <= 0 then alpha = 0; pulseDir = 1 end
-            pcall(function() stroke.Transparency = 0.3 + alpha * 0.5 end); task.wait(0.03)
+            pcall(function() stroke.Transparency = 0.3 + alpha * 0.5 end)
+            task.wait(0.03)
         end
     end)
 
@@ -421,7 +470,7 @@ function BottleLib:CreateWindow(WindowConfig)
     -- 🔴 [NEW] TOP RIGHT FPS/PING MONITOR
     local TopStatsLbl = Instance.new("TextLabel", MainFrame)
     TopStatsLbl.Size = UDim2.new(0, 150, 0, 20)
-    TopStatsLbl.Position = UDim2.new(1, -15, 0, 10)
+    TopStatsLbl.Position = UDim2.new(1, -20, 0, 10)
     TopStatsLbl.AnchorPoint = Vector2.new(1, 0)
     TopStatsLbl.BackgroundTransparency = 1
     TopStatsLbl.Text = "📈 FPS: --  |  📶 Ping: --ms"
@@ -466,8 +515,8 @@ function BottleLib:CreateWindow(WindowConfig)
     Instance.new("UICorner", MiniButton).CornerRadius = UDim.new(0,8); Instance.new("UIStroke", MiniButton).Color = T.Accent
 
     local MiniStatsBg = Instance.new("Frame", MiniButton)
-    MiniStatsBg.Size = UDim2.new(0, 85, 0, 18)
-    MiniStatsBg.Position = UDim2.new(0.5, 0, 1, 4)
+    MiniStatsBg.Size = UDim2.new(0, 130, 0, 20)
+    MiniStatsBg.Position = UDim2.new(0.5, 0, 1, 6)
     MiniStatsBg.AnchorPoint = Vector2.new(0.5, 0)
     MiniStatsBg.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
     Instance.new("UICorner", MiniStatsBg).CornerRadius = UDim.new(0, 4)
@@ -479,9 +528,8 @@ function BottleLib:CreateWindow(WindowConfig)
     MiniStatsLbl.TextColor3 = T.SubText
     MiniStatsLbl.Font = Enum.Font.GothamMedium
     MiniStatsLbl.TextSize = 10
-    MiniStatsLbl.Text = "📈 -- | 📶 --"
+    MiniStatsLbl.Text = "📈 FPS: -- | 📶 Ping: --ms"
 
-    -- Logic ลากปุ่ม Minimize
     local miniDragging, miniDragStart, miniStartPos = false, nil, nil
     MiniButton.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -498,7 +546,6 @@ function BottleLib:CreateWindow(WindowConfig)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then miniDragging = false end
     end)
 
-    -- ตรวจจับการคลิกเปิด/ปิด (แยกระหว่างคลิกเฉยๆ กับการลาก)
     local clickStart = 0
     MiniButton.InputBegan:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then clickStart = tick() end end)
     MiniButton.InputEnded:Connect(function(input)
@@ -539,8 +586,8 @@ function BottleLib:CreateWindow(WindowConfig)
         GlobalOverlayClose.Visible = false
     end)
 
-    -- 🔴 [FIX] PROFILE CARD SIZE = 175px 
-    local PROFILE_H = 175
+    -- 🔴 [FIX] PROFILE CARD SIZE = 195px (พอดีกับทุกอย่างเป๊ะๆ)
+    local PROFILE_H = 195
     local TabScrollContainer = Instance.new("ScrollingFrame", Sidebar); TabScrollContainer.Size = UDim2.new(1,0,1,-(PROFILE_H+46)); TabScrollContainer.Position = UDim2.new(0,0,0,46); TabScrollContainer.BackgroundTransparency = 1; TabScrollContainer.ScrollBarThickness = 0; TabScrollContainer.BorderSizePixel = 0
     local TabListLayout = Instance.new("UIListLayout", TabScrollContainer); TabListLayout.SortOrder = Enum.SortOrder.LayoutOrder; TabListLayout.Padding = UDim.new(0,5); TabListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
     local TabPad = Instance.new("UIPadding", TabScrollContainer); TabPad.PaddingTop = UDim.new(0,10); TabPad.PaddingBottom = UDim.new(0,10)
@@ -595,29 +642,35 @@ function BottleLib:CreateWindow(WindowConfig)
     local UIDLbl = Instance.new("TextLabel", UIDRow); UIDLbl.Size = UDim2.new(1,0,1,0); UIDLbl.BackgroundTransparency = 1; UIDLbl.Font = Enum.Font.Gotham; UIDLbl.TextSize = 9; UIDLbl.TextXAlignment = Enum.TextXAlignment.Left; UIDLbl.TextColor3 = Color3.fromRGB(70,70,70); UIDLbl.Text = "🆔  " .. tostring(player.UserId); UIDLbl.ZIndex = 6
 
     local DivA = Instance.new("Frame", ProfileCard); DivA.Size = UDim2.new(1,-16,0,1); DivA.Position = UDim2.new(0,8,0,76); DivA.BackgroundColor3 = Color3.fromRGB(38,38,38); DivA.BorderSizePixel = 0; DivA.ZIndex = 4
-    local InfoBlock = Instance.new("Frame", ProfileCard); InfoBlock.Size = UDim2.new(1,-16,0,60); InfoBlock.Position = UDim2.new(0,8,0,80); InfoBlock.BackgroundTransparency = 1; InfoBlock.ZIndex = 4
+    local InfoBlock = Instance.new("Frame", ProfileCard); InfoBlock.Size = UDim2.new(1,-16,0,80); InfoBlock.Position = UDim2.new(0,8,0,80); InfoBlock.BackgroundTransparency = 1; InfoBlock.ZIndex = 4
     local ibLayout = Instance.new("UIListLayout", InfoBlock); ibLayout.SortOrder = Enum.SortOrder.LayoutOrder; ibLayout.Padding = UDim.new(0,4); ibLayout.VerticalAlignment = Enum.VerticalAlignment.Top
 
     local GameLbl = CreateMarqueeLabel(InfoBlock, "🎮  Loading...", T.SubText, Enum.Font.Gotham, 10, true, 1)
+    local SubPlaceLbl = CreateMarqueeLabel(InfoBlock, "📍  Loading...", T.SubText, Enum.Font.Gotham, 10, true, 2)
+
     task.spawn(function() 
         local ok, info = pcall(function() return MarketplaceService:GetProductInfo(game.PlaceId) end)
         local pubName = ok and info.Name or game.Name
-        if GameLbl and GameLbl.Parent then
-            if game.Name ~= pubName and game.Name ~= "Place1" then GameLbl.Text = "🎮 " .. pubName .. "   |   📍 " .. game.Name .. " (" .. game.PlaceId .. ")" else GameLbl.Text = "🎮 " .. pubName .. "   |   📍 ID: " .. game.PlaceId end
+        if GameLbl and GameLbl.Parent then GameLbl.Text = "🎮  " .. pubName end
+        if SubPlaceLbl and SubPlaceLbl.Parent then
+            if game.Name ~= pubName and game.Name ~= "Place1" then
+                SubPlaceLbl.Text = "📍  " .. game.Name .. " (" .. game.PlaceId .. ")"
+            else
+                SubPlaceLbl.Text = "📍  Place ID: " .. game.PlaceId
+            end
         end
     end)
 
-    -- 🔴 [FIX] KeyRow Layout: ซ้าย Badge, ขวา Quick Actions
+    -- 🔴 [FIX] KeyRow Fixed Layout: ซ้าย Badge, ขวา Quick Actions
     local KeyRow = Instance.new("Frame", InfoBlock)
-    KeyRow.LayoutOrder = 2
-    KeyRow.Size = UDim2.new(1, 0, 0, 42) -- เพิ่มความสูงให้พอกับ 2 ปุ่มขวา
+    KeyRow.LayoutOrder = 3
+    KeyRow.Size = UDim2.new(1, 0, 0, 42) -- บังคับความสูงคงที่ แก้บัค UI หาย
     KeyRow.BackgroundTransparency = 1
     KeyRow.ZIndex = 4
 
     local KeyBadge = Instance.new("Frame", KeyRow)
     KeyBadge.Position = UDim2.new(0,0,0.5,0)
     KeyBadge.AnchorPoint = Vector2.new(0, 0.5)
-    KeyBadge.Size = UDim2.new(0,0,0,0)
     KeyBadge.AutomaticSize = Enum.AutomaticSize.XY
     KeyBadge.BackgroundColor3 = Color3.fromRGB(28,28,28)
     KeyBadge.BorderSizePixel = 0
@@ -638,11 +691,11 @@ function BottleLib:CreateWindow(WindowConfig)
                 KeyBadge.BackgroundColor3 = isFull and Color3.fromRGB(25,8,8) or Color3.fromRGB(26,26,26)
                 KeyBadgeStroke.Color = isFull and T.Accent or Color3.fromRGB(100,100,100)
                 KeyLbl.TextColor3 = isFull and T.Accent or Color3.fromRGB(200,200,200)
-                KeyLbl.Text = isFull and "🔑 Weekend!!!\nfor Premium Access" or "🔑 Bottle is kind\nbeyond word!!\nI really Love him"
+                KeyLbl.Text = isFull and "🔑  Weekend!!!\nfor Premium Access" or "🔑  Bottle is kind\nbeyond word!!\nI really Love him"
             elseif BottleLib.KeyStatus.ExpiresAt then
                 local rem = BottleLib.KeyStatus.ExpiresAt - os.time()
                 if rem <= 0 then 
-                    KeyBadge.BackgroundColor3 = Color3.fromRGB(35,10,10); KeyBadgeStroke.Color = T.Red; KeyLbl.TextColor3 = T.Red; KeyLbl.Text = "🔑 Expired"
+                    KeyBadge.BackgroundColor3 = Color3.fromRGB(35,10,10); KeyBadgeStroke.Color = T.Red; KeyLbl.TextColor3 = T.Red; KeyLbl.Text = "🔑  Expired"
                 elseif rem >= 86400 then 
                     KeyBadge.BackgroundColor3 = isFull and Color3.fromRGB(10,28,10) or Color3.fromRGB(26,26,26)
                     KeyBadgeStroke.Color = isFull and T.Accent or Color3.fromRGB(100,100,100)
@@ -664,7 +717,7 @@ function BottleLib:CreateWindow(WindowConfig)
 
     -- 🔴 [NEW] Y-STACKED QUICK ACTIONS ON THE RIGHT
     local QAContainer = Instance.new("Frame", KeyRow)
-    QAContainer.Size = UDim2.new(0, 68, 1, 0)
+    QAContainer.Size = UDim2.new(0, 75, 1, 0)
     QAContainer.Position = UDim2.new(1, 0, 0.5, 0)
     QAContainer.AnchorPoint = Vector2.new(1, 0.5)
     QAContainer.BackgroundTransparency = 1
@@ -672,16 +725,17 @@ function BottleLib:CreateWindow(WindowConfig)
     qaLayout.SortOrder = Enum.SortOrder.LayoutOrder
     qaLayout.Padding = UDim.new(0, 4)
     qaLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+    qaLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
 
-    local function makeQABtn(text, icon)
+    local function makeQABtn(text)
         local btn = Instance.new("TextButton", QAContainer)
         btn.Size = UDim2.new(1, 0, 0, 18)
         btn.BackgroundColor3 = Color3.fromRGB(24,24,24)
-        btn.Text = " " .. icon .. " " .. text
+        btn.Text = " " .. text
         btn.TextColor3 = T.Text
         btn.Font = Enum.Font.GothamBold
         btn.TextSize = 9
-        btn.TextXAlignment = Enum.TextXAlignment.Left
+        btn.TextXAlignment = Enum.TextXAlignment.Center
         btn.AutoButtonColor = false
         Instance.new("UICorner", btn).CornerRadius = UDim.new(0,4)
         local stroke = Instance.new("UIStroke", btn); stroke.Color = Color3.fromRGB(50,50,50)
@@ -690,8 +744,8 @@ function BottleLib:CreateWindow(WindowConfig)
         return btn
     end
 
-    local RejoinBtn = makeQABtn("Rejoin", "🔄")
-    local HopBtn = makeQABtn("Server Hop", "🌍")
+    local RejoinBtn = makeQABtn("🔄 Rejoin")
+    local HopBtn = makeQABtn("🌍 Server Hop")
 
     local function isPremiumQA()
         if BottleLib.KeyStatus.Tier == "Full" then return true end
@@ -730,12 +784,12 @@ function BottleLib:CreateWindow(WindowConfig)
         end)
     end)
 
-    local DivB = Instance.new("Frame", ProfileCard); DivB.Size = UDim2.new(1,-16,0,1); DivB.Position = UDim2.new(0,8,1,-31); DivB.BackgroundColor3 = Color3.fromRGB(38,38,38); DivB.BorderSizePixel = 0; DivB.ZIndex = 4
+    local DivB = Instance.new("Frame", ProfileCard); DivB.Size = UDim2.new(1,-16,0,1); DivB.Position = UDim2.new(0,8,0,164); DivB.BackgroundColor3 = Color3.fromRGB(38,38,38); DivB.BorderSizePixel = 0; DivB.ZIndex = 4
     
-    -- 🔴 [FIX] DISCORD BUTTON RESTORED TO FULL WIDTH
+    -- 🔴 [FIX] FULL WIDTH DISCORD BUTTON
     local DiscordBtn = Instance.new("TextButton", ProfileCard)
     DiscordBtn.Size = UDim2.new(1,-16,0,22)
-    DiscordBtn.Position = UDim2.new(0,8,1,-26)
+    DiscordBtn.Position = UDim2.new(0,8,0,168)
     DiscordBtn.BackgroundColor3 = Color3.fromRGB(24,24,42)
     DiscordBtn.Text = "📣  Join our Discord"
     DiscordBtn.TextColor3 = Color3.fromRGB(120,120,240)
@@ -754,7 +808,7 @@ function BottleLib:CreateWindow(WindowConfig)
         task.delay(1.8, function() if not DiscordBtn or not DiscordBtn.Parent then return end; DiscordBtn.Text = origText; DiscordBtn.TextColor3 = origColor; TweenService:Create(DiscordBtn, TweenInfo.new(0.2), { BackgroundColor3 = Color3.fromRGB(24,24,42) }):Play(); TweenService:Create(dbStroke, TweenInfo.new(0.2), { Color = Color3.fromRGB(50,50,90) }):Play() end)
     end)
 
-    -- 🔴 [NEW] FPS & PING RENDER LOOP (UPDATES BOTH MAIN & MINI MONITORS)
+    -- 🔴 [NEW] RENDER LOOP FOR FPS/PING
     local lastUpdate = tick()
     local frames = 0
     RunService.RenderStepped:Connect(function()
@@ -773,10 +827,8 @@ function BottleLib:CreateWindow(WindowConfig)
             end
             
             local statTextFull = string.format("📈 FPS: %d  |  📶 Ping: %dms", fps, ping)
-            local statTextMini = string.format("📈 %d | 📶 %d", fps, ping)
-
             if TopStatsLbl and TopStatsLbl.Parent then TopStatsLbl.Text = statTextFull end
-            if MiniStatsLbl and MiniStatsLbl.Parent then MiniStatsLbl.Text = statTextMini end
+            if MiniStatsLbl and MiniStatsLbl.Parent then MiniStatsLbl.Text = statTextFull end
         end
     end)
 
@@ -1014,7 +1066,8 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
         headerBtn.Size = UDim2.new(1,0,0,34); headerBtn.BackgroundTransparency = 1
         
         local hexAccent = string.format("#%02X%02X%02X", math.floor(T.Accent.R*255), math.floor(T.Accent.G*255), math.floor(T.Accent.B*255))
-        local pTag = isPremiumFolder and " <font color='"..hexAccent.."'>[Premium Access]</font>" or ""
+        -- 🔴 [FIX 3] เปลี่ยนป้ายเป็น ⭐ Premium Access
+        local pTag = isPremiumFolder and " <font color='"..hexAccent.."'>⭐ Premium Access</font>" or ""
         headerBtn.Text = "  ▼  " .. folderName .. pTag; headerBtn.RichText = true; headerBtn.TextColor3 = T.Text; headerBtn.Font = Enum.Font.GothamBold; headerBtn.TextSize = 12; headerBtn.TextXAlignment = Enum.TextXAlignment.Left
 
         local innerContainer = Instance.new("Frame", folderFrame)
