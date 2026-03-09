@@ -2,16 +2,17 @@
 --[[
     BOTTLEHUB LIBRARY V11.9 (THE FINAL POLISH)
     ─────────────────────────────────────────────────────────────
-    FIX 1: QUICK ACTIONS UI
-      - เปลี่ยนจากการใช้ Layout มาเป็นการระบุ Position ตายตัว (Absolute Fix)
-      - วาง 🔄 Rejoin บน และ 🌍 Server Hop ล่าง ในฝั่งขวาของ Key
-
-    FIX 2: PREMIUM FOLDER OVERRIDE
-      - บังคับตัดชื่อเดิมทิ้งทั้งหมด แล้วแทนที่ด้วย "⭐ Premium Access" เพียวๆ
+    FIX 1: QUICK ACTIONS UI BUG
+      - ลบ UIListLayout ที่แอบซ่อนอยู่ออกอย่างถาวร
+      - ล็อคพิกัด (Position) ของปุ่ม Rejoin และ Server Hop ให้แสดงผล 100% ไม่มีบัคหาย
+    
+    FIX 2: DYNAMIC GLOBAL KEY NAME
+      - ดึงชื่อคีย์ที่ผู้เล่นกรอก (KeyName) มาแสดงผลบนการ์ดแบบ Real-time
+      - แสดงผลรูปแบบ: 🔑 [ชื่อคีย์] \n for Full Access
 ]]
 
 local BottleLib = {}
-BottleLib.KeyStatus = { Valid = false, ExpiresAt = nil, IsGlobal = false, Tier = "Basic" }
+BottleLib.KeyStatus = { Valid = false, ExpiresAt = nil, IsGlobal = false, Tier = "Basic", KeyName = "Unknown" }
 BottleLib.Connections = {}
 
 local CoreGui             = game:GetService("CoreGui")
@@ -51,7 +52,6 @@ function BottleLib:Notify(msg)
     local isPermError = (msg == "You do not have permission to use this Premium feature.")
 
     if isPermError then
-        -- ⛔ PERMISSION ERROR (โผล่กลางจอ + จอดำ Overlay)
         local mainWin = sg:FindFirstChild("MainFrame")
         if not mainWin then return end
 
@@ -117,7 +117,6 @@ function BottleLib:Notify(msg)
         end)
 
     else
-        -- 🔔 NORMAL NOTIFICATION (โผล่มุมขวาล่างสุด)
         local container = sg:FindFirstChild("NotifyContainer")
         if not container then
             container = Instance.new("Frame", sg)
@@ -338,7 +337,7 @@ function BottleLib:InitKeySystem()
     local function RemoveStoredKey() pcall(function() delfile(KEY_STORAGE_FILE) end) end
 
     if CheckCloudVIP() then
-        BottleLib.KeyStatus = { Valid=true, ExpiresAt=nil, IsGlobal=true, Tier="Full" }
+        BottleLib.KeyStatus = { Valid=true, ExpiresAt=nil, IsGlobal=true, Tier="Full", KeyName="VIP" }
         return true
     end
 
@@ -346,7 +345,8 @@ function BottleLib:InitKeySystem()
     if d and d.hwid == GetHWID() then
         if d.expiresAt and type(d.expiresAt) == "number" and os.time() >= d.expiresAt then RemoveStoredKey(); player:Kick("BottleHub: Your saved key has expired."); return false end
         local isValid, isExpired, _, expTime, isGlobal, tier = VerifyKeyWithServer(d.key)
-        if isValid and not isExpired then BottleLib.KeyStatus = { Valid=true, ExpiresAt=tonumber(expTime), IsGlobal=isGlobal, Tier=tier or "Basic" }; return true end
+        -- 🔴 เพิ่มการจดจำ KeyName ในเครื่อง
+        if isValid and not isExpired then BottleLib.KeyStatus = { Valid=true, ExpiresAt=tonumber(expTime), IsGlobal=isGlobal, Tier=tier or "Basic", KeyName=d.key }; return true end
         RemoveStoredKey()
         if isExpired then player:Kick("BottleHub: Key Expired"); return false end
     end
@@ -406,7 +406,8 @@ function BottleLib:InitKeySystem()
         checking = false 
         if isValid and not isExpired then
             if not isGlobal then SaveKey(input, expTime) end
-            BottleLib.KeyStatus = { Valid=true, ExpiresAt=tonumber(expTime), IsGlobal=isGlobal, Tier=tier or "Basic" }
+            -- 🔴 บันทึกชื่อคีย์ที่แท้จริงไว้
+            BottleLib.KeyStatus = { Valid=true, ExpiresAt=tonumber(expTime), IsGlobal=isGlobal, Tier=tier or "Basic", KeyName=input }
             VerifyBtn.Text = "Success!"; VerifyBtn.BackgroundColor3 = Color3.fromRGB(46,204,113)
             task.wait(0.5); KeyScreen:Destroy(); VerifyEvent:Fire()
         elseif isExpired then
@@ -464,7 +465,6 @@ function BottleLib:CreateWindow(WindowConfig)
     ContentContainer.BackgroundTransparency = 0.75
     Instance.new("UICorner", ContentContainer).CornerRadius = UDim.new(0,6)
 
-    -- 🔴 TOP RIGHT FPS/PING MONITOR
     local TopStatsLbl = Instance.new("TextLabel", MainFrame)
     TopStatsLbl.Size = UDim2.new(0, 150, 0, 20)
     TopStatsLbl.Position = UDim2.new(1, -20, 0, 10)
@@ -583,7 +583,7 @@ function BottleLib:CreateWindow(WindowConfig)
         GlobalOverlayClose.Visible = false
     end)
 
-    -- 🔴 [FIX] PROFILE CARD SIZE = 195px (ขนาดลงตัวสุด)
+    -- 🔴 PROFILE CARD SIZE = 195px
     local PROFILE_H = 195
     local TabScrollContainer = Instance.new("ScrollingFrame", Sidebar); TabScrollContainer.Size = UDim2.new(1,0,1,-(PROFILE_H+46)); TabScrollContainer.Position = UDim2.new(0,0,0,46); TabScrollContainer.BackgroundTransparency = 1; TabScrollContainer.ScrollBarThickness = 0; TabScrollContainer.BorderSizePixel = 0
     local TabListLayout = Instance.new("UIListLayout", TabScrollContainer); TabListLayout.SortOrder = Enum.SortOrder.LayoutOrder; TabListLayout.Padding = UDim.new(0,5); TabListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
@@ -608,10 +608,7 @@ function BottleLib:CreateWindow(WindowConfig)
 
     local CopyIdBtn = Instance.new("TextButton", ProfileCard)
     CopyIdBtn.Size = UDim2.new(1,0,0,72); CopyIdBtn.Position = UDim2.new(0,0,0,0); CopyIdBtn.BackgroundTransparency = 1; CopyIdBtn.Text = ""; CopyIdBtn.ZIndex = 10
-    CopyIdBtn.MouseButton1Click:Connect(function()
-        pcall(function() setclipboard(tostring(player.UserId)) end)
-        BottleLib:Notify("Copied User ID: " .. tostring(player.UserId))
-    end)
+    CopyIdBtn.MouseButton1Click:Connect(function() pcall(function() setclipboard(tostring(player.UserId)) end); BottleLib:Notify("Copied User ID: " .. tostring(player.UserId)) end)
 
     local function CreateMarqueeLabel(parent, text, col, fnt, sz, allowScroll, lo)
         local container = Instance.new("Frame", parent); container.LayoutOrder = lo or 0; container.Size = UDim2.new(1,0,0,sz+4); container.BackgroundTransparency = 1; container.ClipsDescendants = true; container.ZIndex = parent.ZIndex or 5
@@ -658,10 +655,10 @@ function BottleLib:CreateWindow(WindowConfig)
         end
     end)
 
-    -- 🔴 [FIX 1] KeyRow Fixed Layout (ไม่ใช้ AutomaticSize เพื่อแก้บัค UI หาย)
+    -- 🔴 [FIX 1] KeyRow Layout (ABSOLUTE POSITIONING)
     local KeyRow = Instance.new("Frame", InfoBlock)
     KeyRow.LayoutOrder = 3
-    KeyRow.Size = UDim2.new(1, 0, 0, 42) -- ความสูงคงที่สำหรับวาง 2 ปุ่ม
+    KeyRow.Size = UDim2.new(1, 0, 0, 42)
     KeyRow.BackgroundTransparency = 1
     KeyRow.ZIndex = 4
 
@@ -688,7 +685,14 @@ function BottleLib:CreateWindow(WindowConfig)
                 KeyBadge.BackgroundColor3 = isFull and Color3.fromRGB(25,8,8) or Color3.fromRGB(26,26,26)
                 KeyBadgeStroke.Color = isFull and T.Accent or Color3.fromRGB(100,100,100)
                 KeyLbl.TextColor3 = isFull and T.Accent or Color3.fromRGB(200,200,200)
-                KeyLbl.Text = isFull and "🔑  Weekend!!!\nfor Premium Access" or "🔑  Bottle is kind\nbeyond word!!\nI really Love him"
+                
+                -- 🔴 [FIX 2] ดึงชื่อ KeyName มาแสดงผล
+                if isFull then
+                    local kName = BottleLib.KeyStatus.KeyName or "VIP"
+                    KeyLbl.Text = "🔑  " .. kName .. "\nfor Full Access"
+                else
+                    KeyLbl.Text = "🔑  Bottle is kind\nbeyond word!!\nI really Love him"
+                end
             elseif BottleLib.KeyStatus.ExpiresAt then
                 local rem = BottleLib.KeyStatus.ExpiresAt - os.time()
                 if rem <= 0 then 
@@ -712,33 +716,34 @@ function BottleLib:CreateWindow(WindowConfig)
         end
     end)
 
-    -- 🔴 [FIX 1] QUICK ACTIONS: Position แบบตายตัว 100% ไม่มีบัคหายแน่นอน
+    -- 🔴 [FIX 1] QUICK ACTIONS: Absolute Position System (ไร้ Layout ไม่ล่องหน 100%)
     local QAContainer = Instance.new("Frame", KeyRow)
-    QAContainer.Size = UDim2.new(0, 80, 1, 0)
+    QAContainer.Size = UDim2.new(0, 70, 1, 0)
     QAContainer.Position = UDim2.new(1, 0, 0, 0)
     QAContainer.AnchorPoint = Vector2.new(1, 0)
     QAContainer.BackgroundTransparency = 1
+    QAContainer.BorderSizePixel = 0
 
     local RejoinBtn = Instance.new("TextButton", QAContainer)
-    RejoinBtn.Size = UDim2.new(1, 0, 0, 19)
-    RejoinBtn.Position = UDim2.new(0, 0, 0, 0)
+    RejoinBtn.Size = UDim2.new(1, 0, 0, 18)
+    RejoinBtn.Position = UDim2.new(0, 0, 0, 0) -- บนสุด
     RejoinBtn.BackgroundColor3 = Color3.fromRGB(24,24,24)
     RejoinBtn.Text = "🔄 Rejoin"
     RejoinBtn.TextColor3 = T.Text
     RejoinBtn.Font = Enum.Font.GothamBold
-    RejoinBtn.TextSize = 10
+    RejoinBtn.TextSize = 9
     RejoinBtn.AutoButtonColor = false
     Instance.new("UICorner", RejoinBtn).CornerRadius = UDim.new(0,4)
     local rStroke = Instance.new("UIStroke", RejoinBtn); rStroke.Color = Color3.fromRGB(50,50,50)
 
     local HopBtn = Instance.new("TextButton", QAContainer)
-    HopBtn.Size = UDim2.new(1, 0, 0, 19)
-    HopBtn.Position = UDim2.new(0, 0, 0, 23)
+    HopBtn.Size = UDim2.new(1, 0, 0, 18)
+    HopBtn.Position = UDim2.new(0, 0, 0, 22) -- ห่างลงมา 4px
     HopBtn.BackgroundColor3 = Color3.fromRGB(24,24,24)
     HopBtn.Text = "🌍 Server Hop"
     HopBtn.TextColor3 = T.Text
     HopBtn.Font = Enum.Font.GothamBold
-    HopBtn.TextSize = 10
+    HopBtn.TextSize = 9
     HopBtn.AutoButtonColor = false
     Instance.new("UICorner", HopBtn).CornerRadius = UDim.new(0,4)
     local hStroke = Instance.new("UIStroke", HopBtn); hStroke.Color = Color3.fromRGB(50,50,50)
@@ -807,7 +812,7 @@ function BottleLib:CreateWindow(WindowConfig)
         task.delay(1.8, function() if not DiscordBtn or not DiscordBtn.Parent then return end; DiscordBtn.Text = origText; DiscordBtn.TextColor3 = origColor; TweenService:Create(DiscordBtn, TweenInfo.new(0.2), { BackgroundColor3 = Color3.fromRGB(24,24,42) }):Play(); TweenService:Create(dbStroke, TweenInfo.new(0.2), { Color = Color3.fromRGB(50,50,90) }):Play() end)
     end)
 
-    -- 🔴 [NEW] RENDER LOOP FOR FPS/PING
+    -- 🔴 RENDER LOOP FOR FPS/PING
     local lastUpdate = tick()
     local frames = 0
     RunService.RenderStepped:Connect(function()
@@ -1066,7 +1071,7 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
         
         local hexAccent = string.format("#%02X%02X%02X", math.floor(T.Accent.R*255), math.floor(T.Accent.G*255), math.floor(T.Accent.B*255))
         
-        -- 🔴 [FIX 2] OVERRIDE ชื่อโฟลเดอร์ถ้าเป็น Premium ให้โชว์แค่ดาวและ Premium Access
+        -- 🔴 [FIX 2] OVERRIDE: บังคับเปลี่ยนชื่อเป็น "⭐ Premium Access" ถ้านี่คือโซน Premium
         if isPremiumFolder then
             headerBtn.Text = "  ▼  <font color='"..hexAccent.."'>⭐ Premium Access</font>"
         else
