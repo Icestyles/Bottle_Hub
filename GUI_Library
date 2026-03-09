@@ -1,16 +1,20 @@
 --!nocheck
 --[[
-    BOTTLEHUB LIBRARY V10.1
+    BOTTLEHUB LIBRARY V10.2
     ─────────────────────────────────────────────────────────────
-    FIX 1  DRAG       dragInput pattern ทำให้ input == dragInput เป็น false เสมอ
-                      → ลบ dragInput ออก ใช้ dragging + type check โดยตรง
-    FIX 2  SLIDER     track.MouseButton1Down ไม่ reliable ใน executor
-                      → เปลี่ยนเป็น track.InputBegan + type check
-    FIX 3  LEFT CTRL  UserInputService:GetFocusedTextBox() ไม่มีใน Roblox API
-                      → ใช้ gameProcessed parameter แทน
-    FIX 4  API        CreateLabel  :SetText() → เพิ่ม :Set() (keep SetText ไว้ด้วย)
-                      CreateButton → return BtnObj { :Set(text) }
-                      CreateWindow → รับทั้ง table และ (name, sub) string
+    จาก V10.1 (มี FIX 1-4 แต่ยังมีบั๊กซ่อนอยู่)
+    ─────────────────────────────────────────────────────────────
+    PATCH 1  DRAG       MainFrame.InputBegan ถูก child elements บังทั้งหมด
+                        → เปลี่ยนเป็น UserInputService.InputBegan + bounds check
+                        → เพิ่ม UserInputService.InputEnded เป็น fallback reset dragging
+
+    PATCH 2  SLIDER     GuiObject.InputBegan (track.InputBegan) ไม่ fire ใน executor
+                        → เปลี่ยนเป็น UserInputService.InputBegan + bounds check บน track
+                        → เพิ่ม hit-area padding ±6px เพื่อให้คลิกง่ายขึ้น
+
+    PATCH 3  LEFT CTRL  gameProcessed = true เสมอใน executor environment
+                        → ลบการเช็ค gameProcessed ออก
+                        → ใช้ pcall(UserInputService:GetFocusedTextBox()) แทน
 ]]
 
 local BottleLib = {}
@@ -42,7 +46,7 @@ BottleLib.CleanUpEvent.Event:Connect(function()
 end)
 
 -- ============================================================
--- KEY SYSTEM (ไม่มีการเปลี่ยนแปลง)
+-- KEY SYSTEM
 -- ============================================================
 function BottleLib:InitKeySystem()
     local KEY_STORAGE_FILE = "BottleHub_KeyStorage.json"
@@ -251,7 +255,6 @@ end
 function BottleLib:CreateWindow(WindowConfig, SubTitle)
     BottleLib.CleanUpEvent:Fire()
 
-    -- [FIX 4] รองรับทั้ง table และ string ที่ส่งตรงมา
     if type(WindowConfig) == "string" then
         WindowConfig = { Name = WindowConfig, SubTitle = SubTitle }
     end
@@ -291,43 +294,53 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
     Instance.new("UICorner", ContentContainer).CornerRadius = UDim.new(0,6)
 
     -- ──────────────────────────────────────────────────────────
-    -- [FIX 1] DRAG — ลบ dragInput ออกทั้งหมด
+    -- [PATCH 1] DRAG
     --
-    -- ปัญหาเดิม:
-    --   MainFrame.InputChanged  → set dragInput = input (InputObject A)
-    --   UserInputService.InputChanged → ส่ง input อีกตัว (InputObject B)
-    --   input == dragInput → B == A → FALSE เสมอ → window ไม่ขยับ
+    -- ปัญหาใน V10.1:
+    --   MainFrame.InputBegan ถูก child elements (Sidebar, ContentContainer,
+    --   Buttons ฯลฯ) บังพื้นที่ทั้งหมด → InputBegan บน MainFrame แทบไม่เคย fire
+    --   + dragging reset พึ่งแค่ input.Changed ซึ่งไม่ reliable ใน executor
     --
-    -- วิธีแก้:
-    --   ตรวจแค่ dragging == true และ type == MouseMovement
-    --   ลบ dragInput + MainFrame.InputChanged ออก
+    -- การแก้ไข:
+    --   1) ใช้ UserInputService.InputBegan แทน → ได้รับ event เสมอไม่ว่าจะคลิกที่ไหน
+    --   2) ตรวจ bounds ด้วย GetMouseLocation() ว่าอยู่ใน MainFrame แต่ไม่ใน ContentContainer
+    --   3) เพิ่ม UserInputService.InputEnded เพื่อ reset dragging อย่าง reliable
     -- ──────────────────────────────────────────────────────────
     local dragging, dragStart, startPos
 
-    MainFrame.InputBegan:Connect(function(input)
+    local dragBeginConn = UserInputService.InputBegan:Connect(function(input)
+        if input.UserInputType ~= Enum.UserInputType.MouseButton1
+        and input.UserInputType ~= Enum.UserInputType.Touch then return end
+
+        local mPos   = UserInputService:GetMouseLocation()
+        local mfPos  = MainFrame.AbsolutePosition
+        local mfSize = MainFrame.AbsoluteSize
+        local inFrame = mPos.X >= mfPos.X and mPos.X <= (mfPos.X + mfSize.X)
+                     and mPos.Y >= mfPos.Y and mPos.Y <= (mfPos.Y + mfSize.Y)
+        if not inFrame then return end
+
+        local cPos  = ContentContainer.AbsolutePosition
+        local cSize = ContentContainer.AbsoluteSize
+        local inContent = mPos.X >= cPos.X and mPos.X <= (cPos.X + cSize.X)
+                       and mPos.Y >= cPos.Y and mPos.Y <= (cPos.Y + cSize.Y)
+        if inContent then return end
+
+        dragging  = true
+        dragStart = input.Position
+        startPos  = MainFrame.Position
+    end)
+    table.insert(BottleLib.Connections, dragBeginConn)
+
+    -- [PATCH 1] InputEnded เป็น reliable fallback สำหรับ reset dragging
+    local dragEndConn = UserInputService.InputEnded:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1
         or input.UserInputType == Enum.UserInputType.Touch then
-            local mPos  = input.Position
-            local cPos  = ContentContainer.AbsolutePosition
-            local cSize = ContentContainer.AbsoluteSize
-            local insideContent = mPos.X >= cPos.X and mPos.X <= (cPos.X + cSize.X)
-                               and mPos.Y >= cPos.Y and mPos.Y <= (cPos.Y + cSize.Y)
-            if not insideContent then
-                dragging  = true
-                dragStart = input.Position
-                startPos  = MainFrame.Position
-                input.Changed:Connect(function()
-                    if input.UserInputState == Enum.UserInputState.End then
-                        dragging = false
-                    end
-                end)
-            end
+            dragging = false
         end
     end)
+    table.insert(BottleLib.Connections, dragEndConn)
 
-    -- [FIX 1] ลบ MainFrame.InputChanged ออก → ลบ dragInput ออก
-    -- ใช้แค่ dragging + type check โดยตรง
-    local dragConn = UserInputService.InputChanged:Connect(function(input)
+    local dragMoveConn = UserInputService.InputChanged:Connect(function(input)
         if dragging and (
             input.UserInputType == Enum.UserInputType.MouseMovement or
             input.UserInputType == Enum.UserInputType.Touch
@@ -339,7 +352,7 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
             )
         end
     end)
-    table.insert(BottleLib.Connections, dragConn)
+    table.insert(BottleLib.Connections, dragMoveConn)
 
     -- ──────────────────────────────────────────────────────────
     -- Minimize
@@ -358,18 +371,25 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
     MiniButton.MouseButton1Click:Connect(function() ToggleMinimize(false) end)
 
     -- ──────────────────────────────────────────────────────────
-    -- [FIX 3] LEFT CTRL — เปลี่ยน GetFocusedTextBox() → gameProcessed
+    -- [PATCH 3] LEFT CTRL
     --
-    -- ปัญหาเดิม:
-    --   UserInputService:GetFocusedTextBox() ไม่มีใน Roblox API
-    --   → runtime error ทุกครั้งที่กด Ctrl → minimize ไม่ทำงาน
+    -- ปัญหาใน V10.1:
+    --   executor environment ส่ง gameProcessed = true สำหรับ keyboard input เสมอ
+    --   → `if gameProcessed then return end` ทำให้ข้ามทุกครั้ง → Ctrl ไม่มีผล
     --
-    -- วิธีแก้:
-    --   ใช้ gameProcessed parameter ของ InputBegan
-    --   gameProcessed = true เมื่อ TextBox focused หรือ game ใช้ input นั้น
+    -- การแก้ไข:
+    --   1) ลบการเช็ค gameProcessed ออกทั้งหมด
+    --   2) ตรวจ TextBox focused ด้วย pcall(GetFocusedTextBox()) แทน
+    --      (pcall เพราะ executor บางตัว API นี้อาจ error)
     -- ──────────────────────────────────────────────────────────
-    local minConn = UserInputService.InputBegan:Connect(function(i, gameProcessed)
-        if gameProcessed then return end  -- [FIX 3] TextBox focused → ข้ามไป
+    local minConn = UserInputService.InputBegan:Connect(function(i)
+        -- [PATCH 3] ไม่ใช้ gameProcessed → ตรวจ TextBox focused ด้วย pcall แทน
+        local focused = false
+        pcall(function()
+            focused = UserInputService:GetFocusedTextBox() ~= nil
+        end)
+        if focused then return end
+
         if i.KeyCode == Enum.KeyCode.LeftControl then
             ToggleMinimize(MainFrame.Visible)
         end
@@ -651,7 +671,6 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
             l.TextXAlignment = Enum.TextXAlignment.Left
         end
 
-        -- [FIX 4] CreateLabel → เพิ่ม :Set() ควบคู่กับ :SetText()
         function TabObj:CreateLabel(text)
             local l = Instance.new("TextLabel", scroll)
             l.Size = UDim2.new(1,0,0,22); l.BackgroundTransparency = 1
@@ -660,8 +679,8 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
             l.TextXAlignment = Enum.TextXAlignment.Left
             l.TextWrapped = true
             local LblObj = {}
-            function LblObj:Set(newText)     l.Text = newText end  -- [FIX 4]
-            function LblObj:SetText(newText) l.Text = newText end  -- backward compat
+            function LblObj:Set(newText)     l.Text = newText end
+            function LblObj:SetText(newText) l.Text = newText end
             return LblObj
         end
 
@@ -695,14 +714,16 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
         end
 
         -- ──────────────────────────────────────────────────────
-        -- [FIX 2] SLIDER — เปลี่ยน MouseButton1Down → InputBegan
+        -- [PATCH 2] SLIDER
         --
-        -- ปัญหาเดิม:
-        --   track.MouseButton1Down ไม่ fire ใน executor บางตัว (Synapse, KRNL)
-        --   → drag = true ไม่ถูก set → slider ไม่ขยับเลย
+        -- ปัญหาใน V10.1:
+        --   track.InputBegan (GuiObject event) ไม่ fire ใน executor หลายตัว
+        --   → drag = true ไม่ถูก set เลย → slider ไม่ขยับ
         --
-        -- วิธีแก้:
-        --   track.InputBegan + type check (reliable ทุก executor)
+        -- การแก้ไข:
+        --   1) ใช้ UserInputService.InputBegan แทน → reliable ทุก executor
+        --   2) ตรวจ bounds ด้วย GetMouseLocation() ว่าอยู่บน track
+        --   3) เพิ่ม hit-area padding ±6px แนวตั้ง เพราะ track สูงแค่ 6px คลิกยาก
         -- ──────────────────────────────────────────────────────
         function TabObj:CreateSlider(label, min, max, default, callback)
             local frame = Instance.new("Frame", scroll)
@@ -715,15 +736,15 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
             lbl.Font = Enum.Font.GothamBold; lbl.TextSize = 11
             lbl.TextXAlignment = Enum.TextXAlignment.Left
 
-            local track = Instance.new("TextButton", frame)
+            local track = Instance.new("Frame", frame)
             track.Size = UDim2.new(1,-20,0,6); track.Position = UDim2.new(0,10,0,34)
             track.BackgroundColor3 = Color3.fromRGB(50,50,50)
-            track.Text = ""; track.AutoButtonColor = false
+            track.BorderSizePixel = 0
             Instance.new("UICorner", track).CornerRadius = UDim.new(1,0)
 
             local fill = Instance.new("Frame", track)
             fill.Size = UDim2.new(math.clamp((default-min)/(max-min),0,1), 0, 1, 0)
-            fill.BackgroundColor3 = T.Accent
+            fill.BackgroundColor3 = T.Accent; fill.BorderSizePixel = 0
             Instance.new("UICorner", fill).CornerRadius = UDim.new(1,0)
 
             local function update(v)
@@ -734,9 +755,15 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
 
             local drag = false
 
-            -- [FIX 2] InputBegan แทน MouseButton1Down
-            track.InputBegan:Connect(function(input)
-                if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            -- [PATCH 2] UserInputService.InputBegan + bounds check บน track
+            local sc0 = UserInputService.InputBegan:Connect(function(input)
+                if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+                local mPos  = UserInputService:GetMouseLocation()
+                local tPos  = track.AbsolutePosition
+                local tSize = track.AbsoluteSize
+                -- padding ±6px แนวตั้งเพราะ track สูงแค่ 6px
+                if mPos.X >= tPos.X and mPos.X <= (tPos.X + tSize.X)
+                and mPos.Y >= (tPos.Y - 6) and mPos.Y <= (tPos.Y + tSize.Y + 6) then
                     drag = true
                 end
             end)
@@ -754,6 +781,7 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
                     update(math.floor(min + (max-min)*p))
                 end
             end)
+            table.insert(BottleLib.Connections, sc0)
             table.insert(BottleLib.Connections, c1)
             table.insert(BottleLib.Connections, c2)
         end
@@ -885,7 +913,6 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
             Pair(l1, 0.02, callback1); Pair(l2, 0.52, callback2)
         end
 
-        -- [FIX 4] CreateButton → return BtnObj พร้อม :Set()
         function TabObj:CreateButton(text, callback)
             local btn = Instance.new("TextButton", scroll)
             btn.Size = UDim2.new(1,0,0,34); btn.BackgroundColor3 = T.Element
@@ -899,7 +926,6 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
                 t1:Play(); t1.Completed:Connect(function() t2:Play() end)
                 callback(btn)
             end)
-            -- [FIX 4] return BtnObj
             local BtnObj = {}
             function BtnObj:Set(newText) btn.Text = newText end
             return BtnObj
