@@ -419,8 +419,13 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
 
     if CoreGui:FindFirstChild("BOTTLEHUB_MAIN") then CoreGui.BOTTLEHUB_MAIN:Destroy() end
     local ScreenGui = Instance.new("ScreenGui")
-    ScreenGui.Name = "BOTTLEHUB_MAIN"
-    ScreenGui.Parent = (gethui and gethui()) or CoreGui
+    ScreenGui.Name             = "BOTTLEHUB_MAIN"
+    ScreenGui.ResetOnSpawn     = false
+    -- CRITICAL: Global ZIndex ทำให้ children ของ Sidebar (ProfileCard ฯลฯ)
+    -- render เหนือ DragStrip ได้ตาม ZIndex จริง
+    -- Sibling (default) จะทำให้ DragStrip (ZIndex=2) บัง Sidebar ทั้งอัน
+    ScreenGui.ZIndexBehavior   = Enum.ZIndexBehavior.Global
+    ScreenGui.Parent           = (gethui and gethui()) or CoreGui
 
     local MainFrame = Instance.new("Frame", ScreenGui)
     MainFrame.Size = UDim2.new(0,600,0,480); MainFrame.Position = UDim2.new(0.5,-300,0.5,-240)
