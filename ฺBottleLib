@@ -1,10 +1,14 @@
 --!nocheck
 --[[
-    BOTTLEHUB LIBRARY V11.3 (TEXT UPDATED & NOTIFY FIXED)
+    BOTTLEHUB LIBRARY V11.4 (NOTIFY & AUTO-SIZE PATCH)
     ─────────────────────────────────────────────────────────────
-    - Fixed `Notify()` not showing when using `gethui()` executor.
-    - Updated Wording for Premium Access, Duration, and Badges.
-    - ProfileCard dynamically resizes to support multi-line text tags.
+    FIX 1  CENTER NOTIFICATIONS
+      - ย้าย NotifyContainer มาอยู่ตรงกลางของ MainFrame (GUI) แบบเป๊ะๆ 
+      - ใช้ AnchorPoint (0.5, 0.5) เพื่อให้ Popup เด้งตรงกลางจอสวยงาม
+
+    FIX 2  MULTI-LINE TEXT BADGES
+      - เปลี่ยนระบบขนาดของ KeyBadge และ KeyLbl ให้เป็น AutomaticSize.XY
+      - ลบการล็อคความสูง (Height) ทิ้ง ทำให้รองรับข้อความ \n ได้ 100% ไม่ถูกตัด
 ]]
 
 local BottleLib = {}
@@ -37,25 +41,33 @@ BottleLib.CleanUpEvent.Event:Connect(function()
 end)
 
 -- ============================================================
--- 🔔 NOTIFICATION SYSTEM (FIXED FOR GETHUI)
+-- 🔔 NOTIFICATION SYSTEM (CENTERED ON MAIN GUI)
 -- ============================================================
 function BottleLib:Notify(msg)
-    -- 🔴 [FIX] เปลี่ยนมาเช็ค Parent จาก gethui() ก่อน
     local parentGui = (gethui and gethui()) or CoreGui
     local sg = parentGui:FindFirstChild("BOTTLEHUB_MAIN")
     if not sg then return end
+    
+    -- 🔴 ค้นหาหน้าต่าง GUI หลัก (MainFrame) เพื่อให้แจ้งเตือนโผล่ตรงกลาง
+    local mainWin = sg:FindFirstChild("MainFrame")
+    if not mainWin then return end
 
-    local container = sg:FindFirstChild("NotifyContainer")
+    local container = mainWin:FindFirstChild("NotifyContainer")
     if not container then
-        container = Instance.new("Frame", sg)
+        container = Instance.new("Frame", mainWin)
         container.Name = "NotifyContainer"
-        container.Size = UDim2.new(0, 260, 1, -40)
-        container.Position = UDim2.new(1, -270, 0, 20)
+        container.Size = UDim2.new(0, 280, 0, 0)
+        -- 🔴 ตั้งตำแหน่งให้อยู่ตรงกลางของ MainFrame แบบเป๊ะๆ
+        container.Position = UDim2.new(0.5, 0, 0.5, 0)
+        container.AnchorPoint = Vector2.new(0.5, 0.5)
+        container.AutomaticSize = Enum.AutomaticSize.Y
         container.BackgroundTransparency = 1
         container.ZIndex = 100
+        
         local layout = Instance.new("UIListLayout", container)
         layout.SortOrder = Enum.SortOrder.LayoutOrder
-        layout.VerticalAlignment = Enum.VerticalAlignment.Bottom
+        layout.VerticalAlignment = Enum.VerticalAlignment.Center
+        layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
         layout.Padding = UDim.new(0, 10)
     end
 
@@ -87,7 +99,7 @@ function BottleLib:Notify(msg)
     lbl.TextWrapped = true
     lbl.TextTransparency = 1
 
-    TweenService:Create(notif, TweenInfo.new(0.3), {BackgroundTransparency=0}):Play()
+    TweenService:Create(notif, TweenInfo.new(0.3), {BackgroundTransparency=0.05}):Play()
     TweenService:Create(stroke, TweenInfo.new(0.3), {Transparency=0}):Play()
     TweenService:Create(icon, TweenInfo.new(0.3), {TextTransparency=0}):Play()
     TweenService:Create(lbl, TweenInfo.new(0.3), {TextTransparency=0}):Play()
@@ -370,6 +382,7 @@ function BottleLib:CreateWindow(WindowConfig)
     ScreenGui.Parent           = (gethui and gethui()) or CoreGui
 
     local MainFrame = Instance.new("Frame", ScreenGui)
+    MainFrame.Name = "MainFrame" -- 🔴 [FIX] ระบุชื่อให้ค้นหาเจอเวลาเด้งแจ้งเตือน
     MainFrame.Size = UDim2.new(0,600,0,480); MainFrame.Position = UDim2.new(0.5,-300,0.5,-240)
     MainFrame.BackgroundColor3 = T.Main; MainFrame.Active = true
     Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0,8)
@@ -386,36 +399,56 @@ function BottleLib:CreateWindow(WindowConfig)
     ContentContainer.BackgroundColor3 = T.Content; ContentContainer.BorderSizePixel = 0
     Instance.new("UICorner", ContentContainer).CornerRadius = UDim.new(0,6)
 
-    -- ──────────────────────────────────────────────────────────
-    -- 🛠️ DRAG SYSTEM (Stable Math Calculation)
-    -- ──────────────────────────────────────────────────────────
-    local dragging = false; local dragStart = nil; local startPos = nil
-    MainFrame.InputBegan:Connect(function(input, gp)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            local relX = input.Position.X - MainFrame.AbsolutePosition.X
-            local relY = input.Position.Y - MainFrame.AbsolutePosition.Y
-            if relY <= 40 or relX <= 195 then
-                dragging = true; dragStart = input.Position; startPos = MainFrame.Position
+    local dragStrip = Instance.new("TextButton", MainFrame)
+    dragStrip.Name               = "DragStrip"
+    dragStrip.Size               = UDim2.new(0, 195, 1, 0)
+    dragStrip.Position           = UDim2.new(0, 0, 0, 0)
+    dragStrip.BackgroundTransparency = 1
+    dragStrip.Text               = ""
+    dragStrip.ZIndex             = 2
+    dragStrip.AutoButtonColor    = false
+
+    local DRAG_THRESHOLD = 6   
+    local isMouseDown     = false
+    local isDragging      = false
+    local dragStartX      = 0
+    local dragStartY      = 0
+    local dragOffsetX     = 0
+    local dragOffsetY     = 0
+
+    dragStrip.MouseButton1Down:Connect(function(x, y)
+        isMouseDown = true; isDragging  = false
+        dragStartX  = x; dragStartY  = y
+        dragOffsetX = MainFrame.Position.X.Offset; dragOffsetY = MainFrame.Position.Y.Offset
+    end)
+
+    dragStrip.MouseMoved:Connect(function(x, y)
+        if not isMouseDown then return end
+        local dx = x - dragStartX
+        local dy = y - dragStartY
+        if not isDragging then
+            if math.abs(dx) > DRAG_THRESHOLD or math.abs(dy) > DRAG_THRESHOLD then
+                isDragging = true
+            else
+                return
             end
         end
+        MainFrame.Position = UDim2.new(
+            MainFrame.Position.X.Scale, dragOffsetX + dx,
+            MainFrame.Position.Y.Scale, dragOffsetY + dy
+        )
     end)
-    UserInputService.InputChanged:Connect(function(input)
-        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-            local delta = input.Position - dragStart
-            MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-        end
-    end)
-    UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = false end
-    end)
-    local ok, wfr = pcall(function() return UserInputService.WindowFocusReleased end)
-    if ok and wfr then table.insert(BottleLib.Connections, wfr:Connect(function() dragging = false end)) end
 
-    -- ──────────────────────────────────────────────────────────
+    dragStrip.MouseButton1Up:Connect(function()
+        isMouseDown = false; isDragging  = false
+    end)
+
     local MiniButton = Instance.new("ImageButton", ScreenGui)
     MiniButton.Size = UDim2.new(0,42,0,42); MiniButton.Position = UDim2.new(0,10,0,10)
-    MiniButton.Image = "rbxassetid://78690743314126"; MiniButton.BackgroundColor3 = T.Main; MiniButton.Visible = false
-    Instance.new("UICorner", MiniButton).CornerRadius = UDim.new(0,8); Instance.new("UIStroke", MiniButton).Color = T.Accent
+    MiniButton.Image = "rbxassetid://78690743314126"
+    MiniButton.BackgroundColor3 = T.Main; MiniButton.Visible = false
+    Instance.new("UICorner", MiniButton).CornerRadius = UDim.new(0,8)
+    Instance.new("UIStroke", MiniButton).Color = T.Accent
 
     local function ToggleMinimize(hide) MainFrame.Visible = not hide; MiniButton.Visible = hide end
     MiniButton.MouseButton1Click:Connect(function() ToggleMinimize(false) end)
@@ -450,7 +483,6 @@ function BottleLib:CreateWindow(WindowConfig)
         GlobalOverlayClose.Visible = false
     end)
 
-    -- 🔴 [FIX] PROFILE HEIGHT ขยายเพื่อรองรับข้อความ 3 บรรทัด
     local PROFILE_H = 205  
     local TabScrollContainer = Instance.new("ScrollingFrame", Sidebar); TabScrollContainer.Size = UDim2.new(1,0,1,-(PROFILE_H+46)); TabScrollContainer.Position = UDim2.new(0,0,0,46); TabScrollContainer.BackgroundTransparency = 1; TabScrollContainer.ScrollBarThickness = 0; TabScrollContainer.BorderSizePixel = 0
     local TabListLayout = Instance.new("UIListLayout", TabScrollContainer); TabListLayout.SortOrder = Enum.SortOrder.LayoutOrder; TabListLayout.Padding = UDim.new(0,5); TabListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
@@ -505,18 +537,40 @@ function BottleLib:CreateWindow(WindowConfig)
     local GameLbl = CreateMarqueeLabel(InfoBlock, "🎮  Loading...", T.SubText, Enum.Font.Gotham, 10, true, 1)
     task.spawn(function() local ok, info = pcall(function() return MarketplaceService:GetProductInfo(game.PlaceId) end); if GameLbl and GameLbl.Parent then GameLbl.Text = "🎮  " .. (ok and info.Name or game.Name) end end)
 
-    local KeyRow = Instance.new("Frame", InfoBlock); KeyRow.LayoutOrder = 2; KeyRow.Size = UDim2.new(1,0,0,20); KeyRow.BackgroundTransparency = 1; KeyRow.ZIndex = 4
-    local KeyBadge = Instance.new("Frame", KeyRow); KeyBadge.Position = UDim2.new(0,0,0.5,-9); KeyBadge.BackgroundColor3 = Color3.fromRGB(28,28,28); KeyBadge.BorderSizePixel = 0; KeyBadge.ZIndex = 5; Instance.new("UICorner", KeyBadge).CornerRadius = UDim.new(0,4)
-    local kbPad = Instance.new("UIPadding", KeyBadge); kbPad.PaddingLeft = UDim.new(0,7); kbPad.PaddingRight = UDim.new(0,7); kbPad.PaddingTop = UDim.new(0,2); kbPad.PaddingBottom = UDim.new(0,2)
-    local KeyBadgeStroke = Instance.new("UIStroke", KeyBadge); KeyBadgeStroke.Thickness = 1
+    -- 🔴 [FIX 2] AUTO-SIZE KEY ROW & BADGE
+    local KeyRow = Instance.new("Frame", InfoBlock)
+    KeyRow.LayoutOrder = 2
+    KeyRow.Size = UDim2.new(1,0,0,0)
+    KeyRow.AutomaticSize = Enum.AutomaticSize.Y
+    KeyRow.BackgroundTransparency = 1
+    KeyRow.ZIndex = 4
+
+    local KeyBadge = Instance.new("Frame", KeyRow)
+    KeyBadge.Position = UDim2.new(0,0,0,0)
+    KeyBadge.Size = UDim2.new(0,0,0,0)
+    KeyBadge.AutomaticSize = Enum.AutomaticSize.XY
+    KeyBadge.BackgroundColor3 = Color3.fromRGB(28,28,28)
+    KeyBadge.BorderSizePixel = 0
+    KeyBadge.ZIndex = 5
+    Instance.new("UICorner", KeyBadge).CornerRadius = UDim.new(0,4)
+    
+    local kbPad = Instance.new("UIPadding", KeyBadge)
+    kbPad.PaddingLeft = UDim.new(0,7); kbPad.PaddingRight = UDim.new(0,7)
+    kbPad.PaddingTop = UDim.new(0,4); kbPad.PaddingBottom = UDim.new(0,4)
+    
+    local KeyBadgeStroke = Instance.new("UIStroke", KeyBadge)
+    KeyBadgeStroke.Thickness = 1
     
     local KeyLbl = Instance.new("TextLabel", KeyBadge)
-    KeyLbl.Size = UDim2.new(1,0,1,0); KeyLbl.BackgroundTransparency = 1; KeyLbl.Font = Enum.Font.GothamBold; KeyLbl.TextSize = 9; KeyLbl.TextXAlignment = Enum.TextXAlignment.Left; KeyLbl.ZIndex = 6
-    KeyLbl.TextWrapped = true
-    KeyBadge.AutomaticSize = Enum.AutomaticSize.XY
+    KeyLbl.Size = UDim2.new(0,0,0,0)
     KeyLbl.AutomaticSize = Enum.AutomaticSize.XY
+    KeyLbl.BackgroundTransparency = 1
+    KeyLbl.Font = Enum.Font.GothamBold
+    KeyLbl.TextSize = 9
+    KeyLbl.TextXAlignment = Enum.TextXAlignment.Left
+    KeyLbl.TextYAlignment = Enum.TextYAlignment.Center
+    KeyLbl.ZIndex = 6
 
-    -- 🔴 [FIX] TEXT WORDING
     task.spawn(function()
         while KeyRow and KeyRow.Parent do
             local tier = BottleLib.KeyStatus.Tier or "Basic"
@@ -526,11 +580,12 @@ function BottleLib:CreateWindow(WindowConfig)
                 KeyBadge.BackgroundColor3 = isFull and Color3.fromRGB(25,8,8) or Color3.fromRGB(26,26,26)
                 KeyBadgeStroke.Color = isFull and T.Accent or Color3.fromRGB(100,100,100)
                 KeyLbl.TextColor3 = isFull and T.Accent or Color3.fromRGB(200,200,200)
-                KeyLbl.Text = isFull and "🔑 Weekend!!!\nfor Premium Access" or "🔑 Bottle is kind\nbeyond word!!\nI really Love him"
+                -- 🔴 TEXT WORDING
+                KeyLbl.Text = isFull and "🔑  Weekend!!!\nfor Premium Access" or "🔑  Bottle is kind\nbeyond word!!\nI really Love him"
             elseif BottleLib.KeyStatus.ExpiresAt then
                 local rem = BottleLib.KeyStatus.ExpiresAt - os.time()
                 if rem <= 0 then 
-                    KeyBadge.BackgroundColor3 = Color3.fromRGB(35,10,10); KeyBadgeStroke.Color = T.Red; KeyLbl.TextColor3 = T.Red; KeyLbl.Text = "🔑 Expired"
+                    KeyBadge.BackgroundColor3 = Color3.fromRGB(35,10,10); KeyBadgeStroke.Color = T.Red; KeyLbl.TextColor3 = T.Red; KeyLbl.Text = "🔑  Expired"
                 elseif rem >= 86400 then 
                     KeyBadge.BackgroundColor3 = isFull and Color3.fromRGB(10,28,10) or Color3.fromRGB(26,26,26)
                     KeyBadgeStroke.Color = isFull and T.Accent or Color3.fromRGB(100,100,100)
