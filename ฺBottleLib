@@ -51,6 +51,128 @@ BottleLib.CleanUpEvent.Event:Connect(function()
 end)
 
 -- ============================================================
+-- LOADER  (ShowLoader / HideLoader)
+-- ============================================================
+local _loaderGui = nil
+local _loaderSpinConn = nil
+
+function BottleLib:ShowLoader(message)
+    message = message or "Loading..."
+    -- cleanup old
+    if _loaderGui and _loaderGui.Parent then _loaderGui:Destroy() end
+    if _loaderSpinConn then _loaderSpinConn:Disconnect() end
+
+    local sg = Instance.new("ScreenGui")
+    sg.Name = "BOTTLEHUB_LOADER"
+    sg.Parent = (gethui and gethui()) or CoreGui
+    _loaderGui = sg
+
+    -- dim overlay
+    local overlay = Instance.new("Frame", sg)
+    overlay.Size = UDim2.new(1,0,1,0)
+    overlay.BackgroundColor3 = Color3.fromRGB(0,0,0)
+    overlay.BackgroundTransparency = 0.45
+    overlay.BorderSizePixel = 0
+    overlay.ZIndex = 90
+
+    -- card
+    local card = Instance.new("Frame", sg)
+    card.Size = UDim2.new(0,220,0,110)
+    card.Position = UDim2.new(0.5,-110,0.5,-55)
+    card.BackgroundColor3 = Color3.fromRGB(12,12,12)
+    card.BorderSizePixel = 0
+    card.ZIndex = 91
+    Instance.new("UICorner", card).CornerRadius = UDim.new(0,12)
+    local stroke = Instance.new("UIStroke", card)
+    stroke.Color = Color3.fromHex("#e60852"); stroke.Thickness = 1.5
+
+    -- spinner ring (Frame หมุนด้วย Heartbeat)
+    local spinnerOuter = Instance.new("Frame", card)
+    spinnerOuter.Size = UDim2.new(0,40,0,40)
+    spinnerOuter.Position = UDim2.new(0.5,-20,0,20)
+    spinnerOuter.BackgroundTransparency = 1
+    spinnerOuter.ZIndex = 92
+
+    local ring = Instance.new("Frame", spinnerOuter)
+    ring.Size = UDim2.new(1,0,1,0)
+    ring.BackgroundTransparency = 1
+    ring.ZIndex = 92
+
+    local arc = Instance.new("Frame", ring)
+    arc.Size = UDim2.new(1,0,0.5,0)
+    arc.Position = UDim2.new(0,0,0,0)
+    arc.BackgroundTransparency = 1
+    arc.ZIndex = 92
+    arc.ClipsDescendants = true
+
+    local arcFill = Instance.new("Frame", arc)
+    arcFill.Size = UDim2.new(1,0,2,0)
+    arcFill.BackgroundTransparency = 1
+    arcFill.ZIndex = 92
+    Instance.new("UICorner", arcFill).CornerRadius = UDim.new(1,0)
+    local arcStroke = Instance.new("UIStroke", arcFill)
+    arcStroke.Color = Color3.fromHex("#e60852")
+    arcStroke.Thickness = 3
+
+    -- rotate ring with Heartbeat
+    local angle = 0
+    _loaderSpinConn = RunService.Heartbeat:Connect(function(dt)
+        if not ring or not ring.Parent then return end
+        angle = (angle + dt * 280) % 360
+        ring.Rotation = angle
+    end)
+
+    -- dots animation (. .. ...)
+    local msgLbl = Instance.new("TextLabel", card)
+    msgLbl.Size = UDim2.new(1,-20,0,20)
+    msgLbl.Position = UDim2.new(0,10,0,72)
+    msgLbl.BackgroundTransparency = 1
+    msgLbl.Text = message
+    msgLbl.TextColor3 = Color3.fromRGB(200,200,200)
+    msgLbl.Font = Enum.Font.GothamMedium
+    msgLbl.TextSize = 12
+    msgLbl.ZIndex = 92
+
+    -- pulse animation on card stroke
+    task.spawn(function()
+        local pulseDir = 1
+        local alpha = 0
+        while card and card.Parent do
+            alpha = alpha + 0.02 * pulseDir
+            if alpha >= 1 then alpha = 1; pulseDir = -1
+            elseif alpha <= 0 then alpha = 0; pulseDir = 1 end
+            pcall(function()
+                stroke.Transparency = 0.3 + alpha * 0.5
+            end)
+            task.wait(0.03)
+        end
+    end)
+
+    -- card pop-in animation
+    card.Size = UDim2.new(0,180,0,80)
+    card.Position = UDim2.new(0.5,-90,0.5,-40)
+    TweenService:Create(card, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+        Size = UDim2.new(0,220,0,110),
+        Position = UDim2.new(0.5,-110,0.5,-55),
+    }):Play()
+end
+
+function BottleLib:HideLoader()
+    if _loaderSpinConn then _loaderSpinConn:Disconnect(); _loaderSpinConn = nil end
+    if _loaderGui and _loaderGui.Parent then
+        -- fade out
+        local overlay = _loaderGui:FindFirstChildWhichIsA("Frame")
+        TweenService:Create(_loaderGui:FindFirstChildWhichIsA("Frame", true), TweenInfo.new(0.25), {
+            BackgroundTransparency = 1
+        }):Play()
+        task.delay(0.25, function()
+            if _loaderGui and _loaderGui.Parent then _loaderGui:Destroy() end
+            _loaderGui = nil
+        end)
+    end
+end
+
+-- ============================================================
 -- KEY SYSTEM
 -- ============================================================
 function BottleLib:InitKeySystem()
@@ -232,7 +354,26 @@ function BottleLib:InitKeySystem()
         local input = string.upper(InputBox.Text)
         if input == "" then return end
         VerifyBtn.Text = "Checking..."
+        VerifyBtn.BackgroundColor3 = Color3.fromRGB(40,40,40)
+
+        -- pulse animation ขณะกำลัง check
+        local checking = true
+        task.spawn(function()
+            local t = 0
+            while checking do
+                t = t + 0.05
+                local alpha = (math.sin(t * 4) + 1) / 2
+                local r = math.floor(230 + alpha * 15)
+                local g = math.floor(8 + alpha * 20)
+                local b2 = math.floor(82 + alpha * 20)
+                pcall(function()
+                    VerifyBtn.BackgroundColor3 = Color3.fromRGB(r,g,b2)
+                end)
+                task.wait(0.05)
+            end
+        end)
         local isValid, isExpired, _, expTime, isGlobal = VerifyKeyWithServer(input)
+        checking = false  -- หยุด pulse
         if isValid and not isExpired then
             if not isGlobal then SaveKey(input, expTime) end
             BottleLib.KeyStatus = { Valid=true, ExpiresAt=tonumber(expTime), IsGlobal=isGlobal }
@@ -320,14 +461,17 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
     dragStrip.ZIndex             = 2
     dragStrip.AutoButtonColor    = false
 
-    local isDragging  = false
-    local dragStartX  = 0
-    local dragStartY  = 0
-    local dragOffsetX = 0
-    local dragOffsetY = 0
+    local DRAG_THRESHOLD = 6   -- px ที่ต้องขยับก่อนจะเริ่ม drag จริง
+    local isMouseDown     = false
+    local isDragging      = false
+    local dragStartX      = 0
+    local dragStartY      = 0
+    local dragOffsetX     = 0
+    local dragOffsetY     = 0
 
     dragStrip.MouseButton1Down:Connect(function(x, y)
-        isDragging = true
+        isMouseDown = true
+        isDragging  = false
         dragStartX  = x
         dragStartY  = y
         dragOffsetX = MainFrame.Position.X.Offset
@@ -335,9 +479,18 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
     end)
 
     dragStrip.MouseMoved:Connect(function(x, y)
-        if not isDragging then return end
+        if not isMouseDown then return end
         local dx = x - dragStartX
         local dy = y - dragStartY
+        -- ต้องขยับเกิน threshold ก่อนถึงจะเริ่ม drag
+        -- ป้องกัน drag โดยไม่ตั้งใจตอน click ปุ่มอื่น
+        if not isDragging then
+            if math.abs(dx) > DRAG_THRESHOLD or math.abs(dy) > DRAG_THRESHOLD then
+                isDragging = true
+            else
+                return
+            end
+        end
         MainFrame.Position = UDim2.new(
             MainFrame.Position.X.Scale, dragOffsetX + dx,
             MainFrame.Position.Y.Scale, dragOffsetY + dy
@@ -345,7 +498,8 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
     end)
 
     dragStrip.MouseButton1Up:Connect(function()
-        isDragging = false
+        isMouseDown = false
+        isDragging  = false
     end)
 
     -- ──────────────────────────────────────────────────────────
@@ -396,19 +550,34 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
     SbCover.Size = UDim2.new(0,10,1,0); SbCover.Position = UDim2.new(1,-10,0,0)
     SbCover.BackgroundColor3 = T.Sidebar; SbCover.BorderSizePixel = 0
 
-    local function MakeDot(xOff, color, label)
+    local function MakeDot(xOff, color, symbol)
         local b = Instance.new("TextButton", Sidebar)
-        b.Size = UDim2.new(0,13,0,13); b.Position = UDim2.new(0,xOff,0,14)
-        b.BackgroundColor3 = color; b.Text = ""; b.AutoButtonColor = false
+        b.Size = UDim2.new(0,16,0,16)
+        b.Position = UDim2.new(0,xOff,0,13)
+        b.BackgroundColor3 = color
+        b.Text = symbol
+        b.TextColor3 = Color3.fromRGB(80,20,20)  -- สีเข้มกว่าพื้นหลังดอท
+        b.Font = Enum.Font.GothamBlack
+        b.TextSize = 10
+        b.AutoButtonColor = false
         Instance.new("UICorner", b).CornerRadius = UDim.new(1,0)
-        local l = Instance.new("TextLabel", b)
-        l.Size = UDim2.new(1,0,1,0); l.BackgroundTransparency = 1
-        l.Text = label; l.TextColor3 = Color3.new(1,1,1)
-        l.Font = Enum.Font.GothamBold; l.TextSize = 9
+        -- hover → สว่างขึ้น + แสดงสัญลักษณ์ชัดขึ้น
+        b.MouseEnter:Connect(function()
+            TweenService:Create(b, TweenInfo.new(0.1), {
+                TextColor3 = Color3.fromRGB(255,255,255),
+                Size = UDim2.new(0,18,0,18),
+            }):Play()
+        end)
+        b.MouseLeave:Connect(function()
+            TweenService:Create(b, TweenInfo.new(0.1), {
+                TextColor3 = Color3.fromRGB(80,20,20),
+                Size = UDim2.new(0,16,0,16),
+            }):Play()
+        end)
         return b
     end
-    local RedDot    = MakeDot(14, Color3.fromRGB(255,69,58),  "X")
-    local YellowDot = MakeDot(33, Color3.fromRGB(255,159,10), "-")
+    local RedDot    = MakeDot(14, Color3.fromRGB(255,69,58),  "✕")
+    local YellowDot = MakeDot(36, Color3.fromRGB(255,159,10), "−")
     -- [FIX 1] ZIndex=5 → อยู่เหนือ DragStrip (ZIndex=2) → คลิกได้ปกติ
     RedDot.ZIndex    = 5
     YellowDot.ZIndex = 5
