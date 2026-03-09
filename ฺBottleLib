@@ -612,7 +612,7 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
         GlobalOverlayClose.Visible = false
     end)
 
-    local PROFILE_H = 135
+    local PROFILE_H = 175  -- ProfileCard V3 height
     local TabScrollContainer = Instance.new("ScrollingFrame", Sidebar)
     TabScrollContainer.Size = UDim2.new(1,0,1,-(PROFILE_H+40))
     TabScrollContainer.Position = UDim2.new(0,0,0,40)
@@ -629,52 +629,154 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
         TabScrollContainer.CanvasSize = UDim2.new(0,0,0, TabListLayout.AbsoluteContentSize.Y + 20)
     end)
 
-    -- Profile card
-    local ProfileCard = Instance.new("TextButton", Sidebar)
-    ProfileCard.Size = UDim2.new(0,181,0,PROFILE_H)
-    ProfileCard.Position = UDim2.new(0,7,1,-(PROFILE_H+10))
-    ProfileCard.BackgroundColor3 = Color3.fromRGB(20,20,20)
-    ProfileCard.Text = ""; ProfileCard.AutoButtonColor = false
-    -- [FIX 1] ZIndex=3 → อยู่เหนือ DragStrip (ZIndex=2)
-    ProfileCard.ZIndex = 3
-    Instance.new("UICorner", ProfileCard).CornerRadius = UDim.new(0,8)
-    Instance.new("UIStroke", ProfileCard).Color = Color3.fromRGB(42,42,42)
+    -- ══════════════════════════════════════════════════════════
+    -- PROFILE CARD V3
+    --
+    --  ┌─────────────────────────────┐
+    --  │▓▓▓▓▓ accent banner ▓▓▓▓▓▓▓│ 36px — semi-transparent accent top
+    --  │  [Avatar]  DisplayName      │ Avatar 44px round w/ ring, name right
+    --  │            @username        │
+    --  │            🆔 ID            │
+    --  ├ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─┤ divider y=92
+    --  │  🎮 Game Name (marquee)     │ y=98
+    --  │  [🔑 7 Days]                │ key pill badge y=114
+    --  ├ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─┤ divider y=138
+    --  │  [ 📣 Join Discord ]        │ button y=144 h=24
+    --  └─────────────────────────────┘  total = 175px
+    --
+    -- ══════════════════════════════════════════════════════════
 
-    local AvatarImg = Instance.new("ImageLabel", ProfileCard)
-    AvatarImg.Size = UDim2.new(0,46,0,46); AvatarImg.Position = UDim2.new(0,8,0,8)
-    AvatarImg.BackgroundColor3 = Color3.fromRGB(35,35,35)
+    -- ── Card container ────────────────────────────────────────
+    local ProfileCard = Instance.new("Frame", Sidebar)
+    ProfileCard.Name             = "ProfileCard"
+    ProfileCard.Size             = UDim2.new(0,181,0,PROFILE_H)
+    ProfileCard.Position         = UDim2.new(0,7,1,-(PROFILE_H+8))
+    ProfileCard.BackgroundColor3 = Color3.fromRGB(16,16,16)
+    ProfileCard.BorderSizePixel  = 0
+    ProfileCard.ZIndex           = 3  -- เหนือ DragStrip (ZIndex=2)
+    Instance.new("UICorner", ProfileCard).CornerRadius = UDim.new(0,10)
+    local pcStroke = Instance.new("UIStroke", ProfileCard)
+    pcStroke.Color     = Color3.fromRGB(40,40,40)
+    pcStroke.Thickness = 1
+
+    -- ── Banner strip (accent, semi-transparent) ───────────────
+    local Banner = Instance.new("Frame", ProfileCard)
+    Banner.Name              = "Banner"
+    Banner.Size              = UDim2.new(1,0,0,36)
+    Banner.Position          = UDim2.new(0,0,0,0)
+    Banner.BackgroundColor3  = T.Accent
+    Banner.BackgroundTransparency = 0.82   -- subtle tint
+    Banner.BorderSizePixel   = 0
+    Banner.ZIndex            = 4
+    -- round only top corners → fake by oversizing bottom
+    local bannerCorner = Instance.new("UICorner", Banner)
+    bannerCorner.CornerRadius = UDim.new(0,10)
+    -- cover bottom corners of Banner (Frame behind to remove bottom rounding)
+    local BannerCover = Instance.new("Frame", Banner)
+    BannerCover.Size             = UDim2.new(1,0,0,10)
+    BannerCover.Position         = UDim2.new(0,0,1,-10)
+    BannerCover.BackgroundColor3 = T.Accent
+    BannerCover.BackgroundTransparency = 0.82
+    BannerCover.BorderSizePixel  = 0
+    BannerCover.ZIndex           = 4
+
+    -- accent horizontal line at bottom of banner (full opacity, 1px)
+    local BannerLine = Instance.new("Frame", ProfileCard)
+    BannerLine.Size             = UDim2.new(1,0,0,1)
+    BannerLine.Position         = UDim2.new(0,0,0,36)
+    BannerLine.BackgroundColor3 = T.Accent
+    BannerLine.BackgroundTransparency = 0.5
+    BannerLine.BorderSizePixel  = 0
+    BannerLine.ZIndex           = 4
+
+    -- Hub name watermark inside banner (right-aligned, faint)
+    local BannerLabel = Instance.new("TextLabel", Banner)
+    BannerLabel.Size                = UDim2.new(1,-8,1,0)
+    BannerLabel.BackgroundTransparency = 1
+    BannerLabel.Text                = HubName
+    BannerLabel.TextColor3          = T.Accent
+    BannerLabel.TextTransparency    = 0.6
+    BannerLabel.Font                = Enum.Font.GothamBlack
+    BannerLabel.TextSize            = 13
+    BannerLabel.TextXAlignment      = Enum.TextXAlignment.Right
+    BannerLabel.ZIndex              = 5
+
+    -- ── Avatar (ring + image) ─────────────────────────────────
+    -- Ring sits at y=14 so it overlaps banner bottom edge slightly
+    local AvatarRing = Instance.new("Frame", ProfileCard)
+    AvatarRing.Size              = UDim2.new(0,46,0,46)
+    AvatarRing.Position          = UDim2.new(0,10,0,16)
+    AvatarRing.BackgroundColor3  = T.Accent
+    AvatarRing.BorderSizePixel   = 0
+    AvatarRing.ZIndex            = 6
+    Instance.new("UICorner", AvatarRing).CornerRadius = UDim.new(1,0)
+
+    local AvatarInner = Instance.new("Frame", AvatarRing)
+    AvatarInner.Size             = UDim2.new(0,38,0,38)
+    AvatarInner.Position         = UDim2.new(0,4,0,4)
+    AvatarInner.BackgroundColor3 = Color3.fromRGB(28,28,28)
+    AvatarInner.BorderSizePixel  = 0
+    AvatarInner.ZIndex           = 7
+    Instance.new("UICorner", AvatarInner).CornerRadius = UDim.new(1,0)
+
+    local AvatarImg = Instance.new("ImageLabel", AvatarInner)
+    AvatarImg.Size               = UDim2.new(1,0,1,0)
+    AvatarImg.BackgroundTransparency = 1
+    AvatarImg.ZIndex             = 8
     Instance.new("UICorner", AvatarImg).CornerRadius = UDim.new(1,0)
     task.spawn(function()
         local ok, img = pcall(function()
-            return Players:GetUserThumbnailAsync(player.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size420x420)
+            return Players:GetUserThumbnailAsync(
+                player.UserId,
+                Enum.ThumbnailType.HeadShot,
+                Enum.ThumbnailSize.Size420x420
+            )
         end)
-        if ok then AvatarImg.Image = img end
+        if ok and AvatarImg and AvatarImg.Parent then
+            AvatarImg.Image = img
+        end
     end)
 
-    local InfoFrame = Instance.new("Frame", ProfileCard)
-    InfoFrame.Size = UDim2.new(1,-68,0,46); InfoFrame.Position = UDim2.new(0,62,0,8)
-    InfoFrame.BackgroundTransparency = 1
-    Instance.new("UIListLayout", InfoFrame).Padding = UDim.new(0,2)
+    -- ── Name block (right of avatar) ──────────────────────────
+    local NameBlock = Instance.new("Frame", ProfileCard)
+    NameBlock.Size               = UDim2.new(1,-66,0,52)
+    NameBlock.Position           = UDim2.new(0,62,0,20)
+    NameBlock.BackgroundTransparency = 1
+    NameBlock.ZIndex             = 5
+    local nbLayout = Instance.new("UIListLayout", NameBlock)
+    nbLayout.SortOrder           = Enum.SortOrder.LayoutOrder
+    nbLayout.Padding             = UDim.new(0,2)
+    nbLayout.VerticalAlignment   = Enum.VerticalAlignment.Center
 
-    local function CreateMarqueeLabel(parent, text, col, fnt, sz, allowScroll)
+    -- helper: marquee label ──────────────────────────────
+    local function CreateMarqueeLabel(parent, text, col, fnt, sz, allowScroll, lo)
         local container = Instance.new("Frame", parent)
-        container.Size = UDim2.new(1,0,0,sz+4); container.BackgroundTransparency = 1
-        container.ClipsDescendants = true
+        container.LayoutOrder        = lo or 0
+        container.Size               = UDim2.new(1,0,0,sz+4)
+        container.BackgroundTransparency = 1
+        container.ClipsDescendants   = true
+        container.ZIndex             = parent.ZIndex or 5
         local l = Instance.new("TextLabel", container)
-        l.Size = UDim2.new(1,0,1,0); l.BackgroundTransparency = 1
-        l.Text = text; l.TextColor3 = col; l.Font = fnt; l.TextSize = sz
-        l.TextXAlignment = Enum.TextXAlignment.Left
+        l.Size                       = UDim2.new(1,0,1,0)
+        l.BackgroundTransparency     = 1
+        l.Text                       = text
+        l.TextColor3                 = col
+        l.Font                       = fnt
+        l.TextSize                   = sz
+        l.TextXAlignment             = Enum.TextXAlignment.Left
+        l.ZIndex                     = container.ZIndex + 1
         if allowScroll then
             task.spawn(function()
-                task.wait(0.1)
+                task.wait(0.2)
+                if not l.Parent then return end
                 if l.TextBounds.X > container.AbsoluteSize.X then
                     l.Size = UDim2.new(0, l.TextBounds.X, 1, 0)
                     local dist = l.TextBounds.X - container.AbsoluteSize.X + 10
                     while container and container.Parent do
-                        task.wait(2)
+                        task.wait(2.5)
                         if not container or not container.Parent then break end
                         TweenService:Create(l, TweenInfo.new(dist/15, Enum.EasingStyle.Linear),
-                            {Position=UDim2.new(0,-dist,0,0)}):Play()
+                            {Position = UDim2.new(0,-dist,0,0)}):Play()
                         task.wait(dist/15 + 1)
                         if l and l.Parent then l.Position = UDim2.new(0,0,0,0) end
                     end
@@ -685,79 +787,191 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
         end
         return l
     end
+    -- ────────────────────────────────────────────────────
 
-    CreateMarqueeLabel(InfoFrame, player.DisplayName, T.Text,    Enum.Font.GothamBold, 12, true)
-    CreateMarqueeLabel(InfoFrame, "@"..player.Name,   T.SubText, Enum.Font.Gotham,     10, false)
+    CreateMarqueeLabel(NameBlock, player.DisplayName, T.Text,    Enum.Font.GothamBold, 13, true,  1)
+    CreateMarqueeLabel(NameBlock, "@"..player.Name,   T.SubText, Enum.Font.Gotham,     10, false, 2)
 
-    local BottomInfoFrame = Instance.new("Frame", ProfileCard)
-    BottomInfoFrame.Size = UDim2.new(1,-16,0,50); BottomInfoFrame.Position = UDim2.new(0,8,0,60)
-    BottomInfoFrame.BackgroundTransparency = 1
-    Instance.new("UIListLayout", BottomInfoFrame).Padding = UDim.new(0,2)
+    -- UserID small row
+    local UIDRow = Instance.new("Frame", NameBlock)
+    UIDRow.LayoutOrder          = 3
+    UIDRow.Size                 = UDim2.new(1,0,0,13)
+    UIDRow.BackgroundTransparency = 1
+    UIDRow.ZIndex               = 5
+    local UIDLbl = Instance.new("TextLabel", UIDRow)
+    UIDLbl.Size                 = UDim2.new(1,0,1,0)
+    UIDLbl.BackgroundTransparency = 1
+    UIDLbl.Font                 = Enum.Font.Gotham
+    UIDLbl.TextSize             = 9
+    UIDLbl.TextXAlignment       = Enum.TextXAlignment.Left
+    UIDLbl.TextColor3           = Color3.fromRGB(70,70,70)
+    UIDLbl.Text                 = "🆔  " .. tostring(player.UserId)
+    UIDLbl.ZIndex               = 6
 
-    local GameLbl = CreateMarqueeLabel(BottomInfoFrame, "🎮  Loading...", T.SubText, Enum.Font.Gotham, 10, true)
+    -- ── Divider A ─────────────────────────────────────────────
+    local DivA = Instance.new("Frame", ProfileCard)
+    DivA.Size                   = UDim2.new(1,-16,0,1)
+    DivA.Position               = UDim2.new(0,8,0,76)
+    DivA.BackgroundColor3       = Color3.fromRGB(38,38,38)
+    DivA.BorderSizePixel        = 0
+    DivA.ZIndex                 = 4
+
+    -- ── Section B: Game + Key ─────────────────────────────────
+    local InfoBlock = Instance.new("Frame", ProfileCard)
+    InfoBlock.Size              = UDim2.new(1,-16,0,54)
+    InfoBlock.Position          = UDim2.new(0,8,0,82)
+    InfoBlock.BackgroundTransparency = 1
+    InfoBlock.ZIndex            = 4
+    local ibLayout = Instance.new("UIListLayout", InfoBlock)
+    ibLayout.SortOrder          = Enum.SortOrder.LayoutOrder
+    ibLayout.Padding            = UDim.new(0,5)
+    ibLayout.VerticalAlignment  = Enum.VerticalAlignment.Top
+
+    -- Game name marquee
+    local GameLbl = CreateMarqueeLabel(InfoBlock, "🎮  Loading...", T.SubText, Enum.Font.Gotham, 10, true, 1)
     task.spawn(function()
         local ok, info = pcall(function() return MarketplaceService:GetProductInfo(game.PlaceId) end)
-        GameLbl.Text = "🎮  " .. (ok and info.Name or game.Name)
+        if GameLbl and GameLbl.Parent then
+            GameLbl.Text = "🎮  " .. (ok and info.Name or game.Name)
+        end
     end)
 
-    local KeyContainer = Instance.new("Frame", BottomInfoFrame)
-    KeyContainer.LayoutOrder = 2; KeyContainer.Size = UDim2.new(1,0,0,14)
-    KeyContainer.BackgroundTransparency = 1
+    -- Key status badge (pill style)
+    local KeyRow = Instance.new("Frame", InfoBlock)
+    KeyRow.LayoutOrder          = 2
+    KeyRow.Size                 = UDim2.new(1,0,0,20)
+    KeyRow.BackgroundTransparency = 1
+    KeyRow.ZIndex               = 4
 
-    local KeyLbl = Instance.new("TextLabel", KeyContainer)
-    KeyLbl.Size = UDim2.new(1,0,1,0); KeyLbl.BackgroundTransparency = 1
-    KeyLbl.Font = Enum.Font.Gotham; KeyLbl.TextSize = 10
-    KeyLbl.TextXAlignment = Enum.TextXAlignment.Left
-    KeyLbl.TextWrapped = true; KeyLbl.TextYAlignment = Enum.TextYAlignment.Center
+    local KeyBadge = Instance.new("Frame", KeyRow)
+    KeyBadge.Size               = UDim2.new(0,80,0,18)
+    KeyBadge.Position           = UDim2.new(0,0,0.5,-9)
+    KeyBadge.BackgroundColor3   = Color3.fromRGB(28,28,28)
+    KeyBadge.BorderSizePixel    = 0
+    KeyBadge.ZIndex             = 5
+    Instance.new("UICorner", KeyBadge).CornerRadius = UDim.new(1,0)
+    local kbPad = Instance.new("UIPadding", KeyBadge)
+    kbPad.PaddingLeft  = UDim.new(0,7)
+    kbPad.PaddingRight = UDim.new(0,7)
+    local KeyBadgeStroke = Instance.new("UIStroke", KeyBadge)
+    KeyBadgeStroke.Thickness = 1
+
+    local KeyLbl = Instance.new("TextLabel", KeyBadge)
+    KeyLbl.Size                 = UDim2.new(1,0,1,0)
+    KeyLbl.AutomaticSize        = Enum.AutomaticSize.X
+    KeyLbl.BackgroundTransparency = 1
+    KeyLbl.Font                 = Enum.Font.GothamBold
+    KeyLbl.TextSize             = 9
+    KeyLbl.TextXAlignment       = Enum.TextXAlignment.Left
+    KeyLbl.ZIndex               = 6
 
     task.spawn(function()
-        while KeyContainer and KeyContainer.Parent do
+        while KeyRow and KeyRow.Parent do
             if BottleLib.KeyStatus.IsGlobal then
-                KeyLbl.Text = "🔑  Key: Bottle is kind\nbeyond word!!\nI really Love him"
-                KeyLbl.TextColor3 = T.Accent
-                KeyContainer.Size = UDim2.new(1,0,0,40)
-                KeyLbl.TextYAlignment = Enum.TextYAlignment.Top
+                KeyBadge.BackgroundColor3   = Color3.fromRGB(25,8,8)
+                KeyBadgeStroke.Color        = T.Accent
+                KeyLbl.TextColor3           = T.Accent
+                KeyLbl.Text                 = "🔑  VIP Access"
             elseif BottleLib.KeyStatus.ExpiresAt then
-                KeyContainer.Size = UDim2.new(1,0,0,14)
-                KeyLbl.TextYAlignment = Enum.TextYAlignment.Center
                 local rem = BottleLib.KeyStatus.ExpiresAt - os.time()
                 if rem <= 0 then
-                    KeyLbl.Text = "Key Duration : Expired"; KeyLbl.TextColor3 = T.Red
+                    KeyBadge.BackgroundColor3   = Color3.fromRGB(35,10,10)
+                    KeyBadgeStroke.Color        = T.Red
+                    KeyLbl.TextColor3           = T.Red
+                    KeyLbl.Text                 = "🔑  Expired"
                 elseif rem >= 86400 then
-                    KeyLbl.Text = string.format("Key Duration : %d Days", math.floor(rem/86400))
-                    KeyLbl.TextColor3 = T.Accent
+                    KeyBadge.BackgroundColor3   = Color3.fromRGB(10,28,10)
+                    KeyBadgeStroke.Color        = T.Accent
+                    KeyLbl.TextColor3           = T.Accent
+                    KeyLbl.Text                 = "🔑  " .. math.floor(rem/86400) .. " Days"
                 else
                     local h = math.floor(rem/3600)
                     local m = math.floor((rem%3600)/60)
                     local s = rem%60
-                    KeyLbl.Text = string.format("Key Duration : %02d:%02d:%02d", h, m, s)
-                    KeyLbl.TextColor3 = (rem < 3600) and T.Red or T.Yellow
+                    local col = (rem < 3600) and T.Red or T.Yellow
+                    KeyBadge.BackgroundColor3   = Color3.fromRGB(30,26,8)
+                    KeyBadgeStroke.Color        = col
+                    KeyLbl.TextColor3           = col
+                    KeyLbl.Text                 = "🔑  " .. string.format("%02d:%02d:%02d", h, m, s)
                 end
             else
-                KeyContainer.Size = UDim2.new(1,0,0,14)
-                KeyLbl.TextYAlignment = Enum.TextYAlignment.Center
-                KeyLbl.Text = "Key Duration : N/A"; KeyLbl.TextColor3 = T.SubText
+                KeyBadge.BackgroundColor3   = Color3.fromRGB(26,26,26)
+                KeyBadgeStroke.Color        = Color3.fromRGB(50,50,50)
+                KeyLbl.TextColor3           = T.SubText
+                KeyLbl.Text                 = "🔑  No Key"
             end
+            -- resize badge to fit text
+            task.wait(0)  -- yield 1 frame ก่อน TextBounds update
+            KeyBadge.Size = UDim2.new(0, math.max(60, KeyLbl.TextBounds.X + 14), 0, 18)
             task.wait(1)
         end
     end)
 
-    local DiscordLbl = Instance.new("TextLabel", ProfileCard)
-    DiscordLbl.Size = UDim2.new(1,0,0,14); DiscordLbl.Position = UDim2.new(0,0,1,-16)
-    DiscordLbl.BackgroundTransparency = 1; DiscordLbl.Text = "📣 Join our Discord!"
-    DiscordLbl.TextColor3 = Color3.fromRGB(120,120,255)
-    DiscordLbl.Font = Enum.Font.GothamMedium; DiscordLbl.TextSize = 9
+    -- ── Divider B ─────────────────────────────────────────────
+    local DivB = Instance.new("Frame", ProfileCard)
+    DivB.Size                   = UDim2.new(1,-16,0,1)
+    DivB.Position               = UDim2.new(0,8,0,141)
+    DivB.BackgroundColor3       = Color3.fromRGB(38,38,38)
+    DivB.BorderSizePixel        = 0
+    DivB.ZIndex                 = 4
 
-    ProfileCard.MouseButton1Click:Connect(function()
+    -- ── Section C: Discord Button ─────────────────────────────
+    local DiscordBtn = Instance.new("TextButton", ProfileCard)
+    DiscordBtn.Size              = UDim2.new(1,-16,0,24)
+    DiscordBtn.Position          = UDim2.new(0,8,0,147)
+    DiscordBtn.BackgroundColor3  = Color3.fromRGB(24,24,42)
+    DiscordBtn.Text              = "📣  Join our Discord"
+    DiscordBtn.TextColor3        = Color3.fromRGB(120,120,240)
+    DiscordBtn.Font              = Enum.Font.GothamBold
+    DiscordBtn.TextSize          = 10
+    DiscordBtn.AutoButtonColor   = false
+    DiscordBtn.ZIndex            = 4
+    Instance.new("UICorner", DiscordBtn).CornerRadius = UDim.new(0,6)
+    local dbStroke = Instance.new("UIStroke", DiscordBtn)
+    dbStroke.Color     = Color3.fromRGB(50,50,90)
+    dbStroke.Thickness = 1
+
+    DiscordBtn.MouseEnter:Connect(function()
+        TweenService:Create(DiscordBtn, TweenInfo.new(0.15), {
+            BackgroundColor3 = Color3.fromRGB(36,36,65),
+            TextColor3       = Color3.fromRGB(160,160,255),
+        }):Play()
+        TweenService:Create(dbStroke, TweenInfo.new(0.15), {
+            Color = Color3.fromRGB(90,90,180),
+        }):Play()
+    end)
+    DiscordBtn.MouseLeave:Connect(function()
+        TweenService:Create(DiscordBtn, TweenInfo.new(0.15), {
+            BackgroundColor3 = Color3.fromRGB(24,24,42),
+            TextColor3       = Color3.fromRGB(120,120,240),
+        }):Play()
+        TweenService:Create(dbStroke, TweenInfo.new(0.15), {
+            Color = Color3.fromRGB(50,50,90),
+        }):Play()
+    end)
+    DiscordBtn.MouseButton1Click:Connect(function()
         pcall(function() setclipboard(SECRETS.Discord) end)
-        if DiscordLbl and DiscordLbl.Parent then
-            DiscordLbl.Text = "✅ Copied!"; DiscordLbl.TextColor3 = T.Green
-            task.wait(1.5)
-            if DiscordLbl and DiscordLbl.Parent then
-                DiscordLbl.Text = "📣 Join our Discord!"
-                DiscordLbl.TextColor3 = Color3.fromRGB(120,120,255)
-            end
-        end
+        local origText  = DiscordBtn.Text
+        local origColor = DiscordBtn.TextColor3
+        DiscordBtn.Text      = "✅  Copied!"
+        DiscordBtn.TextColor3 = T.Green
+        TweenService:Create(DiscordBtn, TweenInfo.new(0.1), {
+            BackgroundColor3 = Color3.fromRGB(10,28,10)
+        }):Play()
+        TweenService:Create(dbStroke, TweenInfo.new(0.1), {
+            Color = Color3.fromRGB(30,80,30)
+        }):Play()
+        task.delay(1.8, function()
+            if not DiscordBtn or not DiscordBtn.Parent then return end
+            DiscordBtn.Text      = origText
+            DiscordBtn.TextColor3 = origColor
+            TweenService:Create(DiscordBtn, TweenInfo.new(0.2), {
+                BackgroundColor3 = Color3.fromRGB(24,24,42)
+            }):Play()
+            TweenService:Create(dbStroke, TweenInfo.new(0.2), {
+                Color = Color3.fromRGB(50,50,90)
+            }):Play()
+        end)
     end)
 
     -- ──────────────────────────────────────────────────────────
