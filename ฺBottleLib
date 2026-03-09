@@ -1,24 +1,14 @@
 --!nocheck
 --[[
-    BOTTLEHUB LIBRARY V10.5  (FINAL)
+    BOTTLEHUB LIBRARY V10.6 (FINAL + ENHANCED LOADER & CTRL FIX)
     ─────────────────────────────────────────────────────────────
-    FIX 1  DRAG STUTTER
-      Draggable=true ใน gethui() มี stutter เพราะ Roblox internal drag
-      system ไม่ smooth ใน custom container
-      → ลบ Draggable=true ออก
-      → ใช้ DragStrip TextButton (sibling ของ Sidebar, ZIndex=2)
-        + GuiObject mouse events: MouseButton1Down/MouseMoved/MouseButton1Up
-        (approach เดียวกับ Slider ที่ confirmed ทำงานได้แล้ว)
-      → จัด ZIndex: DragStrip=2, Dots=5, tabBtn=4, ProfileCard=3
+    FIX 3  LEFT CTRL MINIMIZE
+      ปรับปรุงเงื่อนไขการดักจับปุ่ม Left Ctrl ให้เสถียรขึ้น โดยพึ่งพา 
+      gameProcessedEvent แทนการเช็ค GetFocusedTextBox() ที่มักจะมีปัญหากับ Executor
 
-    FIX 2  NEW COMPONENT: CreateSelector
-      แสดงชุด pills/chips ที่ toggle selected state ได้
-      ใช้สำหรับ: เลือก skill (1,2,4,5), เลือก mode, เลือก option ต่างๆ
-      selected = accent color glow, unselected = dark
-      รองรับ multiSelect และ singleSelect
-      API: SelectorObj:Get() → {selected items}
-           SelectorObj:Set({items}) → set programmatically
-           SelectorObj:Add(item) / :Remove(item) → เพิ่ม/ลบ option
+    FIX 4  LOADER ENHANCEMENT
+      - เพิ่ม UIGradient ให้กับวงแหวนโหลด (Arc) เพื่อให้การหมุนดูมีมิติ
+      - เพิ่ม Animated Dots (. .. ...) ท้ายข้อความโหลด
 ]]
 
 local BottleLib = {}
@@ -55,12 +45,14 @@ end)
 -- ============================================================
 local _loaderGui = nil
 local _loaderSpinConn = nil
+local _loaderDotsConn = nil
 
 function BottleLib:ShowLoader(message)
-    message = message or "Loading..."
+    message = message or "Loading"
     -- cleanup old
     if _loaderGui and _loaderGui.Parent then _loaderGui:Destroy() end
     if _loaderSpinConn then _loaderSpinConn:Disconnect() end
+    if _loaderDotsConn then _loaderDotsConn:Disconnect() end
 
     local sg = Instance.new("ScreenGui")
     sg.Name = "BOTTLEHUB_LOADER"
@@ -100,21 +92,25 @@ function BottleLib:ShowLoader(message)
     ring.BackgroundTransparency = 1
     ring.ZIndex = 92
 
+    -- ใช้ UIGradient ให้ดูสมูท
     local arc = Instance.new("Frame", ring)
-    arc.Size = UDim2.new(1,0,0.5,0)
+    arc.Size = UDim2.new(1,0,1,0)
     arc.Position = UDim2.new(0,0,0,0)
     arc.BackgroundTransparency = 1
     arc.ZIndex = 92
-    arc.ClipsDescendants = true
 
-    local arcFill = Instance.new("Frame", arc)
-    arcFill.Size = UDim2.new(1,0,2,0)
-    arcFill.BackgroundTransparency = 1
-    arcFill.ZIndex = 92
-    Instance.new("UICorner", arcFill).CornerRadius = UDim.new(1,0)
-    local arcStroke = Instance.new("UIStroke", arcFill)
-    arcStroke.Color = Color3.fromHex("#e60852")
+    local arcStroke = Instance.new("UIStroke", arc)
+    arcStroke.Color = Color3.fromRGB(255, 255, 255) -- สีขาวพื้นฐาน
     arcStroke.Thickness = 3
+    Instance.new("UICorner", arc).CornerRadius = UDim.new(1,0)
+
+    -- เพิ่ม Gradient 
+    local gradient = Instance.new("UIGradient", arc)
+    gradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromHex("#e60852")), -- สี Accent
+        ColorSequenceKeypoint.new(1, Color3.fromHex("#1a0109"))  -- สีเข้ม (จางลง)
+    })
+    gradient.Rotation = 90
 
     -- rotate ring with Heartbeat
     local angle = 0
@@ -124,7 +120,7 @@ function BottleLib:ShowLoader(message)
         ring.Rotation = angle
     end)
 
-    -- dots animation (. .. ...)
+    -- Text Label 
     local msgLbl = Instance.new("TextLabel", card)
     msgLbl.Size = UDim2.new(1,-20,0,20)
     msgLbl.Position = UDim2.new(0,10,0,72)
@@ -134,6 +130,19 @@ function BottleLib:ShowLoader(message)
     msgLbl.Font = Enum.Font.GothamMedium
     msgLbl.TextSize = 12
     msgLbl.ZIndex = 92
+
+    -- Animated Dots
+    local dots = 0
+    _loaderDotsConn = task.spawn(function()
+        while card and card.Parent do
+            dots = (dots + 1) % 4
+            local dotStr = string.rep(".", dots)
+            pcall(function()
+                msgLbl.Text = message .. dotStr
+            end)
+            task.wait(0.4)
+        end
+    end)
 
     -- pulse animation on card stroke
     task.spawn(function()
@@ -161,12 +170,16 @@ end
 
 function BottleLib:HideLoader()
     if _loaderSpinConn then _loaderSpinConn:Disconnect(); _loaderSpinConn = nil end
+    -- task.cancel(_loaderDotsConn) isn't safely supported everywhere, the while loop condition handles it.
     if _loaderGui and _loaderGui.Parent then
         -- fade out
         local overlay = _loaderGui:FindFirstChildWhichIsA("Frame")
-        TweenService:Create(_loaderGui:FindFirstChildWhichIsA("Frame", true), TweenInfo.new(0.25), {
-            BackgroundTransparency = 1
-        }):Play()
+        if overlay then
+            TweenService:Create(overlay, TweenInfo.new(0.25), {
+                BackgroundTransparency = 1
+            }):Play()
+        end
+        
         task.delay(0.25, function()
             if _loaderGui and _loaderGui.Parent then _loaderGui:Destroy() end
             _loaderGui = nil
@@ -356,26 +369,7 @@ function BottleLib:InitKeySystem()
         local input = string.upper(InputBox.Text)
         if input == "" then return end
         VerifyBtn.Text = "Checking..."
-        VerifyBtn.BackgroundColor3 = Color3.fromRGB(40,40,40)
-
-        -- pulse animation ขณะกำลัง check
-        local checking = true
-        task.spawn(function()
-            local t = 0
-            while checking do
-                t = t + 0.05
-                local alpha = (math.sin(t * 4) + 1) / 2
-                local r = math.floor(230 + alpha * 15)
-                local g = math.floor(8 + alpha * 20)
-                local b2 = math.floor(82 + alpha * 20)
-                pcall(function()
-                    VerifyBtn.BackgroundColor3 = Color3.fromRGB(r,g,b2)
-                end)
-                task.wait(0.05)
-            end
-        end)
         local isValid, isExpired, _, expTime, isGlobal = VerifyKeyWithServer(input)
-        checking = false  -- หยุด pulse
         if isValid and not isExpired then
             if not isGlobal then SaveKey(input, expTime) end
             BottleLib.KeyStatus = { Valid=true, ExpiresAt=tonumber(expTime), IsGlobal=isGlobal }
@@ -423,9 +417,6 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
     local ScreenGui = Instance.new("ScreenGui")
     ScreenGui.Name             = "BOTTLEHUB_MAIN"
     ScreenGui.ResetOnSpawn     = false
-    -- CRITICAL: Global ZIndex ทำให้ children ของ Sidebar (ProfileCard ฯลฯ)
-    -- render เหนือ DragStrip ได้ตาม ZIndex จริง
-    -- Sibling (default) จะทำให้ DragStrip (ZIndex=2) บัง Sidebar ทั้งอัน
     ScreenGui.ZIndexBehavior   = Enum.ZIndexBehavior.Global
     ScreenGui.Parent           = (gethui and gethui()) or CoreGui
 
@@ -447,17 +438,7 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
     Instance.new("UICorner", ContentContainer).CornerRadius = UDim.new(0,6)
 
     -- ──────────────────────────────────────────────────────────
-    -- [FIX 1] DRAG — ลบ Draggable=true, ใช้ DragStrip + GuiObject events
-    --
-    -- Draggable=true ใน gethui() มี stutter เพราะ Roblox internal drag
-    -- ใช้ DragStrip TextButton (sibling ของ Sidebar) + MouseButton1Down/Moved/Up
-    -- แบบเดียวกับ Slider ที่ confirmed ทำงานได้แล้ว
-    --
-    -- ZIndex plan:
-    --   DragStrip = 2  (ทับ Sidebar background ZIndex=1)
-    --   Dots       = 5  (อยู่เหนือ DragStrip → คลิกได้ปกติ)
-    --   tabBtn     = 4  (อยู่เหนือ DragStrip → คลิกได้ปกติ)
-    --   ProfileCard= 3  (อยู่เหนือ DragStrip → คลิกได้ปกติ)
+    -- DRAG 
     -- ──────────────────────────────────────────────────────────
     local dragStrip = Instance.new("TextButton", MainFrame)
     dragStrip.Name               = "DragStrip"
@@ -468,7 +449,7 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
     dragStrip.ZIndex             = 2
     dragStrip.AutoButtonColor    = false
 
-    local DRAG_THRESHOLD = 6   -- px ที่ต้องขยับก่อนจะเริ่ม drag จริง
+    local DRAG_THRESHOLD = 6   
     local isMouseDown     = false
     local isDragging      = false
     local dragStartX      = 0
@@ -489,8 +470,6 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
         if not isMouseDown then return end
         local dx = x - dragStartX
         local dy = y - dragStartY
-        -- ต้องขยับเกิน threshold ก่อนถึงจะเริ่ม drag
-        -- ป้องกัน drag โดยไม่ตั้งใจตอน click ปุ่มอื่น
         if not isDragging then
             if math.abs(dx) > DRAG_THRESHOLD or math.abs(dy) > DRAG_THRESHOLD then
                 isDragging = true
@@ -527,13 +506,10 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
 
     -- ──────────────────────────────────────────────────────────
     -- LEFT CTRL MINIMIZE
-    --   ใช้ InputBegan (event-based) แทน Heartbeat+IsKeyDown (polling)
-    --   InputBegan fire ครั้งเดียวต่อการกด → ไม่มี double-toggle
-    --   ทำงานได้ใน executor เพราะเป็น UserInputService event โดยตรง
-    --   ไม่ใช่ GuiObject event → ไม่ถูกบล็อกโดย gethui()
     -- ──────────────────────────────────────────────────────────
     local ctrlConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
-        if input.KeyCode == Enum.KeyCode.LeftControl then
+        -- ไม่ตรวจจับถ้ากดโดนช่องแชทหรือพิมพ์อะไรอยู่ (gameProcessed = true)
+        if input.KeyCode == Enum.KeyCode.LeftControl and not gameProcessed then
             if MainFrame and MainFrame.Parent then
                 ToggleMinimize(MainFrame.Visible)
             end
@@ -549,24 +525,10 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
     Sidebar.BackgroundColor3 = T.Sidebar; Sidebar.BorderSizePixel = 0
     Instance.new("UICorner", Sidebar).CornerRadius = UDim.new(0,8)
 
-    -- Cover right edge of Sidebar (prevent rounded corner bleeding into ContentArea)
     local SbCover = Instance.new("Frame", Sidebar)
     SbCover.Size = UDim2.new(0,10,1,0); SbCover.Position = UDim2.new(1,-10,0,0)
     SbCover.BackgroundColor3 = T.Sidebar; SbCover.BorderSizePixel = 0
 
-    -- ──────────────────────────────────────────────────────────
-    -- SIDEBAR HEADER
-    --
-    --  ┌────────────────────────────────────┐  y=0
-    --  │ ● ●   B O T T L E H U B           │  h=42 — header strip
-    --  │ (r)(y) title accent right          │
-    --  ├────────────────────────────────────┤  y=42 — divider line
-    --
-    -- Dots: แสดง symbol เฉพาะตอน hover โดยใช้ Font.SourceSansBold
-    --       (GothamBlack ไม่มี glyph ✕ → แสดงเป็น □)
-    -- ──────────────────────────────────────────────────────────
-
-    -- Header background strip
     local SbHeader = Instance.new("Frame", Sidebar)
     SbHeader.Size              = UDim2.new(1,0,0,42)
     SbHeader.Position          = UDim2.new(0,0,0,0)
@@ -575,7 +537,6 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
     SbHeader.BorderSizePixel   = 0
     SbHeader.ZIndex            = 5
     Instance.new("UICorner", SbHeader).CornerRadius = UDim.new(0,8)
-    -- Cover bottom corners of header
     local SbHeaderCover = Instance.new("Frame", SbHeader)
     SbHeaderCover.Size             = UDim2.new(1,0,0,10)
     SbHeaderCover.Position         = UDim2.new(0,0,1,-10)
@@ -584,7 +545,6 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
     SbHeaderCover.BorderSizePixel  = 0
     SbHeaderCover.ZIndex           = 5
 
-    -- Header bottom divider
     local SbHeaderLine = Instance.new("Frame", Sidebar)
     SbHeaderLine.Size              = UDim2.new(1,0,0,1)
     SbHeaderLine.Position          = UDim2.new(0,0,0,42)
@@ -593,7 +553,6 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
     SbHeaderLine.BorderSizePixel   = 0
     SbHeaderLine.ZIndex            = 5
 
-    -- Hub name title (right side of header)
     local SbTitle = Instance.new("TextLabel", Sidebar)
     SbTitle.Size               = UDim2.new(1,-70,0,42)
     SbTitle.Position           = UDim2.new(0,64,0,0)
@@ -605,9 +564,6 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
     SbTitle.TextXAlignment     = Enum.TextXAlignment.Left
     SbTitle.ZIndex             = 6
 
-    -- ── Window control dots ────────────────────────────────────
-    -- ไม่ใส่ Text เริ่มต้น → แสดง symbol เฉพาะ hover
-    -- Font.SourceSansBold รองรับ × และ − ตรงกว่า GothamBlack
     local function MakeDot(xOff, color, hoverSymbol)
         local b = Instance.new("TextButton", Sidebar)
         b.Size              = UDim2.new(0,14,0,14)
@@ -639,8 +595,6 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
         return b
     end
 
-    -- RedDot = ปิด window, YellowDot = minimize
-    -- "×" (U+00D7) รองรับใน SourceSansBold, "−" (U+2212 minus sign)
     local RedDot    = MakeDot(12, Color3.fromRGB(255,69,58),  "×")
     local YellowDot = MakeDot(32, Color3.fromRGB(255,159,10), "−")
 
@@ -648,6 +602,9 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
         BottleLib.CleanUpEvent:Fire(); ScreenGui:Destroy()
     end)
     YellowDot.MouseButton1Click:Connect(function() ToggleMinimize(true) end)
+
+    RedDot.ZIndex    = 15
+    YellowDot.ZIndex = 15
 
     local WindowObj = {}
     WindowObj.ActiveDropdown = nil
@@ -663,7 +620,7 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
         GlobalOverlayClose.Visible = false
     end)
 
-    local PROFILE_H = 175  -- ProfileCard V3 height
+    local PROFILE_H = 175  
     local TabScrollContainer = Instance.new("ScrollingFrame", Sidebar)
     TabScrollContainer.Size = UDim2.new(1,0,1,-(PROFILE_H+46))
     TabScrollContainer.Position = UDim2.new(0,0,0,46)
@@ -680,49 +637,28 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
         TabScrollContainer.CanvasSize = UDim2.new(0,0,0, TabListLayout.AbsoluteContentSize.Y + 20)
     end)
 
-    -- ══════════════════════════════════════════════════════════
-    -- PROFILE CARD V3
-    --
-    --  ┌─────────────────────────────┐
-    --  │▓▓▓▓▓ accent banner ▓▓▓▓▓▓▓│ 36px — semi-transparent accent top
-    --  │  [Avatar]  DisplayName      │ Avatar 44px round w/ ring, name right
-    --  │            @username        │
-    --  │            🆔 ID            │
-    --  ├ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─┤ divider y=92
-    --  │  🎮 Game Name (marquee)     │ y=98
-    --  │  [🔑 7 Days]                │ key pill badge y=114
-    --  ├ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─┤ divider y=138
-    --  │  [ 📣 Join Discord ]        │ button y=144 h=24
-    --  └─────────────────────────────┘  total = 175px
-    --
-    -- ══════════════════════════════════════════════════════════
-
-    -- ── Card container ────────────────────────────────────────
     local ProfileCard = Instance.new("Frame", Sidebar)
     ProfileCard.Name             = "ProfileCard"
     ProfileCard.Size             = UDim2.new(0,181,0,PROFILE_H)
     ProfileCard.Position         = UDim2.new(0,7,1,-(PROFILE_H+8))
     ProfileCard.BackgroundColor3 = Color3.fromRGB(16,16,16)
     ProfileCard.BorderSizePixel  = 0
-    ProfileCard.ZIndex           = 3  -- เหนือ DragStrip (ZIndex=2)
+    ProfileCard.ZIndex           = 3  
     Instance.new("UICorner", ProfileCard).CornerRadius = UDim.new(0,10)
     local pcStroke = Instance.new("UIStroke", ProfileCard)
     pcStroke.Color     = Color3.fromRGB(40,40,40)
     pcStroke.Thickness = 1
 
-    -- ── Banner strip (accent, semi-transparent) ───────────────
     local Banner = Instance.new("Frame", ProfileCard)
     Banner.Name              = "Banner"
     Banner.Size              = UDim2.new(1,0,0,36)
     Banner.Position          = UDim2.new(0,0,0,0)
     Banner.BackgroundColor3  = T.Accent
-    Banner.BackgroundTransparency = 0.82   -- subtle tint
+    Banner.BackgroundTransparency = 0.82   
     Banner.BorderSizePixel   = 0
     Banner.ZIndex            = 4
-    -- round only top corners → fake by oversizing bottom
     local bannerCorner = Instance.new("UICorner", Banner)
     bannerCorner.CornerRadius = UDim.new(0,10)
-    -- cover bottom corners of Banner (Frame behind to remove bottom rounding)
     local BannerCover = Instance.new("Frame", Banner)
     BannerCover.Size             = UDim2.new(1,0,0,10)
     BannerCover.Position         = UDim2.new(0,0,1,-10)
@@ -731,7 +667,6 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
     BannerCover.BorderSizePixel  = 0
     BannerCover.ZIndex           = 4
 
-    -- accent horizontal line at bottom of banner (full opacity, 1px)
     local BannerLine = Instance.new("Frame", ProfileCard)
     BannerLine.Size             = UDim2.new(1,0,0,1)
     BannerLine.Position         = UDim2.new(0,0,0,36)
@@ -740,7 +675,6 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
     BannerLine.BorderSizePixel  = 0
     BannerLine.ZIndex           = 4
 
-    -- Hub name watermark inside banner (right-aligned, faint)
     local BannerLabel = Instance.new("TextLabel", Banner)
     BannerLabel.Size                = UDim2.new(1,-8,1,0)
     BannerLabel.BackgroundTransparency = 1
@@ -752,8 +686,6 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
     BannerLabel.TextXAlignment      = Enum.TextXAlignment.Right
     BannerLabel.ZIndex              = 5
 
-    -- ── Avatar (ring + image) ─────────────────────────────────
-    -- Ring sits at y=14 so it overlaps banner bottom edge slightly
     local AvatarRing = Instance.new("Frame", ProfileCard)
     AvatarRing.Size              = UDim2.new(0,46,0,46)
     AvatarRing.Position          = UDim2.new(0,10,0,16)
@@ -777,18 +709,13 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
     Instance.new("UICorner", AvatarImg).CornerRadius = UDim.new(1,0)
     task.spawn(function()
         local ok, img = pcall(function()
-            return Players:GetUserThumbnailAsync(
-                player.UserId,
-                Enum.ThumbnailType.HeadShot,
-                Enum.ThumbnailSize.Size420x420
-            )
+            return Players:GetUserThumbnailAsync(player.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size420x420)
         end)
         if ok and AvatarImg and AvatarImg.Parent then
             AvatarImg.Image = img
         end
     end)
 
-    -- ── Name block (right of avatar) ──────────────────────────
     local NameBlock = Instance.new("Frame", ProfileCard)
     NameBlock.Size               = UDim2.new(1,-66,0,52)
     NameBlock.Position           = UDim2.new(0,62,0,20)
@@ -799,7 +726,6 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
     nbLayout.Padding             = UDim.new(0,2)
     nbLayout.VerticalAlignment   = Enum.VerticalAlignment.Center
 
-    -- helper: marquee label ──────────────────────────────
     local function CreateMarqueeLabel(parent, text, col, fnt, sz, allowScroll, lo)
         local container = Instance.new("Frame", parent)
         container.LayoutOrder        = lo or 0
@@ -838,12 +764,10 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
         end
         return l
     end
-    -- ────────────────────────────────────────────────────
 
     CreateMarqueeLabel(NameBlock, player.DisplayName, T.Text,    Enum.Font.GothamBold, 13, true,  1)
     CreateMarqueeLabel(NameBlock, "@"..player.Name,   T.SubText, Enum.Font.Gotham,     10, false, 2)
 
-    -- UserID small row
     local UIDRow = Instance.new("Frame", NameBlock)
     UIDRow.LayoutOrder          = 3
     UIDRow.Size                 = UDim2.new(1,0,0,13)
@@ -859,7 +783,6 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
     UIDLbl.Text                 = "🆔  " .. tostring(player.UserId)
     UIDLbl.ZIndex               = 6
 
-    -- ── Divider A ─────────────────────────────────────────────
     local DivA = Instance.new("Frame", ProfileCard)
     DivA.Size                   = UDim2.new(1,-16,0,1)
     DivA.Position               = UDim2.new(0,8,0,76)
@@ -867,7 +790,6 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
     DivA.BorderSizePixel        = 0
     DivA.ZIndex                 = 4
 
-    -- ── Section B: Game + Key ─────────────────────────────────
     local InfoBlock = Instance.new("Frame", ProfileCard)
     InfoBlock.Size              = UDim2.new(1,-16,0,54)
     InfoBlock.Position          = UDim2.new(0,8,0,82)
@@ -878,7 +800,6 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
     ibLayout.Padding            = UDim.new(0,5)
     ibLayout.VerticalAlignment  = Enum.VerticalAlignment.Top
 
-    -- Game name marquee
     local GameLbl = CreateMarqueeLabel(InfoBlock, "🎮  Loading...", T.SubText, Enum.Font.Gotham, 10, true, 1)
     task.spawn(function()
         local ok, info = pcall(function() return MarketplaceService:GetProductInfo(game.PlaceId) end)
@@ -887,7 +808,6 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
         end
     end)
 
-    -- Key status badge (pill style)
     local KeyRow = Instance.new("Frame", InfoBlock)
     KeyRow.LayoutOrder          = 2
     KeyRow.Size                 = UDim2.new(1,0,0,20)
@@ -951,14 +871,12 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
                 KeyLbl.TextColor3           = T.SubText
                 KeyLbl.Text                 = "🔑  No Key"
             end
-            -- resize badge to fit text
-            task.wait(0)  -- yield 1 frame ก่อน TextBounds update
+            task.wait(0) 
             KeyBadge.Size = UDim2.new(0, math.max(60, KeyLbl.TextBounds.X + 14), 0, 18)
             task.wait(1)
         end
     end)
 
-    -- ── Divider B ─────────────────────────────────────────────
     local DivB = Instance.new("Frame", ProfileCard)
     DivB.Size                   = UDim2.new(1,-16,0,1)
     DivB.Position               = UDim2.new(0,8,0,141)
@@ -966,7 +884,6 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
     DivB.BorderSizePixel        = 0
     DivB.ZIndex                 = 4
 
-    -- ── Section C: Discord Button ─────────────────────────────
     local DiscordBtn = Instance.new("TextButton", ProfileCard)
     DiscordBtn.Size              = UDim2.new(1,-16,0,24)
     DiscordBtn.Position          = UDim2.new(0,8,0,147)
@@ -983,22 +900,12 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
     dbStroke.Thickness = 1
 
     DiscordBtn.MouseEnter:Connect(function()
-        TweenService:Create(DiscordBtn, TweenInfo.new(0.15), {
-            BackgroundColor3 = Color3.fromRGB(36,36,65),
-            TextColor3       = Color3.fromRGB(160,160,255),
-        }):Play()
-        TweenService:Create(dbStroke, TweenInfo.new(0.15), {
-            Color = Color3.fromRGB(90,90,180),
-        }):Play()
+        TweenService:Create(DiscordBtn, TweenInfo.new(0.15), { BackgroundColor3 = Color3.fromRGB(36,36,65), TextColor3 = Color3.fromRGB(160,160,255) }):Play()
+        TweenService:Create(dbStroke, TweenInfo.new(0.15), { Color = Color3.fromRGB(90,90,180) }):Play()
     end)
     DiscordBtn.MouseLeave:Connect(function()
-        TweenService:Create(DiscordBtn, TweenInfo.new(0.15), {
-            BackgroundColor3 = Color3.fromRGB(24,24,42),
-            TextColor3       = Color3.fromRGB(120,120,240),
-        }):Play()
-        TweenService:Create(dbStroke, TweenInfo.new(0.15), {
-            Color = Color3.fromRGB(50,50,90),
-        }):Play()
+        TweenService:Create(DiscordBtn, TweenInfo.new(0.15), { BackgroundColor3 = Color3.fromRGB(24,24,42), TextColor3 = Color3.fromRGB(120,120,240) }):Play()
+        TweenService:Create(dbStroke, TweenInfo.new(0.15), { Color = Color3.fromRGB(50,50,90) }):Play()
     end)
     DiscordBtn.MouseButton1Click:Connect(function()
         pcall(function() setclipboard(SECRETS.Discord) end)
@@ -1006,28 +913,17 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
         local origColor = DiscordBtn.TextColor3
         DiscordBtn.Text      = "✅  Copied!"
         DiscordBtn.TextColor3 = T.Green
-        TweenService:Create(DiscordBtn, TweenInfo.new(0.1), {
-            BackgroundColor3 = Color3.fromRGB(10,28,10)
-        }):Play()
-        TweenService:Create(dbStroke, TweenInfo.new(0.1), {
-            Color = Color3.fromRGB(30,80,30)
-        }):Play()
+        TweenService:Create(DiscordBtn, TweenInfo.new(0.1), { BackgroundColor3 = Color3.fromRGB(10,28,10) }):Play()
+        TweenService:Create(dbStroke, TweenInfo.new(0.1), { Color = Color3.fromRGB(30,80,30) }):Play()
         task.delay(1.8, function()
             if not DiscordBtn or not DiscordBtn.Parent then return end
             DiscordBtn.Text      = origText
             DiscordBtn.TextColor3 = origColor
-            TweenService:Create(DiscordBtn, TweenInfo.new(0.2), {
-                BackgroundColor3 = Color3.fromRGB(24,24,42)
-            }):Play()
-            TweenService:Create(dbStroke, TweenInfo.new(0.2), {
-                Color = Color3.fromRGB(50,50,90)
-            }):Play()
+            TweenService:Create(DiscordBtn, TweenInfo.new(0.2), { BackgroundColor3 = Color3.fromRGB(24,24,42) }):Play()
+            TweenService:Create(dbStroke, TweenInfo.new(0.2), { Color = Color3.fromRGB(50,50,90) }):Play()
         end)
     end)
 
-    -- ──────────────────────────────────────────────────────────
-    -- Tab System
-    -- ──────────────────────────────────────────────────────────
     local tabList = {}; local currentTab = nil
 
     function WindowObj:CreateTab(TabName)
@@ -1036,19 +932,14 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
         tabBtn.Text = TabName; tabBtn.TextColor3 = T.SubText
         tabBtn.Font = Enum.Font.GothamBold; tabBtn.TextSize = 12
         tabBtn.AutoButtonColor = false
-        -- [FIX 1] ZIndex=4 → อยู่เหนือ DragStrip (ZIndex=2) → คลิก tab ได้ปกติ
         tabBtn.ZIndex = 4
         Instance.new("UICorner", tabBtn).CornerRadius = UDim.new(0,4)
 
         tabBtn.MouseEnter:Connect(function()
-            if currentTab and currentTab.Btn ~= tabBtn then
-                TweenService:Create(tabBtn, TweenInfo.new(0.2), {BackgroundColor3=Color3.fromRGB(20,20,20)}):Play()
-            end
+            if currentTab and currentTab.Btn ~= tabBtn then TweenService:Create(tabBtn, TweenInfo.new(0.2), {BackgroundColor3=Color3.fromRGB(20,20,20)}):Play() end
         end)
         tabBtn.MouseLeave:Connect(function()
-            if currentTab and currentTab.Btn ~= tabBtn then
-                TweenService:Create(tabBtn, TweenInfo.new(0.2), {BackgroundColor3=T.Sidebar}):Play()
-            end
+            if currentTab and currentTab.Btn ~= tabBtn then TweenService:Create(tabBtn, TweenInfo.new(0.2), {BackgroundColor3=T.Sidebar}):Play() end
         end)
 
         local line = Instance.new("Frame", tabBtn)
@@ -1068,9 +959,7 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
         contentPad.PaddingTop = UDim.new(0,10); contentPad.PaddingBottom = UDim.new(0,10)
         contentPad.PaddingLeft = UDim.new(0,15); contentPad.PaddingRight = UDim.new(0,15)
 
-        layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-            scroll.CanvasSize = UDim2.new(0,0,0, layout.AbsoluteContentSize.Y + 20)
-        end)
+        layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function() scroll.CanvasSize = UDim2.new(0,0,0, layout.AbsoluteContentSize.Y + 20) end)
 
         tabBtn.MouseButton1Click:Connect(function()
             if currentTab then
@@ -1096,7 +985,6 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
             currentTab = {Btn=tabBtn, Frame=scroll, Line=line}
         end
 
-        -- ── Tab Methods ────────────────────────────────────────
         local TabObj = {}
 
         function TabObj:CreateSection(text)
@@ -1141,23 +1029,13 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
             local ToggleObj = {}
             function ToggleObj:Set(newState)
                 state = newState
-                TweenService:Create(dot, TweenInfo.new(0.18),
-                    {BackgroundColor3 = state and T.Accent or Color3.fromRGB(60,60,60)}):Play()
+                TweenService:Create(dot, TweenInfo.new(0.18), {BackgroundColor3 = state and T.Accent or Color3.fromRGB(60,60,60)}):Play()
                 callback(state)
             end
             btn.MouseButton1Click:Connect(function() ToggleObj:Set(not state) end)
             return ToggleObj
         end
 
-        -- ──────────────────────────────────────────────────────
-        -- [FIX 2] SLIDER — V10.5
-        --   ใช้ GuiObject mouse events ล้วนๆ ไม่แตะ UIS เลย
-        --   trackHit.MouseButton1Down(x,y) → เริ่ม drag, เก็บ startX และ ratio ปัจจุบัน
-        --   trackHit.MouseMoved(x,y)       → คำนวณ delta จาก startX → update fill
-        --   trackHit.MouseButton1Up(x,y)   → จบ drag
-        --   x,y ใน GuiObject events ทั้ง 3 อยู่ใน coordinate space เดียวกันเสมอ
-        --   ไม่มี AbsolutePosition, ไม่มี UIS, ไม่มี GetMouseLocation
-        -- ──────────────────────────────────────────────────────
         function TabObj:CreateSlider(label, min, max, default, callback)
             local frame = Instance.new("Frame", scroll)
             frame.Size = UDim2.new(1,0,0,48); frame.BackgroundColor3 = T.Element
@@ -1169,7 +1047,6 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
             lbl.Font = Enum.Font.GothamBold; lbl.TextSize = 11
             lbl.TextXAlignment = Enum.TextXAlignment.Left
 
-            -- visual track (Frame ล้วนๆ ไม่รับ input)
             local track = Instance.new("Frame", frame)
             track.Size = UDim2.new(1,-20,0,6); track.Position = UDim2.new(0,10,0,34)
             track.BackgroundColor3 = Color3.fromRGB(50,50,50); track.BorderSizePixel = 0
@@ -1180,12 +1057,9 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
             fill.BackgroundColor3 = T.Accent; fill.BorderSizePixel = 0
             Instance.new("UICorner", fill).CornerRadius = UDim.new(1,0)
 
-            -- trackHit: TextButton ทับบน track สูง 30px เพื่อ hit area กว้าง
             local trackHit = Instance.new("TextButton", frame)
-            trackHit.Size     = UDim2.new(1,-20,0,30)
-            trackHit.Position = UDim2.new(0,10,0,24)
-            trackHit.BackgroundTransparency = 1
-            trackHit.Text = ""; trackHit.ZIndex = 3; trackHit.AutoButtonColor = false
+            trackHit.Size     = UDim2.new(1,-20,0,30); trackHit.Position = UDim2.new(0,10,0,24)
+            trackHit.BackgroundTransparency = 1; trackHit.Text = ""; trackHit.ZIndex = 3; trackHit.AutoButtonColor = false
 
             local function update(v)
                 local res = callback(v)
@@ -1198,8 +1072,6 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
             local startRatio  = math.clamp((default-min)/(max-min), 0, 1)
             local trackWidth  = 1
 
-            -- [FIX 2] MouseButton1Down → เริ่ม drag
-            -- x,y ใน GuiObject event space → เก็บไว้เป็น startX
             trackHit.MouseButton1Down:Connect(function(x, y)
                 dragging   = true
                 startX     = x
@@ -1207,8 +1079,6 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
                 trackWidth = math.max(trackHit.AbsoluteSize.X, 1)
             end)
 
-            -- [FIX 2] MouseMoved → คำนวณ delta จาก startX
-            -- x,y และ startX อยู่ใน GuiObject space เดียวกัน → delta ถูกต้อง 100%
             trackHit.MouseMoved:Connect(function(x, y)
                 if not dragging then return end
                 local dx       = x - startX
@@ -1219,10 +1089,7 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
                 startRatio = newRatio
             end)
 
-            -- [FIX 2] MouseButton1Up → จบ drag
-            trackHit.MouseButton1Up:Connect(function(x, y)
-                dragging = false
-            end)
+            trackHit.MouseButton1Up:Connect(function(x, y) dragging = false end)
         end
 
         function TabObj:CreateDropdown(placeholder, optionsList, callback)
@@ -1254,9 +1121,7 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
 
             local selectedFromList = false
             local function RefreshList(filter)
-                for _, c in ipairs(DScroll:GetChildren()) do
-                    if c:IsA("TextButton") then c:Destroy() end
-                end
+                for _, c in ipairs(DScroll:GetChildren()) do if c:IsA("TextButton") then c:Destroy() end end
                 local count = 0
                 for _, item in ipairs(optionsList) do
                     if not filter or filter == "" or string.find(string.lower(item), string.lower(filter)) then
@@ -1280,14 +1145,11 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
 
             local DropObj = {}
             function DropObj:Refresh(newList)
-                optionsList = newList
-                RefreshList(Input.Text)
+                optionsList = newList; RefreshList(Input.Text)
             end
 
             Input.Focused:Connect(function()
-                if WindowObj.ActiveDropdown and WindowObj.ActiveDropdown ~= DropOverlay then
-                    WindowObj.ActiveDropdown.Visible = false
-                end
+                if WindowObj.ActiveDropdown and WindowObj.ActiveDropdown ~= DropOverlay then WindowObj.ActiveDropdown.Visible = false end
                 WindowObj.ActiveDropdown = DropOverlay
                 local pos = frame.AbsolutePosition; local sz = frame.AbsoluteSize
                 local yPos = pos.Y + sz.Y + 4
@@ -1374,29 +1236,7 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
             return BtnObj
         end
 
-        -- ──────────────────────────────────────────────────────
-        -- CreateSelector
-        --
-        -- แสดงชุด pills/chips ที่ toggle selected state ได้
-        -- ใช้สำหรับเลือก skill, mode, option ต่างๆ
-        -- selected pill = accent color, unselected = dark
-        --
-        -- params:
-        --   label      : string  — หัวข้อแสดงเหนือ pills
-        --   options    : table   — {"1","2","3","4","5"} หรือ {"Q","E","R","F"}
-        --   multiSelect: bool    — true = เลือกได้หลายอัน, false = เลือกได้อันเดียว
-        --   callback   : function(selectedList, lastChanged)
-        --                selectedList = table ของ options ที่ selected ทั้งหมด
-        --                lastChanged  = option ที่เพิ่งเปลี่ยน
-        --
-        -- returns SelectorObj:
-        --   :Get()          → table ของ selected options
-        --   :Set({opts})    → set selection ด้วยโค้ด
-        --   :Add(opt)       → เพิ่ม option ใหม่ใน selector
-        --   :Remove(opt)    → ลบ option ออกจาก selector
-        -- ──────────────────────────────────────────────────────
         function TabObj:CreateSelector(label, options, multiSelect, callback)
-            -- outer frame — ใช้ AutomaticSize เพื่อรองรับ wrap
             local frame = Instance.new("Frame", scroll)
             frame.Size = UDim2.new(1,0,0,0)
             frame.AutomaticSize = Enum.AutomaticSize.Y
@@ -1404,16 +1244,13 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
             frame.BorderSizePixel = 0
             Instance.new("UICorner", frame).CornerRadius = UDim.new(0,4)
             local outerPad = Instance.new("UIPadding", frame)
-            outerPad.PaddingTop    = UDim.new(0,8)
-            outerPad.PaddingBottom = UDim.new(0,8)
-            outerPad.PaddingLeft   = UDim.new(0,10)
-            outerPad.PaddingRight  = UDim.new(0,10)
+            outerPad.PaddingTop    = UDim.new(0,8); outerPad.PaddingBottom = UDim.new(0,8)
+            outerPad.PaddingLeft   = UDim.new(0,10); outerPad.PaddingRight  = UDim.new(0,10)
             local outerLayout = Instance.new("UIListLayout", frame)
             outerLayout.SortOrder       = Enum.SortOrder.LayoutOrder
             outerLayout.FillDirection   = Enum.FillDirection.Vertical
             outerLayout.Padding         = UDim.new(0,6)
 
-            -- header label
             local headerLbl = Instance.new("TextLabel", frame)
             headerLbl.LayoutOrder       = 1
             headerLbl.Size              = UDim2.new(1,0,0,16)
@@ -1424,7 +1261,6 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
             headerLbl.TextSize          = 11
             headerLbl.TextXAlignment    = Enum.TextXAlignment.Left
 
-            -- pills container (wrapping row)
             local pillsFrame = Instance.new("Frame", frame)
             pillsFrame.LayoutOrder   = 2
             pillsFrame.Size          = UDim2.new(1,0,0,0)
@@ -1437,16 +1273,13 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
             pillLayout.Padding        = UDim.new(0,6)
             pillLayout.SortOrder      = Enum.SortOrder.LayoutOrder
 
-            local selected = {}        -- { [optionName] = true }
-            local pillButtons = {}     -- { [optionName] = TextButton }
+            local selected = {}        
+            local pillButtons = {}     
 
-            local function isSelected(opt)
-                return selected[opt] == true
-            end
+            local function isSelected(opt) return selected[opt] == true end
 
             local function getSelectedList()
                 local list = {}
-                -- คืน ordered list ตาม options original order
                 for _, opt in ipairs(options) do
                     if selected[opt] then table.insert(list, opt) end
                 end
@@ -1457,116 +1290,76 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
                 local btn = pillButtons[opt]
                 if not btn then return end
                 if isSelected(opt) then
-                    TweenService:Create(btn, TweenInfo.new(0.15), {
-                        BackgroundColor3 = T.Accent,
-                        TextColor3       = Color3.fromRGB(255,255,255),
-                    }):Play()
-                    -- glow stroke
+                    TweenService:Create(btn, TweenInfo.new(0.15), { BackgroundColor3 = T.Accent, TextColor3 = Color3.fromRGB(255,255,255) }):Play()
                     local stroke = btn:FindFirstChildWhichIsA("UIStroke")
-                    if stroke then
-                        TweenService:Create(stroke, TweenInfo.new(0.15), {
-                            Transparency = 0
-                        }):Play()
-                    end
+                    if stroke then TweenService:Create(stroke, TweenInfo.new(0.15), { Transparency = 0 }):Play() end
                 else
-                    TweenService:Create(btn, TweenInfo.new(0.15), {
-                        BackgroundColor3 = T.ElemDark,
-                        TextColor3       = T.SubText,
-                    }):Play()
+                    TweenService:Create(btn, TweenInfo.new(0.15), { BackgroundColor3 = T.ElemDark, TextColor3 = T.SubText }):Play()
                     local stroke = btn:FindFirstChildWhichIsA("UIStroke")
-                    if stroke then
-                        TweenService:Create(stroke, TweenInfo.new(0.15), {
-                            Transparency = 1
-                        }):Play()
-                    end
+                    if stroke then TweenService:Create(stroke, TweenInfo.new(0.15), { Transparency = 1 }):Play() end
                 end
             end
 
             local function createPill(opt, order)
                 local btn = Instance.new("TextButton", pillsFrame)
                 btn.LayoutOrder         = order
-                btn.Size                = UDim2.new(0,0,0,28) -- auto width via AutomaticSize
+                btn.Size                = UDim2.new(0,0,0,28) 
                 btn.AutomaticSize       = Enum.AutomaticSize.X
                 btn.BackgroundColor3    = T.ElemDark
                 btn.TextColor3          = T.SubText
                 btn.Font                = Enum.Font.GothamBold
                 btn.TextSize            = 12
-                btn.Text                = "  " .. opt .. "  "  -- padding ด้วย spaces
+                btn.Text                = "  " .. opt .. "  "  
                 btn.AutoButtonColor     = false
-                Instance.new("UICorner", btn).CornerRadius = UDim.new(1, 0)  -- pill shape
+                Instance.new("UICorner", btn).CornerRadius = UDim.new(1, 0)  
                 local stroke = Instance.new("UIStroke", btn)
                 stroke.Color        = T.Accent
                 stroke.Thickness    = 1.5
-                stroke.Transparency = 1  -- hidden when unselected
+                stroke.Transparency = 1  
 
                 btn.MouseButton1Click:Connect(function()
                     if multiSelect then
-                        -- toggle
                         selected[opt] = not selected[opt]
                     else
-                        -- single select: deselect others
                         for k in pairs(selected) do selected[k] = false end
                         selected[opt] = true
                     end
                     updatePillVisual(opt)
-                    -- update all visuals ถ้า single (deselect others)
                     if not multiSelect then
                         for k in pairs(pillButtons) do updatePillVisual(k) end
                     end
                     pcall(callback, getSelectedList(), opt)
                 end)
 
-                -- hover effect
                 btn.MouseEnter:Connect(function()
-                    if not isSelected(opt) then
-                        TweenService:Create(btn, TweenInfo.new(0.1), {
-                            BackgroundColor3 = Color3.fromRGB(35,35,35)
-                        }):Play()
-                    end
+                    if not isSelected(opt) then TweenService:Create(btn, TweenInfo.new(0.1), { BackgroundColor3 = Color3.fromRGB(35,35,35) }):Play() end
                 end)
                 btn.MouseLeave:Connect(function()
-                    if not isSelected(opt) then
-                        TweenService:Create(btn, TweenInfo.new(0.1), {
-                            BackgroundColor3 = T.ElemDark
-                        }):Play()
-                    end
+                    if not isSelected(opt) then TweenService:Create(btn, TweenInfo.new(0.1), { BackgroundColor3 = T.ElemDark }):Play() end
                 end)
 
                 pillButtons[opt] = btn
                 updatePillVisual(opt)
             end
 
-            for i, opt in ipairs(options) do
-                createPill(opt, i)
-            end
+            for i, opt in ipairs(options) do createPill(opt, i) end
 
-            -- ── SelectorObj API ──────────────────────────────
             local SelectorObj = {}
-
-            function SelectorObj:Get()
-                return getSelectedList()
-            end
-
+            function SelectorObj:Get() return getSelectedList() end
             function SelectorObj:Set(items)
-                -- clear all
                 for k in pairs(selected) do selected[k] = false end
-                -- set given items
                 if type(items) == "table" then
-                    for _, opt in ipairs(items) do
-                        selected[opt] = true
-                    end
+                    for _, opt in ipairs(items) do selected[opt] = true end
                 elseif type(items) == "string" then
                     selected[items] = true
                 end
                 for k in pairs(pillButtons) do updatePillVisual(k) end
             end
-
             function SelectorObj:Add(opt)
-                if pillButtons[opt] then return end  -- already exists
+                if pillButtons[opt] then return end  
                 table.insert(options, opt)
                 createPill(opt, #options)
             end
-
             function SelectorObj:Remove(opt)
                 if not pillButtons[opt] then return end
                 pillButtons[opt]:Destroy()
