@@ -1035,11 +1035,11 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
             return DropObj
         end
 
-        function TabObj:CreateDualKeyRow(l1, l2, callback1, callback2)
+        function TabObj:CreateDualKeyRow(l1, l2, callback1, callback2, default1, default2)
             local frame = Instance.new("Frame", scroll)
             frame.Size = UDim2.new(1,0,0,36); frame.BackgroundColor3 = T.Element
             Instance.new("UICorner", frame).CornerRadius = UDim.new(0,4)
-            local function Pair(labelStr, ox, cb)
+            local function Pair(labelStr, defVal, ox, cb)
                 local l = Instance.new("TextLabel", frame)
                 l.Size = UDim2.new(0.22,0,1,0); l.Position = UDim2.new(ox,4,0,0)
                 l.BackgroundTransparency = 1; l.Text = labelStr; l.TextColor3 = T.SubText
@@ -1047,7 +1047,9 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
                 local b = Instance.new("TextBox", frame)
                 b.Size = UDim2.new(0.18,0,0.65,0); b.Position = UDim2.new(ox+0.22,0,0.175,0)
                 b.BackgroundColor3 = T.ElemDark; b.TextColor3 = T.Accent
-                b.Font = Enum.Font.GothamBold; b.Text = ""; b.ClearTextOnFocus = false
+                b.Font = Enum.Font.GothamBold
+                b.Text = (defVal and defVal ~= "") and tostring(defVal) or ""
+                b.ClearTextOnFocus = false
                 Instance.new("UICorner", b).CornerRadius = UDim.new(0,4)
                 b.FocusLost:Connect(function()
                     local t = b.Text
@@ -1056,14 +1058,14 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
                     if ok then cb(t:upper()); b.Text = t:upper() else b.Text = "" end
                 end)
             end
-            Pair(l1, 0.02, callback1); Pair(l2, 0.52, callback2)
+            Pair(l1, default1, 0.02, callback1); Pair(l2, default2, 0.52, callback2)
         end
 
-        function TabObj:CreateDualNumRow(l1, l2, callback1, callback2)
+        function TabObj:CreateDualNumRow(l1, l2, callback1, callback2, default1, default2)
             local frame = Instance.new("Frame", scroll)
             frame.Size = UDim2.new(1,0,0,36); frame.BackgroundColor3 = T.Element
             Instance.new("UICorner", frame).CornerRadius = UDim.new(0,4)
-            local function Pair(labelStr, ox, cb)
+            local function Pair(labelStr, defVal, ox, cb)
                 local l = Instance.new("TextLabel", frame)
                 l.Size = UDim2.new(0.28,0,1,0); l.Position = UDim2.new(ox,4,0,0)
                 l.BackgroundTransparency = 1; l.Text = labelStr; l.TextColor3 = T.SubText
@@ -1071,13 +1073,15 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
                 local b = Instance.new("TextBox", frame)
                 b.Size = UDim2.new(0.18,0,0.65,0); b.Position = UDim2.new(ox+0.28,0,0.175,0)
                 b.BackgroundColor3 = T.ElemDark; b.TextColor3 = T.Accent
-                b.Font = Enum.Font.GothamBold; b.Text = "0"; b.ClearTextOnFocus = false
+                b.Font = Enum.Font.GothamBold
+                b.Text = tostring(defVal ~= nil and defVal or 0)
+                b.ClearTextOnFocus = false
                 Instance.new("UICorner", b).CornerRadius = UDim.new(0,4)
                 b.FocusLost:Connect(function()
-                    local v = tonumber(b.Text); if v then cb(v) else b.Text = "0" end
+                    local v = tonumber(b.Text); if v then cb(v) else b.Text = tostring(defVal or 0) end
                 end)
             end
-            Pair(l1, 0.02, callback1); Pair(l2, 0.52, callback2)
+            Pair(l1, default1 or 0, 0.02, callback1); Pair(l2, default2 or 0, 0.52, callback2)
         end
 
         function TabObj:CreateButton(text, callback)
