@@ -64,6 +64,8 @@ function BottleLib:ShowLoader(message)
 
     local sg = Instance.new("ScreenGui")
     sg.Name = "BOTTLEHUB_LOADER"
+    sg.ZIndexBehavior = Enum.ZIndexBehavior.Global
+    sg.ResetOnSpawn   = false
     sg.Parent = (gethui and gethui()) or CoreGui
     _loaderGui = sg
 
