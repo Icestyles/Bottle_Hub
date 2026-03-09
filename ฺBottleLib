@@ -526,22 +526,18 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
     MiniButton.MouseButton1Click:Connect(function() ToggleMinimize(false) end)
 
     -- ──────────────────────────────────────────────────────────
-    -- [FIX 3] LEFT CTRL — V10.5
-    --   ลบ GetFocusedTextBox() check ออกทั้งหมด
-    --   executor ทำให้มันคืน non-nil ตลอด → early return ทุกครั้ง
-    --   เหลือแค่ Heartbeat + IsKeyDown() rising-edge detection
+    -- LEFT CTRL MINIMIZE
+    --   ใช้ InputBegan (event-based) แทน Heartbeat+IsKeyDown (polling)
+    --   InputBegan fire ครั้งเดียวต่อการกด → ไม่มี double-toggle
+    --   ทำงานได้ใน executor เพราะเป็น UserInputService event โดยตรง
+    --   ไม่ใช่ GuiObject event → ไม่ถูกบล็อกโดย gethui()
     -- ──────────────────────────────────────────────────────────
-    local ctrlWasDown = false
-    local ctrlConn = RunService.Heartbeat:Connect(function()
-        if not MainFrame or not MainFrame.Parent then return end
-        local ok, isDown = pcall(function()
-            return UserInputService:IsKeyDown(Enum.KeyCode.LeftControl)
-        end)
-        if not ok then return end
-        if isDown and not ctrlWasDown then
-            ToggleMinimize(MainFrame.Visible)
+    local ctrlConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if input.KeyCode == Enum.KeyCode.LeftControl then
+            if MainFrame and MainFrame.Parent then
+                ToggleMinimize(MainFrame.Visible)
+            end
         end
-        ctrlWasDown = isDown
     end)
     table.insert(BottleLib.Connections, ctrlConn)
 
@@ -553,50 +549,105 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
     Sidebar.BackgroundColor3 = T.Sidebar; Sidebar.BorderSizePixel = 0
     Instance.new("UICorner", Sidebar).CornerRadius = UDim.new(0,8)
 
+    -- Cover right edge of Sidebar (prevent rounded corner bleeding into ContentArea)
     local SbCover = Instance.new("Frame", Sidebar)
     SbCover.Size = UDim2.new(0,10,1,0); SbCover.Position = UDim2.new(1,-10,0,0)
     SbCover.BackgroundColor3 = T.Sidebar; SbCover.BorderSizePixel = 0
 
-    local function MakeDot(xOff, color, symbol)
+    -- ──────────────────────────────────────────────────────────
+    -- SIDEBAR HEADER
+    --
+    --  ┌────────────────────────────────────┐  y=0
+    --  │ ● ●   B O T T L E H U B           │  h=42 — header strip
+    --  │ (r)(y) title accent right          │
+    --  ├────────────────────────────────────┤  y=42 — divider line
+    --
+    -- Dots: แสดง symbol เฉพาะตอน hover โดยใช้ Font.SourceSansBold
+    --       (GothamBlack ไม่มี glyph ✕ → แสดงเป็น □)
+    -- ──────────────────────────────────────────────────────────
+
+    -- Header background strip
+    local SbHeader = Instance.new("Frame", Sidebar)
+    SbHeader.Size              = UDim2.new(1,0,0,42)
+    SbHeader.Position          = UDim2.new(0,0,0,0)
+    SbHeader.BackgroundColor3  = T.Accent
+    SbHeader.BackgroundTransparency = 0.92
+    SbHeader.BorderSizePixel   = 0
+    SbHeader.ZIndex            = 5
+    Instance.new("UICorner", SbHeader).CornerRadius = UDim.new(0,8)
+    -- Cover bottom corners of header
+    local SbHeaderCover = Instance.new("Frame", SbHeader)
+    SbHeaderCover.Size             = UDim2.new(1,0,0,10)
+    SbHeaderCover.Position         = UDim2.new(0,0,1,-10)
+    SbHeaderCover.BackgroundColor3 = T.Accent
+    SbHeaderCover.BackgroundTransparency = 0.92
+    SbHeaderCover.BorderSizePixel  = 0
+    SbHeaderCover.ZIndex           = 5
+
+    -- Header bottom divider
+    local SbHeaderLine = Instance.new("Frame", Sidebar)
+    SbHeaderLine.Size              = UDim2.new(1,0,0,1)
+    SbHeaderLine.Position          = UDim2.new(0,0,0,42)
+    SbHeaderLine.BackgroundColor3  = T.Accent
+    SbHeaderLine.BackgroundTransparency = 0.7
+    SbHeaderLine.BorderSizePixel   = 0
+    SbHeaderLine.ZIndex            = 5
+
+    -- Hub name title (right side of header)
+    local SbTitle = Instance.new("TextLabel", Sidebar)
+    SbTitle.Size               = UDim2.new(1,-70,0,42)
+    SbTitle.Position           = UDim2.new(0,64,0,0)
+    SbTitle.BackgroundTransparency = 1
+    SbTitle.Text               = HubName
+    SbTitle.TextColor3         = T.Accent
+    SbTitle.Font               = Enum.Font.GothamBlack
+    SbTitle.TextSize           = 15
+    SbTitle.TextXAlignment     = Enum.TextXAlignment.Left
+    SbTitle.ZIndex             = 6
+
+    -- ── Window control dots ────────────────────────────────────
+    -- ไม่ใส่ Text เริ่มต้น → แสดง symbol เฉพาะ hover
+    -- Font.SourceSansBold รองรับ × และ − ตรงกว่า GothamBlack
+    local function MakeDot(xOff, color, hoverSymbol)
         local b = Instance.new("TextButton", Sidebar)
-        b.Size = UDim2.new(0,16,0,16)
-        b.Position = UDim2.new(0,xOff,0,13)
-        b.BackgroundColor3 = color
-        b.Text = symbol
-        b.TextColor3 = Color3.fromRGB(80,20,20)  -- สีเข้มกว่าพื้นหลังดอท
-        b.Font = Enum.Font.GothamBlack
-        b.TextSize = 10
-        b.AutoButtonColor = false
+        b.Size              = UDim2.new(0,14,0,14)
+        b.Position          = UDim2.new(0,xOff,0,14)
+        b.BackgroundColor3  = color
+        b.Text              = ""
+        b.Font              = Enum.Font.SourceSansBold
+        b.TextSize          = 11
+        b.AutoButtonColor   = false
+        b.ZIndex            = 6
         Instance.new("UICorner", b).CornerRadius = UDim.new(1,0)
-        -- hover → สว่างขึ้น + แสดงสัญลักษณ์ชัดขึ้น
+
         b.MouseEnter:Connect(function()
+            b.Text = hoverSymbol
             TweenService:Create(b, TweenInfo.new(0.1), {
                 TextColor3 = Color3.fromRGB(255,255,255),
-                Size = UDim2.new(0,18,0,18),
+                Size       = UDim2.new(0,16,0,16),
+                Position   = UDim2.new(0,xOff-1,0,13),
             }):Play()
         end)
         b.MouseLeave:Connect(function()
+            b.Text = ""
             TweenService:Create(b, TweenInfo.new(0.1), {
                 TextColor3 = Color3.fromRGB(80,20,20),
-                Size = UDim2.new(0,16,0,16),
+                Size       = UDim2.new(0,14,0,14),
+                Position   = UDim2.new(0,xOff,0,14),
             }):Play()
         end)
         return b
     end
-    local RedDot    = MakeDot(14, Color3.fromRGB(255,69,58),  "✕")
-    local YellowDot = MakeDot(36, Color3.fromRGB(255,159,10), "−")
-    -- [FIX 1] ZIndex=5 → อยู่เหนือ DragStrip (ZIndex=2) → คลิกได้ปกติ
-    RedDot.ZIndex    = 5
-    YellowDot.ZIndex = 5
+
+    -- RedDot = ปิด window, YellowDot = minimize
+    -- "×" (U+00D7) รองรับใน SourceSansBold, "−" (U+2212 minus sign)
+    local RedDot    = MakeDot(12, Color3.fromRGB(255,69,58),  "×")
+    local YellowDot = MakeDot(32, Color3.fromRGB(255,159,10), "−")
+
     RedDot.MouseButton1Click:Connect(function()
         BottleLib.CleanUpEvent:Fire(); ScreenGui:Destroy()
     end)
     YellowDot.MouseButton1Click:Connect(function() ToggleMinimize(true) end)
-
-    local SbTitle = Instance.new("TextLabel", Sidebar)
-    SbTitle.Text = HubName; SbTitle.Size = UDim2.new(1,0,0,36)
-    SbTitle.Position = UDim2.new(0,-6,0,36); SbTitle.BackgroundTransparency = 1
-    SbTitle.TextColor3 = T.Accent; SbTitle.Font = Enum.Font.GothamBlack; SbTitle.TextSize = 15
 
     local WindowObj = {}
     WindowObj.ActiveDropdown = nil
@@ -614,8 +665,8 @@ function BottleLib:CreateWindow(WindowConfig, SubTitle)
 
     local PROFILE_H = 175  -- ProfileCard V3 height
     local TabScrollContainer = Instance.new("ScrollingFrame", Sidebar)
-    TabScrollContainer.Size = UDim2.new(1,0,1,-(PROFILE_H+40))
-    TabScrollContainer.Position = UDim2.new(0,0,0,40)
+    TabScrollContainer.Size = UDim2.new(1,0,1,-(PROFILE_H+46))
+    TabScrollContainer.Position = UDim2.new(0,0,0,46)
     TabScrollContainer.BackgroundTransparency = 1; TabScrollContainer.ScrollBarThickness = 0
     TabScrollContainer.BorderSizePixel = 0
 
