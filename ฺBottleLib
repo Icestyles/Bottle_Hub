@@ -105,19 +105,26 @@ end
 
 -- @description Sends usage statistics to the GAS backend silently.
 -- @param scriptName (string): The name of the script currently being executed.
+-- 📊 ฟังก์ชันหลักสำหรับส่งสถิติ (Analytics) ไปยัง GAS
 function BottleLib:SendAnalytics(scriptName)
     task.spawn(function()
         local url = self:GetBackendURL()
+        
+        -- 🟢 ดึงชื่อเกมจาก MarketplaceService 
+        local ok, info = pcall(function() return MarketplaceService:GetProductInfo(game.PlaceId) end)
+        local gameName = ok and info.Name or game.Name
+        -- นำชื่อเกมมาประกอบกับ ID เผื่อไว้ (เช่น "Blox Fruits (2753915549)")
+        local formattedPlace = gameName .. " (" .. tostring(game.PlaceId) .. ")"
+        
         local payload = {
             action = "log_stats",
             hwid = self:GetHWID(),
-            placeId = tostring(game.PlaceId),
+            placeId = formattedPlace, -- 🟢 ส่งชื่อเกมไปแทน
             script = scriptName or "Unknown",
             key = self.KeyStatus.KeyName or "Unknown",
             tier = self.KeyStatus.Tier or "Basic"
         }
         
-        -- Fallback support for various executor request methods
         local req = (syn and syn.request) or (http and http.request) or http_request or request
         if req then
             pcall(function()
