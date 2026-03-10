@@ -2,14 +2,20 @@
 --[[
     ===========================================================================
     ■ BOTTLEHUB UI LIBRARY (PURE ARCHITECTURE)
-    ■ Version: 13.1 (Analytics Ready & API Bridge)
+    ■ Version: 13.1 (Analytics Active & API Bridge)
     ■ Description: 
-      - Added Public API: GetHWID(), GetBackendURL(), SendAnalytics()
-      - Secure Callback Execution (Anti-Tamper for Premium)
+      - Clean, modular, separation-of-concerns UI Library.
+      - Built-in GAS Key System (URL Obfuscated).
+      - Fully Active Analytics tracking system (SendAnalytics).
+      - PURE UI: No internal game logic.
     ===========================================================================
 ]]
 
 local BottleLib = {}
+
+-- ============================================================================
+-- [1] INITIALIZATION & GLOBAL SETTINGS
+-- ============================================================================
 BottleLib.KeyStatus = { Valid = false, ExpiresAt = nil, IsGlobal = false, Tier = "Basic", KeyName = "Unknown", HWID = "Unknown" }
 BottleLib.Connections = {}
 BottleLib.MinimizeKey = Enum.KeyCode.LeftControl
@@ -23,6 +29,7 @@ local HttpService         = game:GetService("HttpService")
 local Players             = game:GetService("Players")
 local RbxAnalyticsService = game:GetService("RbxAnalyticsService")
 local MarketplaceService  = game:GetService("MarketplaceService")
+local TeleportService     = game:GetService("TeleportService")
 
 local player = Players.LocalPlayer
 while not player do task.wait(0.1); player = Players.LocalPlayer end
@@ -40,7 +47,7 @@ function BottleLib:SetMinimizeKey(keycode)
 end
 
 -- ============================================================================
--- [1] SECURITY & OBFUSCATION (GAS URL)
+-- [2] SECURITY & OBFUSCATION (GAS URL)
 -- ============================================================================
 local __SECRETS = {
     DISCORD = "https://discord.gg/JbSUQCxW2w",
@@ -62,7 +69,7 @@ local function GetGasEndpoint()
 end
 
 -- ============================================================================
--- [2] PUBLIC API BRIDGE (สำหรับสคริปต์หลักดึงไปใช้)
+-- [3] PUBLIC API BRIDGE (✅ TYPE CHECKED: มีฟังก์ชันครบถ้วน)
 -- ============================================================================
 function BottleLib:GetBackendURL()
     return GetGasEndpoint()
@@ -84,23 +91,33 @@ function BottleLib:GetHWID()
     return newHwid
 end
 
--- 📊 โครงสร้างรอทำระบบ Tracking / Stats
+-- 📊 ฟังก์ชันหลักสำหรับส่งสถิติ (Analytics) ไปยัง GAS
 function BottleLib:SendAnalytics(scriptName)
     task.spawn(function()
-        local url = self:GetBackendURL() .. "?action=log_stats"
+        local url = self:GetBackendURL()
         local payload = {
+            action = "log_stats",
             hwid = self:GetHWID(),
-            placeId = game.PlaceId,
-            script = scriptName or "Unknown",
-            timestamp = os.time()
+            placeId = tostring(game.PlaceId),
+            script = scriptName or "Unknown"
         }
-        -- [รอการพัฒนาฝั่ง GAS ในสเตปต่อไป]
-        -- request({Url = url, Method = "POST", Body = HttpService:JSONEncode(payload), Headers = {["Content-Type"] = "application/json"}})
+        
+        local req = (syn and syn.request) or (http and http.request) or http_request or request
+        if req then
+            pcall(function()
+                req({
+                    Url = url,
+                    Method = "POST",
+                    Body = HttpService:JSONEncode(payload),
+                    Headers = {["Content-Type"] = "application/json"}
+                })
+            end)
+        end
     end)
 end
 
 -- ============================================================================
--- [3] UI UTILITIES (NOTIFY & LOADER)
+-- [4] UI UTILITIES (NOTIFY & LOADER)
 -- ============================================================================
 function BottleLib:Notify(msg)
     local parentGui = (gethui and gethui()) or CoreGui
@@ -124,8 +141,16 @@ function BottleLib:Notify(msg)
         notif.BackgroundTransparency = 1; notif.ZIndex = 99; Instance.new("UICorner", notif).CornerRadius = UDim.new(0, 6)
         
         local stroke = Instance.new("UIStroke", notif); stroke.Color = Color3.fromRGB(255, 69, 58); stroke.Transparency = 1
-        local icon = Instance.new("TextLabel", notif); icon.Size = UDim2.new(0, 35, 1, 0); icon.BackgroundTransparency = 1; icon.Text = "⛔"; icon.TextSize = 16; icon.TextTransparency = 1; icon.ZIndex = 100
-        local lbl = Instance.new("TextLabel", notif); lbl.Size = UDim2.new(1, -40, 1, 0); lbl.Position = UDim2.new(0, 35, 0, 0); lbl.BackgroundTransparency = 1; lbl.Text = msg; lbl.TextColor3 = Color3.fromRGB(255, 200, 200); lbl.Font = Enum.Font.GothamBold; lbl.TextSize = 11; lbl.TextXAlignment = Enum.TextXAlignment.Left; lbl.TextWrapped = true; lbl.TextTransparency = 1; lbl.ZIndex = 100
+
+        local icon = Instance.new("TextLabel", notif)
+        icon.Size = UDim2.new(0, 35, 1, 0); icon.BackgroundTransparency = 1; icon.Text = "⛔"
+        icon.TextSize = 16; icon.TextTransparency = 1; icon.ZIndex = 100
+
+        local lbl = Instance.new("TextLabel", notif)
+        lbl.Size = UDim2.new(1, -40, 1, 0); lbl.Position = UDim2.new(0, 35, 0, 0)
+        lbl.BackgroundTransparency = 1; lbl.Text = msg; lbl.TextColor3 = Color3.fromRGB(255, 200, 200)
+        lbl.Font = Enum.Font.GothamBold; lbl.TextSize = 11; lbl.TextXAlignment = Enum.TextXAlignment.Left
+        lbl.TextWrapped = true; lbl.TextTransparency = 1; lbl.ZIndex = 100
 
         TweenService:Create(dimOverlay, TweenInfo.new(0.2), {BackgroundTransparency = 0.4}):Play()
         TweenService:Create(notif, TweenInfo.new(0.2), {BackgroundTransparency = 0}):Play()
@@ -150,15 +175,24 @@ function BottleLib:Notify(msg)
             container.Name = "NotifyContainer"
             container.Size = UDim2.new(0, 260, 1, -20); container.Position = UDim2.new(1, -20, 1, -20)
             container.AnchorPoint = Vector2.new(1, 1); container.BackgroundTransparency = 1; container.ZIndex = 100
-            local layout = Instance.new("UIListLayout", container); layout.SortOrder = Enum.SortOrder.LayoutOrder; layout.VerticalAlignment = Enum.VerticalAlignment.Bottom; layout.Padding = UDim.new(0, 10)
+            local layout = Instance.new("UIListLayout", container); layout.SortOrder = Enum.SortOrder.LayoutOrder
+            layout.VerticalAlignment = Enum.VerticalAlignment.Bottom; layout.Padding = UDim.new(0, 10)
         end
 
         local notif = Instance.new("Frame", container)
         notif.Size = UDim2.new(1, 0, 0, 45); notif.BackgroundColor3 = Color3.fromRGB(20,20,20)
         notif.BackgroundTransparency = 1; Instance.new("UICorner", notif).CornerRadius = UDim.new(0,6)
         local stroke = Instance.new("UIStroke", notif); stroke.Color = Color3.fromHex("#e60852"); stroke.Transparency = 1
-        local icon = Instance.new("TextLabel", notif); icon.Size = UDim2.new(0, 35, 1, 0); icon.BackgroundTransparency = 1; icon.Text = "🔔"; icon.TextSize = 16; icon.TextTransparency = 1
-        local lbl = Instance.new("TextLabel", notif); lbl.Size = UDim2.new(1, -40, 1, 0); lbl.Position = UDim2.new(0, 35, 0, 0); lbl.BackgroundTransparency = 1; lbl.Text = msg; lbl.TextColor3 = Color3.fromRGB(240,240,240); lbl.Font = Enum.Font.GothamMedium; lbl.TextSize = 11; lbl.TextXAlignment = Enum.TextXAlignment.Left; lbl.TextWrapped = true; lbl.TextTransparency = 1
+
+        local icon = Instance.new("TextLabel", notif)
+        icon.Size = UDim2.new(0, 35, 1, 0); icon.BackgroundTransparency = 1; icon.Text = "🔔"
+        icon.TextSize = 16; icon.TextTransparency = 1
+
+        local lbl = Instance.new("TextLabel", notif)
+        lbl.Size = UDim2.new(1, -40, 1, 0); lbl.Position = UDim2.new(0, 35, 0, 0)
+        lbl.BackgroundTransparency = 1; lbl.Text = msg; lbl.TextColor3 = Color3.fromRGB(240,240,240)
+        lbl.Font = Enum.Font.GothamMedium; lbl.TextSize = 11; lbl.TextXAlignment = Enum.TextXAlignment.Left
+        lbl.TextWrapped = true; lbl.TextTransparency = 1
 
         TweenService:Create(notif, TweenInfo.new(0.3), {BackgroundTransparency=0.05}):Play()
         TweenService:Create(stroke, TweenInfo.new(0.3), {Transparency=0}):Play()
@@ -178,6 +212,7 @@ function BottleLib:Notify(msg)
 end
 
 local _loaderGui, _loaderSpinConn, _loaderDotsConn = nil, nil, nil
+
 function BottleLib:ShowLoader(message)
     message = message or "Loading"
     if _loaderGui and _loaderGui.Parent then _loaderGui:Destroy() end
@@ -258,7 +293,7 @@ function BottleLib:HideLoader()
 end
 
 -- ============================================================================
--- [4] KEY AUTHENTICATION SYSTEM
+-- [5] KEY AUTHENTICATION SYSTEM
 -- ============================================================================
 function BottleLib:InitKeySystem()
     local KEY_STORAGE_FILE = "BottleHub_KeyStorage.json"
@@ -384,7 +419,7 @@ function BottleLib:InitKeySystem()
         checking = false 
         if isValid and not isExpired then
             if not isGlobal then SaveKey(input, expTime) end
-            BottleLib.KeyStatus = { Valid=true, ExpiresAt=tonumber(expTime), IsGlobal=isGlobal, Tier=tier or "Basic", KeyName=input, HWID=self:GetHWID() }
+            BottleLib.KeyStatus = { Valid=true, ExpiresAt=tonumber(expTime), IsGlobal=isGlobal, Tier=tier or "Basic", KeyName=input, HWID=BottleLib:GetHWID() }
             VerifyBtn.Text = "Success!"; VerifyBtn.BackgroundColor3 = Color3.fromRGB(46,204,113)
             task.wait(0.5); KeyScreen:Destroy(); VerifyEvent:Fire()
         elseif isExpired then
@@ -400,7 +435,7 @@ function BottleLib:InitKeySystem()
 end
 
 -- ============================================================================
--- [5] PURE UI COMPONENTS (WINDOW & LAYOUT)
+-- [6] PURE UI COMPONENTS (WINDOW & LAYOUT)
 -- ============================================================================
 function BottleLib:CreateWindow(WindowConfig)
     BottleLib.CleanUpEvent:Fire()
@@ -449,6 +484,7 @@ function BottleLib:CreateWindow(WindowConfig)
     ContentContainer.BackgroundTransparency = 0.75
     Instance.new("UICorner", ContentContainer).CornerRadius = UDim.new(0,6)
 
+    -- FPS/PING MONITOR
     local TopStatsLbl = Instance.new("TextLabel", MainFrame)
     TopStatsLbl.Size = UDim2.new(0, 150, 0, 20)
     TopStatsLbl.Position = UDim2.new(1, -20, 0, 10)
@@ -536,7 +572,6 @@ function BottleLib:CreateWindow(WindowConfig)
     
     if WindowConfig.AutoMinimize then ToggleMinimize(true) end
 
-    -- Minimize Listener
     table.insert(BottleLib.Connections, UserInputService.InputBegan:Connect(function(input, gp)
         local isTyping = false
         pcall(function() isTyping = UserInputService:GetFocusedTextBox() ~= nil end)
@@ -869,7 +904,7 @@ function BottleLib:CreateWindow(WindowConfig)
 end
 
 -- ============================================================================
--- [6] UI ELEMENTS API
+-- [7] UI ELEMENTS API
 -- Core logic for creating visual elements inside tabs/folders.
 -- Note: 'checkPerm' securely prevents restricted access right at the UI level.
 -- ============================================================================
