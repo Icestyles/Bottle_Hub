@@ -1,19 +1,28 @@
 --!nocheck
 --[[
-    BOTTLEHUB LIBRARY V13.0 (PURE UI ARCHITECTURE)
-    ─────────────────────────────────────────────────────────────
-    * PURE UI: ไม่มี Logic เกม (Fly/Noclip) ปะปนอยู่ใน Library
-    * SAFE KEYBIND: UI ส่งเฉพาะค่าปุ่มไปให้ Script หลัก (ไม่มี Event ตีกัน)
-    * SEARCH FIX: แก้ไข Dropdown ให้ Filter หาข้อความได้จริง 100%
-    * CLEANUP: เพิ่ม Window:OnClose() ให้ Script หลักรับรู้ตอนกดปิด GUI
+    ===========================================================================
+    ■ BOTTLEHUB UI LIBRARY (PURE ARCHITECTURE)
+    ■ Version: 13.0 (Production Build)
+    ■ Description: 
+      - Clean, modular, separation-of-concerns UI Library.
+      - Built-in GAS Key System (URL Obfuscated).
+      - PURE UI: No internal game logic (e.g., Fly/Noclip). The developer 
+        is responsible for handling input connections and game logic.
+    ===========================================================================
 ]]
 
 local BottleLib = {}
-BottleLib.KeyStatus = { Valid = false, ExpiresAt = nil, IsGlobal = false, Tier = "Basic", KeyName = "Unknown" }
-BottleLib.Connections = {}
-BottleLib.MinimizeKey = Enum.KeyCode.LeftControl -- ปุ่มย่อจอตั้งต้น
-BottleLib.OnCloseEvent = Instance.new("BindableEvent")
 
+-- ============================================================================
+-- [1] INITIALIZATION & GLOBAL SETTINGS
+-- Setup core variables, Roblox services, and cleanup events.
+-- ============================================================================
+BottleLib.KeyStatus = { Valid = false, ExpiresAt = nil, IsGlobal = false, Tier = "Basic", KeyName = "Unknown" }
+BottleLib.Connections = {} -- Stores all RBXScriptConnections for memory management
+BottleLib.MinimizeKey = Enum.KeyCode.LeftControl -- Default key to hide/show the UI
+BottleLib.OnCloseEvent = Instance.new("BindableEvent") -- Fired when the UI is permanently closed
+
+-- Fetching Required Roblox Services
 local CoreGui             = game:GetService("CoreGui")
 local TweenService        = game:GetService("TweenService")
 local UserInputService    = game:GetService("UserInputService")
@@ -27,11 +36,7 @@ local TeleportService     = game:GetService("TeleportService")
 local player = Players.LocalPlayer
 while not player do task.wait(0.1); player = Players.LocalPlayer end
 
-local SECRETS = {
-    GAS_URL = "https://script.google.com/macros/s/AKfycbwqBhoPBpobkOctEfriGGaWDUFWPw_VJSnB2ecPEmneBj0E2tr88L_rlEjxyvcWBDyt/exec",
-    Discord  = "https://discord.gg/JbSUQCxW2w"
-}
-
+-- Memory Leak Prevention: Disconnects all connections when UI reloads or closes
 BottleLib.CleanUpEvent = Instance.new("BindableEvent")
 BottleLib.CleanUpEvent.Event:Connect(function()
     for _, conn in ipairs(BottleLib.Connections) do
@@ -40,21 +45,52 @@ BottleLib.CleanUpEvent.Event:Connect(function()
     BottleLib.Connections = {}
 end)
 
--- สามารถให้ Script หลักเปลี่ยนปุ่มย่อจอได้
+-- @param keycode (Enum.KeyCode): Allows developers to dynamically change the minimize key
 function BottleLib:SetMinimizeKey(keycode)
-    if typeof(keycode) == "EnumItem" then
-        self.MinimizeKey = keycode
-    end
+    if typeof(keycode) == "EnumItem" then self.MinimizeKey = keycode end
 end
 
--- ============================================================
--- 🔔 NOTIFICATION SYSTEM
--- ============================================================
+
+-- ============================================================================
+-- [2] SECURITY & OBFUSCATION
+-- Protects sensitive backend endpoints from plain-text scraping.
+-- ============================================================================
+local __SECRETS = {
+    DISCORD = "https://discord.gg/JbSUQCxW2w",
+    -- The Google Apps Script (GAS) URL is encoded as an array of ASCII byte values.
+    -- This prevents simple "Ctrl+F" scraping by unauthorized users.
+    GAS_BYTES = {
+        104, 116, 116, 112, 115, 58, 47, 47, 115, 99, 114, 105, 112, 116, 46, 103, 
+        111, 111, 103, 108, 101, 46, 99, 111, 109, 47, 109, 97, 99, 114, 111, 115, 
+        47, 115, 47, 65, 75, 102, 121, 99, 98, 119, 113, 66, 104, 111, 80, 66, 112, 
+        111, 98, 107, 79, 99, 116, 69, 102, 114, 105, 71, 71, 97, 87, 68, 85, 70, 
+        87, 80, 119, 95, 86, 74, 83, 110, 66, 50, 101, 99, 80, 69, 109, 110, 101, 
+        66, 106, 48, 69, 50, 116, 114, 56, 56, 76, 95, 114, 108, 69, 106, 120, 121, 
+        118, 99, 87, 66, 68, 121, 116, 47, 101, 120, 101, 99
+    }
+}
+
+-- Decodes the byte array back into a usable URL string dynamically.
+local function GetGasEndpoint()
+    local res = ""
+    for i = 1, #__SECRETS.GAS_BYTES do res = res .. string.char(__SECRETS.GAS_BYTES[i]) end
+    return res
+end
+
+
+-- ============================================================================
+-- [3] UI UTILITIES (NOTIFY & LOADER)
+-- Handles on-screen alerts and loading animations.
+-- ============================================================================
+
+-- @description Displays a toast notification. Handles Permission blocks differently.
+-- @param msg (string): The message to display.
 function BottleLib:Notify(msg)
     local parentGui = (gethui and gethui()) or CoreGui
     local sg = parentGui:FindFirstChild("BOTTLEHUB_MAIN")
     if not sg then return end
 
+    -- Specialized handling for Premium Access block (Center screen, dimmed background)
     local isPermError = (msg == "You do not have permission to use this Premium feature.")
 
     if isPermError then
@@ -100,6 +136,7 @@ function BottleLib:Notify(msg)
             end
         end)
     else
+        -- Standard Notification (Bottom-Right corner stack)
         local container = sg:FindFirstChild("NotifyContainer")
         if not container then
             container = Instance.new("Frame", sg)
@@ -143,7 +180,8 @@ function BottleLib:Notify(msg)
 end
 
 -- ============================================================
--- 🌀 LOADER
+-- LOADER SCREEN
+-- Displays a spinning animation prior to UI injection.
 -- ============================================================
 local _loaderGui, _loaderSpinConn, _loaderDotsConn = nil, nil, nil
 
@@ -226,18 +264,22 @@ function BottleLib:HideLoader()
     end
 end
 
--- ============================================================
--- 🔐 KEY SYSTEM
--- ============================================================
+-- ============================================================================
+-- [4] KEY AUTHENTICATION SYSTEM
+-- Manages HWID fetching, cloud-based VIP checks, and the Key input UI.
+-- ============================================================================
 function BottleLib:InitKeySystem()
     local KEY_STORAGE_FILE = "BottleHub_KeyStorage.json"
 
+    -- Safely retrieve Hardware ID based on executor capabilities
     local function GetHWID()
         if type(gethwid) == "function" then
             local ok, hwid = pcall(gethwid); if ok and hwid and hwid ~= "" then return hwid end
         end
         local ok, id = pcall(function() return RbxAnalyticsService:GetClientId() end)
         if ok and id and id ~= "" then return id end
+        
+        -- Fallback to local file caching if hardware ID is unavailable
         local HWID_FILE = "BottleHub_LocalHWID.txt"
         if isfile and isfile(HWID_FILE) and readfile then
             local rOk, saved = pcall(readfile, HWID_FILE); if rOk and type(saved) == "string" and saved ~= "" then return saved end
@@ -247,6 +289,7 @@ function BottleLib:InitKeySystem()
         return newHwid
     end
 
+    -- Universal HTTP Request function mapping to multiple executors
     local function MakeRequest(url)
         local fn = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
         if not fn then return nil, "Executor not supported" end
@@ -255,8 +298,9 @@ function BottleLib:InitKeySystem()
         return res
     end
 
+    -- Server-side VIP bypass check based on UserId
     local function CheckCloudVIP()
-        local url = string.format("%s?action=check_vip&userId=%s", SECRETS.GAS_URL, tostring(player.UserId))
+        local url = string.format("%s?action=check_vip&userId=%s", GetGasEndpoint(), tostring(player.UserId))
         local res = MakeRequest(url)
         if res and res.Body then
             local ok, data = pcall(function() return HttpService:JSONDecode(res.Body) end)
@@ -265,8 +309,9 @@ function BottleLib:InitKeySystem()
         return false
     end
 
+    -- Validates the submitted key against the backend database
     local function VerifyKeyWithServer(key)
-        local url = string.format("%s?action=verify_key&key=%s&hwid=%s&placeId=%s", SECRETS.GAS_URL, key, GetHWID(), tostring(game.PlaceId))
+        local url = string.format("%s?action=verify_key&key=%s&hwid=%s&placeId=%s", GetGasEndpoint(), key, GetHWID(), tostring(game.PlaceId))
         local res, err = MakeRequest(url)
         if res and res.Body then
             local ok, data = pcall(function() return HttpService:JSONDecode(res.Body) end)
@@ -292,6 +337,7 @@ function BottleLib:InitKeySystem()
     end
     local function RemoveStoredKey() pcall(function() delfile(KEY_STORAGE_FILE) end) end
 
+    -- Execution Flow starts here:
     if CheckCloudVIP() then
         BottleLib.KeyStatus = { Valid=true, ExpiresAt=nil, IsGlobal=true, Tier="Full", KeyName="VIP" }
         return true
@@ -299,13 +345,21 @@ function BottleLib:InitKeySystem()
 
     local d = LoadStoredKey()
     if d and d.hwid == GetHWID() then
-        if d.expiresAt and type(d.expiresAt) == "number" and os.time() >= d.expiresAt then RemoveStoredKey(); player:Kick("BottleHub: Your saved key has expired."); return false end
+        if d.expiresAt and type(d.expiresAt) == "number" and os.time() >= d.expiresAt then 
+            RemoveStoredKey()
+            player:Kick("BottleHub: Your saved key has expired.")
+            return false 
+        end
         local isValid, isExpired, _, expTime, isGlobal, tier = VerifyKeyWithServer(d.key)
-        if isValid and not isExpired then BottleLib.KeyStatus = { Valid=true, ExpiresAt=tonumber(expTime), IsGlobal=isGlobal, Tier=tier or "Basic", KeyName=d.key }; return true end
+        if isValid and not isExpired then 
+            BottleLib.KeyStatus = { Valid=true, ExpiresAt=tonumber(expTime), IsGlobal=isGlobal, Tier=tier or "Basic", KeyName=d.key }
+            return true 
+        end
         RemoveStoredKey()
         if isExpired then player:Kick("BottleHub: Key Expired"); return false end
     end
 
+    -- Key UI Builder
     local VerifyEvent = Instance.new("BindableEvent")
     if CoreGui:FindFirstChild("BOTTLEHUB_KEY_SYSTEM") then CoreGui.BOTTLEHUB_KEY_SYSTEM:Destroy() end
     local KeyScreen = Instance.new("ScreenGui"); KeyScreen.Name = "BOTTLEHUB_KEY_SYSTEM"; KeyScreen.Parent = (gethui and gethui()) or CoreGui
@@ -337,7 +391,7 @@ function BottleLib:InitKeySystem()
 
     local GetKeyBtn = Instance.new("TextButton", MF)
     GetKeyBtn.Text="Get Key"; GetKeyBtn.Size=UDim2.new(1,0,0,20); GetKeyBtn.Position=UDim2.new(0,0,1,-25); GetKeyBtn.BackgroundTransparency=1; GetKeyBtn.TextColor3=Color3.fromRGB(100,100,100); GetKeyBtn.Font=Enum.Font.Gotham; GetKeyBtn.TextSize=12
-    GetKeyBtn.MouseButton1Click:Connect(function() pcall(function() setclipboard(SECRETS.Discord) end); if GetKeyBtn and GetKeyBtn.Parent then GetKeyBtn.Text = "Copied!"; task.wait(1.5); if GetKeyBtn and GetKeyBtn.Parent then GetKeyBtn.Text = "Get Key" end end end)
+    GetKeyBtn.MouseButton1Click:Connect(function() pcall(function() setclipboard(__SECRETS.DISCORD) end); if GetKeyBtn and GetKeyBtn.Parent then GetKeyBtn.Text = "Copied!"; task.wait(1.5); if GetKeyBtn and GetKeyBtn.Parent then GetKeyBtn.Text = "Get Key" end end end)
 
     local function ShakeMF()
         local orig = MF.Position
@@ -376,9 +430,10 @@ function BottleLib:InitKeySystem()
     return true
 end
 
--- ============================================================
--- 🎨 CREATE WINDOW
--- ============================================================
+-- ============================================================================
+-- [5] PURE UI COMPONENTS (WINDOW & LAYOUT)
+-- Builds the master framework, sidebar, dragging logic, and profile data.
+-- ============================================================================
 function BottleLib:CreateWindow(WindowConfig)
     BottleLib.CleanUpEvent:Fire()
 
@@ -400,10 +455,10 @@ function BottleLib:CreateWindow(WindowConfig)
     ScreenGui.ResetOnSpawn     = false
     ScreenGui.Parent           = (gethui and gethui()) or CoreGui
 
-    -- 🔴 [FIX] OnClose Event API
     local WindowObj = {}
     WindowObj.ActiveDropdown = nil
     
+    -- Triggered when the main Red cross (Close) button is clicked
     function WindowObj:OnClose(callback)
         table.insert(BottleLib.Connections, BottleLib.OnCloseEvent.Event:Connect(callback))
     end
@@ -427,6 +482,7 @@ function BottleLib:CreateWindow(WindowConfig)
     ContentContainer.BackgroundTransparency = 0.75
     Instance.new("UICorner", ContentContainer).CornerRadius = UDim.new(0,6)
 
+    -- FPS/PING MONITOR
     local TopStatsLbl = Instance.new("TextLabel", MainFrame)
     TopStatsLbl.Size = UDim2.new(0, 150, 0, 20)
     TopStatsLbl.Position = UDim2.new(1, -20, 0, 10)
@@ -439,6 +495,7 @@ function BottleLib:CreateWindow(WindowConfig)
     TopStatsLbl.TextXAlignment = Enum.TextXAlignment.Right
     TopStatsLbl.ZIndex = 10
 
+    -- Custom Dragging System implementation
     local dragging = false; local dragStart = nil; local startPos = nil
     MainFrame.InputBegan:Connect(function(input, gp)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -461,6 +518,7 @@ function BottleLib:CreateWindow(WindowConfig)
     local ok, wfr = pcall(function() return UserInputService.WindowFocusReleased end)
     if ok and wfr then table.insert(BottleLib.Connections, wfr:Connect(function() dragging = false end)) end
 
+    -- MINIMIZE ICON CONFIGURATION
     local MiniButton = Instance.new("ImageButton", ScreenGui)
     MiniButton.Size = UDim2.new(0,42,0,42); MiniButton.Position = UDim2.new(0,10,0,10)
     MiniButton.Image = "rbxassetid://78690743314126"; MiniButton.BackgroundColor3 = T.Main; MiniButton.Visible = false
@@ -514,14 +572,16 @@ function BottleLib:CreateWindow(WindowConfig)
     
     if WindowConfig.AutoMinimize then ToggleMinimize(true) end
 
-    -- 🔴 Minimize Listener (เฉพาะปุ่มย่อจอที่ Library จัดการให้)
+    -- Main UI Keyboard Listener (Only handles the defined MinimizeKey)
     table.insert(BottleLib.Connections, UserInputService.InputBegan:Connect(function(input, gp)
         local isTyping = false
         pcall(function() isTyping = UserInputService:GetFocusedTextBox() ~= nil end)
         if isTyping then return end 
 
         if BottleLib.MinimizeKey and input.KeyCode == BottleLib.MinimizeKey then
-            if MainFrame and MainFrame.Parent then ToggleMinimize(MainFrame.Visible) end
+            if MainFrame and MainFrame.Parent then 
+                ToggleMinimize(MainFrame.Visible) 
+            end
         end
     end))
 
@@ -539,11 +599,11 @@ function BottleLib:CreateWindow(WindowConfig)
         return b
     end
     
-    -- 🔴 [FIX 4] แก้ปุ่มปิด GUI ให้ส่งสัญญาณ OnClose ไปบอก Script หลัก
+    -- Triggers cleanup and Custom Close logic defined by the developer
     local RedDot = MakeDot(12, Color3.fromRGB(255,69,58), "×"); local YellowDot = MakeDot(32, Color3.fromRGB(255,159,10), "−")
     RedDot.MouseButton1Click:Connect(function() 
         BottleLib.CleanUpEvent:Fire()
-        BottleLib.OnCloseEvent:Fire() -- ส่งสัญญาณ
+        BottleLib.OnCloseEvent:Fire() 
         ScreenGui:Destroy() 
     end)
     YellowDot.MouseButton1Click:Connect(function() ToggleMinimize(true) end)
@@ -774,14 +834,14 @@ function BottleLib:CreateWindow(WindowConfig)
     DiscordBtn.MouseEnter:Connect(function() TweenService:Create(DiscordBtn, TweenInfo.new(0.15), { BackgroundColor3 = Color3.fromRGB(36,36,65), TextColor3 = Color3.fromRGB(160,160,255) }):Play(); TweenService:Create(dbStroke, TweenInfo.new(0.15), { Color = Color3.fromRGB(90,90,180) }):Play() end)
     DiscordBtn.MouseLeave:Connect(function() TweenService:Create(DiscordBtn, TweenInfo.new(0.15), { BackgroundColor3 = Color3.fromRGB(24,24,42), TextColor3 = Color3.fromRGB(120,120,240) }):Play(); TweenService:Create(dbStroke, TweenInfo.new(0.15), { Color = Color3.fromRGB(50,50,90) }):Play() end)
     DiscordBtn.MouseButton1Click:Connect(function()
-        pcall(function() setclipboard(SECRETS.Discord) end)
+        pcall(function() setclipboard(__SECRETS.DISCORD) end)
         local origText = DiscordBtn.Text; local origColor = DiscordBtn.TextColor3
         DiscordBtn.Text = "✅  Copied!"; DiscordBtn.TextColor3 = T.Green
         TweenService:Create(DiscordBtn, TweenInfo.new(0.1), { BackgroundColor3 = Color3.fromRGB(10,28,10) }):Play(); TweenService:Create(dbStroke, TweenInfo.new(0.1), { Color = Color3.fromRGB(30,80,30) }):Play()
-        BottleLib:Notify("Copied Discord Link!")
         task.delay(1.8, function() if not DiscordBtn or not DiscordBtn.Parent then return end; DiscordBtn.Text = origText; DiscordBtn.TextColor3 = origColor; TweenService:Create(DiscordBtn, TweenInfo.new(0.2), { BackgroundColor3 = Color3.fromRGB(24,24,42) }):Play(); TweenService:Create(dbStroke, TweenInfo.new(0.2), { Color = Color3.fromRGB(50,50,90) }):Play() end)
     end)
 
+    -- Dedicated Render Loop for FPS and Network Ping (100% crash proof)
     task.spawn(function()
         local lastUpdate = tick()
         local frames = 0
@@ -809,6 +869,7 @@ function BottleLib:CreateWindow(WindowConfig)
 
     local tabList = {}; local currentTab = nil
 
+    -- Creates a new Tab Button on the Sidebar and its corresponding ScrollFrame
     function WindowObj:CreateTab(TabName)
         local tabBtn = Instance.new("TextButton", TabScrollContainer)
         tabBtn.Size = UDim2.new(0.87,0,0,33); tabBtn.BackgroundColor3 = T.Sidebar; tabBtn.Text = TabName; tabBtn.TextColor3 = T.SubText; tabBtn.Font = Enum.Font.GothamBold; tabBtn.TextSize = 12; tabBtn.AutoButtonColor = false; tabBtn.ZIndex = 4
@@ -846,10 +907,13 @@ function BottleLib:CreateWindow(WindowConfig)
     return WindowObj
 end
 
--- ============================================================
--- 🛠️ BIND UI ELEMENTS
--- ============================================================
+-- ============================================================================
+-- [6] UI ELEMENTS API
+-- Core logic for buttons, sliders, dropdowns, toggles, and keybinds.
+-- ============================================================================
 function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, ScreenGui, GlobalOverlayClose)
+    
+    -- Validator for Premium Tier Access
     local function checkPerm()
         if isPremiumBlock then
             if BottleLib.KeyStatus.Tier == "Full" then return true end
@@ -880,6 +944,7 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
         Instance.new("UICorner", btn).CornerRadius = UDim.new(0,4)
         local dot = Instance.new("Frame", btn); dot.Size = UDim2.new(0,10,0,10); dot.Position = UDim2.new(1,-22,0.5,-5); dot.BackgroundColor3 = init and T.Accent or Color3.fromRGB(60,60,60); Instance.new("UICorner", dot).CornerRadius = UDim.new(1,0)
         local state = init; local ToggleObj = {}
+        
         function ToggleObj:Set(newState)
             state = newState; TweenService:Create(dot, TweenInfo.new(0.18), {BackgroundColor3 = state and T.Accent or Color3.fromRGB(60,60,60)}):Play(); callback(state)
         end
@@ -890,31 +955,17 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
         return ToggleObj
     end
     
-    -- 🔴 [FIX 1] PURE UI: KEYBIND BOX (แค่รับค่า ไม่ทำอย่างอื่น)
+    -- Creates a simple clickable box to bind a key. (No internal game logic)
     function APIObj:CreateKeybindBox(label, defaultKey, callback)
         local frame = Instance.new("Frame", targetContainer)
-        frame.Size = UDim2.new(1,0,0,36)
-        frame.BackgroundColor3 = T.Element
+        frame.Size = UDim2.new(1,0,0,36); frame.BackgroundColor3 = T.Element
         Instance.new("UICorner", frame).CornerRadius = UDim.new(0,4)
         
         local l = Instance.new("TextLabel", frame)
-        l.Size = UDim2.new(0.5,0,1,0)
-        l.Position = UDim2.new(0.02,0,0,0)
-        l.BackgroundTransparency = 1
-        l.Text = label
-        l.TextColor3 = T.SubText
-        l.Font = Enum.Font.GothamMedium
-        l.TextSize = 10
-        l.TextXAlignment = Enum.TextXAlignment.Left
+        l.Size = UDim2.new(0.5,0,1,0); l.Position = UDim2.new(0.02,0,0,0); l.BackgroundTransparency = 1; l.Text = label; l.TextColor3 = T.SubText; l.Font = Enum.Font.GothamMedium; l.TextSize = 10; l.TextXAlignment = Enum.TextXAlignment.Left
         
         local b = Instance.new("TextButton", frame)
-        b.Size = UDim2.new(0.3,0,0.65,0)
-        b.Position = UDim2.new(0.68,0,0.175,0)
-        b.BackgroundColor3 = T.ElemDark
-        b.TextColor3 = T.Accent
-        b.Font = Enum.Font.GothamBold
-        b.Text = (defaultKey and typeof(defaultKey) == "EnumItem") and defaultKey.Name or "NONE"
-        b.AutoButtonColor = false
+        b.Size = UDim2.new(0.3,0,0.65,0); b.Position = UDim2.new(0.68,0,0.175,0); b.BackgroundColor3 = T.ElemDark; b.TextColor3 = T.Accent; b.Font = Enum.Font.GothamBold; b.Text = (defaultKey and typeof(defaultKey) == "EnumItem") and defaultKey.Name or "NONE"; b.AutoButtonColor = false
         Instance.new("UICorner", b).CornerRadius = UDim.new(0,4)
         
         local binding = false
@@ -943,36 +994,22 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
         end)
     end
 
-    -- 🔴 [FIX 1] PURE UI: TOGGLE KEYBIND (รับค่า + เปลี่ยนสีเมื่อถูกสั่งเท่านั้น)
+    -- Toggle combined with a Click-to-bind system.
+    -- @returns RetObj: Allows the developer's Master Handler to visually toggle this UI from the outside.
     function APIObj:CreateToggleKeybind(label, initToggle, defaultKey, callback)
         local frame = Instance.new("Frame", targetContainer)
-        frame.Size = UDim2.new(1,0,0,34)
-        frame.BackgroundColor3 = T.Element
+        frame.Size = UDim2.new(1,0,0,34); frame.BackgroundColor3 = T.Element
         Instance.new("UICorner", frame).CornerRadius = UDim.new(0,4)
         
         local btn = Instance.new("TextButton", frame)
-        btn.Size = UDim2.new(0.65,0,1,0)
-        btn.BackgroundTransparency = 1
-        btn.Text = "    "..label
-        btn.TextColor3 = T.Text
-        btn.Font = Enum.Font.GothamSemibold
-        btn.TextSize = 12
-        btn.TextXAlignment = Enum.TextXAlignment.Left
+        btn.Size = UDim2.new(0.65,0,1,0); btn.BackgroundTransparency = 1; btn.Text = "    "..label; btn.TextColor3 = T.Text; btn.Font = Enum.Font.GothamSemibold; btn.TextSize = 12; btn.TextXAlignment = Enum.TextXAlignment.Left
         
         local dot = Instance.new("Frame", btn)
-        dot.Size = UDim2.new(0,10,0,10)
-        dot.Position = UDim2.new(1,-10,0.5,-5)
-        dot.BackgroundColor3 = initToggle and T.Accent or Color3.fromRGB(60,60,60)
+        dot.Size = UDim2.new(0,10,0,10); dot.Position = UDim2.new(1,-10,0.5,-5); dot.BackgroundColor3 = initToggle and T.Accent or Color3.fromRGB(60,60,60)
         Instance.new("UICorner", dot).CornerRadius = UDim.new(1,0)
         
         local b = Instance.new("TextButton", frame)
-        b.Size = UDim2.new(0.3,0,0.65,0)
-        b.Position = UDim2.new(0.68,0,0.175,0)
-        b.BackgroundColor3 = T.ElemDark
-        b.TextColor3 = T.Accent
-        b.Font = Enum.Font.GothamBold
-        b.Text = (defaultKey and typeof(defaultKey) == "EnumItem") and defaultKey.Name or "NONE"
-        b.AutoButtonColor = false
+        b.Size = UDim2.new(0.3,0,0.65,0); b.Position = UDim2.new(0.68,0,0.175,0); b.BackgroundColor3 = T.ElemDark; b.TextColor3 = T.Accent; b.Font = Enum.Font.GothamBold; b.Text = (defaultKey and typeof(defaultKey) == "EnumItem") and defaultKey.Name or "NONE"; b.AutoButtonColor = false
         Instance.new("UICorner", b).CornerRadius = UDim.new(0,4)
         
         local state = initToggle
@@ -980,14 +1017,15 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
         local binding = false
         local conn = nil
         
+        -- Mouse click behavior
         btn.MouseButton1Click:Connect(function()
             if not checkPerm() then return end
             state = not state
             TweenService:Create(dot, TweenInfo.new(0.18), {BackgroundColor3 = state and T.Accent or Color3.fromRGB(60,60,60)}):Play()
-            -- ส่ง true ไปเพื่อบอกว่าผู้เล่น "คลิกเมาส์" สลับสถานะนะ
-            callback(state, currentKey, true)
+            callback(state, currentKey, true) -- true signifies the state was toggled via UI click
         end)
         
+        -- Bind process behavior
         b.MouseButton1Click:Connect(function()
             if not checkPerm() then return end
             binding = true
@@ -1006,13 +1044,11 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
                         b.Text = input.KeyCode.Name
                         currentKey = input.KeyCode
                     end
-                    -- ส่ง false เพื่อบอกว่า "แค่เปลี่ยนปุ่ม" ยังไม่ได้คลิกเปิดปิด
-                    callback(state, currentKey, false)
+                    callback(state, currentKey, false) -- false signifies only the key was changed, no toggle triggered
                 end
             end)
         end)
         
-        -- อันนี้สำหรับให้ Script หลักสั่งให้จุดเปลี่ยนสี
         local RetObj = {}
         function RetObj:SetState(newState)
             state = newState
@@ -1043,7 +1079,7 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
         trackHit.MouseButton1Up:Connect(function(x, y) dragging = false end)
     end
 
-    -- 🔴 [FIX 3] แก้บัค DROPDOWN SEARCH FILTER ให้ทำงานเป๊ะ 100%
+    -- Standard Dropdown with Exact-match string filtering built-in.
     function APIObj:CreateDropdown(placeholder, optionsList, callback)
         local frame = Instance.new("Frame", targetContainer); frame.Size = UDim2.new(1,0,0,34); frame.BackgroundColor3 = T.Element; Instance.new("UICorner", frame).CornerRadius = UDim.new(0,4)
         local Input = Instance.new("TextBox", frame); Input.Size = UDim2.new(1,-20,1,0); Input.Position = UDim2.new(0,10,0,0); Input.BackgroundTransparency = 1; Input.Text = ""; Input.PlaceholderText = "🔍 "..placeholder; Input.TextColor3 = T.Text; Input.PlaceholderColor3 = T.SubText; Input.Font = Enum.Font.GothamSemibold; Input.TextSize = 11; Input.TextXAlignment = Enum.TextXAlignment.Left
@@ -1056,7 +1092,6 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
             local count = 0
             local ft = string.lower(filterText or "")
             for _, item in ipairs(optionsList) do
-                -- ใช้ true ใน string.find เพื่อจับคู่ข้อความแบบเป๊ะๆ (Plain text) แก้บัค Error
                 if ft == "" or string.find(string.lower(item), ft, 1, true) then
                     count = count + 1
                     local b = Instance.new("TextButton", DScroll); b.Size = UDim2.new(1,0,0,30); b.BackgroundColor3 = Color3.fromRGB(22,22,22); b.Text = "  "..item; b.TextColor3 = T.Text; b.Font = Enum.Font.GothamMedium; b.TextSize = 11; b.TextXAlignment = Enum.TextXAlignment.Left; b.ZIndex = 82
@@ -1103,17 +1138,6 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
             b.FocusLost:Connect(function() local v = tonumber(b.Text); if v then cb(v) else b.Text = tostring(defVal or 0) end end)
         end
         Pair(l1, default1 or 0, 0.02, callback1); Pair(l2, default2 or 0, 0.52, callback2)
-    end
-
-    function APIObj:CreateButton(text, callback)
-        local btn = Instance.new("TextButton", targetContainer); btn.Size = UDim2.new(1,0,0,34); btn.BackgroundColor3 = T.Element; btn.Text = text; btn.TextColor3 = T.Text; btn.Font = Enum.Font.GothamSemibold; btn.TextSize = 12; btn.AutoButtonColor = false; Instance.new("UICorner", btn).CornerRadius = UDim.new(0,4)
-        btn.MouseButton1Click:Connect(function()
-            if not checkPerm() then return end
-            local t1 = TweenService:Create(btn, TweenInfo.new(0.1), {BackgroundColor3=T.Accent})
-            local t2 = TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3=T.Element})
-            t1:Play(); t1.Completed:Connect(function() t2:Play() end); callback(btn)
-        end)
-        local BtnObj = {}; function BtnObj:Set(newText) btn.Text = newText end; return BtnObj
     end
 
     function APIObj:CreateSelector(label, options, multiSelect, callback)
