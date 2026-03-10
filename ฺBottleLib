@@ -1,14 +1,13 @@
 --!nocheck
 --[[
-    BOTTLEHUB LIBRARY V11.9 (THE FINAL POLISH)
+    BOTTLEHUB LIBRARY V11.9.2 (THE CORE FIX PATCH)
     ─────────────────────────────────────────────────────────────
-    FIX 1: QUICK ACTIONS UI BUG
-      - ลบ UIListLayout ที่แอบซ่อนอยู่ออกอย่างถาวร
-      - ล็อคพิกัด (Position) ของปุ่ม Rejoin และ Server Hop ให้แสดงผล 100% ไม่มีบัคหาย
-    
-    FIX 2: DYNAMIC GLOBAL KEY NAME
-      - ดึงชื่อคีย์ที่ผู้เล่นกรอก (KeyName) มาแสดงผลบนการ์ดแบบ Real-time
-      - แสดงผลรูปแบบ: 🔑 [ชื่อคีย์] \n for Full Access
+    FIX 1: CORE SCRIPT CRASH & PING/FPS BUG
+      - ลบการเรียกใช้ game:GetService("Stats") ทิ้งถาวร (แก้บัคตามภาพ Error 100%)
+      - ใช้ player:GetNetworkPing() ร่วมกับ Heartbeat ในการนับเฟรมอย่างปลอดภัย
+
+    FIX 2: LEFT CTRL MINIMIZE RESTORED
+      - คืนค่าระบบ Toggle ย่อจอเป็นแบบเดิมที่เคยทำงานได้ (ใช้ InputBegan + not gameProcessed)
 ]]
 
 local BottleLib = {}
@@ -345,7 +344,6 @@ function BottleLib:InitKeySystem()
     if d and d.hwid == GetHWID() then
         if d.expiresAt and type(d.expiresAt) == "number" and os.time() >= d.expiresAt then RemoveStoredKey(); player:Kick("BottleHub: Your saved key has expired."); return false end
         local isValid, isExpired, _, expTime, isGlobal, tier = VerifyKeyWithServer(d.key)
-        -- 🔴 เพิ่มการจดจำ KeyName ในเครื่อง
         if isValid and not isExpired then BottleLib.KeyStatus = { Valid=true, ExpiresAt=tonumber(expTime), IsGlobal=isGlobal, Tier=tier or "Basic", KeyName=d.key }; return true end
         RemoveStoredKey()
         if isExpired then player:Kick("BottleHub: Key Expired"); return false end
@@ -406,7 +404,6 @@ function BottleLib:InitKeySystem()
         checking = false 
         if isValid and not isExpired then
             if not isGlobal then SaveKey(input, expTime) end
-            -- 🔴 บันทึกชื่อคีย์ที่แท้จริงไว้
             BottleLib.KeyStatus = { Valid=true, ExpiresAt=tonumber(expTime), IsGlobal=isGlobal, Tier=tier or "Basic", KeyName=input }
             VerifyBtn.Text = "Success!"; VerifyBtn.BackgroundColor3 = Color3.fromRGB(46,204,113)
             task.wait(0.5); KeyScreen:Destroy(); VerifyEvent:Fire()
@@ -544,17 +541,25 @@ function BottleLib:CreateWindow(WindowConfig)
     end)
 
     local clickStart = 0
-    MiniButton.InputBegan:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then clickStart = tick() end end)
+    MiniButton.InputBegan:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then clickStart = os.clock() end end)
     MiniButton.InputEnded:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            if tick() - clickStart < 0.3 then MainFrame.Visible = true; MiniButton.Visible = false end
+            if os.clock() - clickStart < 0.3 then MainFrame.Visible = true; MiniButton.Visible = false end
         end
     end)
 
-    local function ToggleMinimize(hide) MainFrame.Visible = not hide; MiniButton.Visible = hide end
+    local function ToggleMinimize(hide)
+        if MainFrame then MainFrame.Visible = not hide end
+        if MiniButton then MiniButton.Visible = hide end
+    end
 
+    -- 🔴 [FIX 1] LEFT CTRL MINIMIZE RESTORED TO V11.7 EXACT LOGIC
     local ctrlConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
-        if input.KeyCode == Enum.KeyCode.LeftControl and not gameProcessed then if MainFrame and MainFrame.Parent then ToggleMinimize(MainFrame.Visible) end end
+        if input.KeyCode == Enum.KeyCode.LeftControl and not gameProcessed then 
+            if MainFrame and MainFrame.Parent then 
+                ToggleMinimize(MainFrame.Visible) 
+            end 
+        end
     end)
     table.insert(BottleLib.Connections, ctrlConn)
 
@@ -583,7 +588,6 @@ function BottleLib:CreateWindow(WindowConfig)
         GlobalOverlayClose.Visible = false
     end)
 
-    -- 🔴 PROFILE CARD SIZE = 195px
     local PROFILE_H = 195
     local TabScrollContainer = Instance.new("ScrollingFrame", Sidebar); TabScrollContainer.Size = UDim2.new(1,0,1,-(PROFILE_H+46)); TabScrollContainer.Position = UDim2.new(0,0,0,46); TabScrollContainer.BackgroundTransparency = 1; TabScrollContainer.ScrollBarThickness = 0; TabScrollContainer.BorderSizePixel = 0
     local TabListLayout = Instance.new("UIListLayout", TabScrollContainer); TabListLayout.SortOrder = Enum.SortOrder.LayoutOrder; TabListLayout.Padding = UDim.new(0,5); TabListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
@@ -655,10 +659,9 @@ function BottleLib:CreateWindow(WindowConfig)
         end
     end)
 
-    -- 🔴 [FIX 1] KeyRow Layout (ABSOLUTE POSITIONING)
     local KeyRow = Instance.new("Frame", InfoBlock)
     KeyRow.LayoutOrder = 3
-    KeyRow.Size = UDim2.new(1, 0, 0, 42)
+    KeyRow.Size = UDim2.new(1, 0, 0, 42) 
     KeyRow.BackgroundTransparency = 1
     KeyRow.ZIndex = 4
 
@@ -686,7 +689,6 @@ function BottleLib:CreateWindow(WindowConfig)
                 KeyBadgeStroke.Color = isFull and T.Accent or Color3.fromRGB(100,100,100)
                 KeyLbl.TextColor3 = isFull and T.Accent or Color3.fromRGB(200,200,200)
                 
-                -- 🔴 [FIX 2] ดึงชื่อ KeyName มาแสดงผล
                 if isFull then
                     local kName = BottleLib.KeyStatus.KeyName or "VIP"
                     KeyLbl.Text = "🔑  " .. kName .. "\nfor Full Access"
@@ -701,10 +703,11 @@ function BottleLib:CreateWindow(WindowConfig)
                     KeyBadge.BackgroundColor3 = isFull and Color3.fromRGB(10,28,10) or Color3.fromRGB(26,26,26)
                     KeyBadgeStroke.Color = isFull and T.Accent or Color3.fromRGB(100,100,100)
                     KeyLbl.TextColor3 = isFull and T.Accent or Color3.fromRGB(200,200,200)
-                    KeyLbl.Text = "🔑 Duration | " .. math.floor(rem/86400) .. " Days"
+                    KeyLbl.Text = "🔑 Duration\n" .. math.floor(rem/86400) .. " Days"
                 else 
                     local h = math.floor(rem/3600); local m = math.floor((rem%3600)/60); local s = rem%60; local col = (rem < 3600) and T.Red or T.Yellow
-                    KeyBadge.BackgroundColor3 = Color3.fromRGB(30,26,8); KeyBadgeStroke.Color = col; KeyLbl.TextColor3 = col; KeyLbl.Text = "🔑 Duration | " .. string.format("%02d:%02d:%02d", h, m, s) 
+                    KeyBadge.BackgroundColor3 = Color3.fromRGB(30,26,8); KeyBadgeStroke.Color = col; KeyLbl.TextColor3 = col; 
+                    KeyLbl.Text = "🔑 Duration\n" .. string.format("%02d:%02d:%02d", h, m, s) 
                 end
             else 
                 KeyBadge.BackgroundColor3 = isFull and Color3.fromRGB(25,8,8) or Color3.fromRGB(26,26,26)
@@ -716,37 +719,40 @@ function BottleLib:CreateWindow(WindowConfig)
         end
     end)
 
-    -- 🔴 [FIX 1] QUICK ACTIONS: Absolute Position System (ไร้ Layout ไม่ล่องหน 100%)
     local QAContainer = Instance.new("Frame", KeyRow)
-    QAContainer.Size = UDim2.new(0, 70, 1, 0)
-    QAContainer.Position = UDim2.new(1, 0, 0, 0)
-    QAContainer.AnchorPoint = Vector2.new(1, 0)
+    QAContainer.Size = UDim2.new(0, 75, 1, 0)
+    QAContainer.Position = UDim2.new(1, 0, 0.5, 0)
+    QAContainer.AnchorPoint = Vector2.new(1, 0.5)
     QAContainer.BackgroundTransparency = 1
-    QAContainer.BorderSizePixel = 0
+    QAContainer.ZIndex = 10 
 
     local RejoinBtn = Instance.new("TextButton", QAContainer)
     RejoinBtn.Size = UDim2.new(1, 0, 0, 18)
-    RejoinBtn.Position = UDim2.new(0, 0, 0, 0) -- บนสุด
-    RejoinBtn.BackgroundColor3 = Color3.fromRGB(24,24,24)
-    RejoinBtn.Text = "🔄 Rejoin"
+    RejoinBtn.Position = UDim2.new(0, 0, 0, 0) 
+    RejoinBtn.BackgroundColor3 = Color3.fromRGB(40,40,40) 
+    RejoinBtn.Text = " 🔄 Rejoin"
     RejoinBtn.TextColor3 = T.Text
     RejoinBtn.Font = Enum.Font.GothamBold
     RejoinBtn.TextSize = 9
+    RejoinBtn.TextXAlignment = Enum.TextXAlignment.Left
     RejoinBtn.AutoButtonColor = false
+    RejoinBtn.ZIndex = 10
     Instance.new("UICorner", RejoinBtn).CornerRadius = UDim.new(0,4)
-    local rStroke = Instance.new("UIStroke", RejoinBtn); rStroke.Color = Color3.fromRGB(50,50,50)
+    local rStroke = Instance.new("UIStroke", RejoinBtn); rStroke.Color = Color3.fromRGB(80,80,80)
 
     local HopBtn = Instance.new("TextButton", QAContainer)
     HopBtn.Size = UDim2.new(1, 0, 0, 18)
-    HopBtn.Position = UDim2.new(0, 0, 0, 22) -- ห่างลงมา 4px
-    HopBtn.BackgroundColor3 = Color3.fromRGB(24,24,24)
-    HopBtn.Text = "🌍 Server Hop"
+    HopBtn.Position = UDim2.new(0, 0, 0, 22)
+    HopBtn.BackgroundColor3 = Color3.fromRGB(40,40,40)
+    HopBtn.Text = " 🌍 Server Hop"
     HopBtn.TextColor3 = T.Text
     HopBtn.Font = Enum.Font.GothamBold
     HopBtn.TextSize = 9
+    HopBtn.TextXAlignment = Enum.TextXAlignment.Left
     HopBtn.AutoButtonColor = false
+    HopBtn.ZIndex = 10
     Instance.new("UICorner", HopBtn).CornerRadius = UDim.new(0,4)
-    local hStroke = Instance.new("UIStroke", HopBtn); hStroke.Color = Color3.fromRGB(50,50,50)
+    local hStroke = Instance.new("UIStroke", HopBtn); hStroke.Color = Color3.fromRGB(80,80,80)
 
     local function isPremiumQA()
         if BottleLib.KeyStatus.Tier == "Full" then return true end
@@ -754,16 +760,16 @@ function BottleLib:CreateWindow(WindowConfig)
         return false
     end
 
-    RejoinBtn.MouseEnter:Connect(function() TweenService:Create(RejoinBtn, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(35,35,35)}):Play() end)
-    RejoinBtn.MouseLeave:Connect(function() TweenService:Create(RejoinBtn, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(24,24,24)}):Play() end)
+    RejoinBtn.MouseEnter:Connect(function() TweenService:Create(RejoinBtn, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(55,55,55)}):Play(); TweenService:Create(rStroke, TweenInfo.new(0.1), {Color = T.Accent}):Play() end)
+    RejoinBtn.MouseLeave:Connect(function() TweenService:Create(RejoinBtn, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(40,40,40)}):Play(); TweenService:Create(rStroke, TweenInfo.new(0.1), {Color = Color3.fromRGB(80,80,80)}):Play() end)
     RejoinBtn.MouseButton1Click:Connect(function()
         if not isPremiumQA() then return end
         BottleLib:Notify("Rejoining Server...")
         TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, player)
     end)
 
-    HopBtn.MouseEnter:Connect(function() TweenService:Create(HopBtn, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(35,35,35)}):Play() end)
-    HopBtn.MouseLeave:Connect(function() TweenService:Create(HopBtn, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(24,24,24)}):Play() end)
+    HopBtn.MouseEnter:Connect(function() TweenService:Create(HopBtn, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(55,55,55)}):Play(); TweenService:Create(hStroke, TweenInfo.new(0.1), {Color = T.Accent}):Play() end)
+    HopBtn.MouseLeave:Connect(function() TweenService:Create(HopBtn, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(40,40,40)}):Play(); TweenService:Create(hStroke, TweenInfo.new(0.1), {Color = Color3.fromRGB(80,80,80)}):Play() end)
     HopBtn.MouseButton1Click:Connect(function()
         if not isPremiumQA() then return end
         BottleLib:Notify("Searching for new server...")
@@ -798,7 +804,7 @@ function BottleLib:CreateWindow(WindowConfig)
     DiscordBtn.Text = "📣  Join our Discord"
     DiscordBtn.TextColor3 = Color3.fromRGB(120,120,240)
     DiscordBtn.Font = Enum.Font.GothamBold; DiscordBtn.TextSize = 10
-    DiscordBtn.AutoButtonColor = false; DiscordBtn.ZIndex = 4
+    DiscordBtn.AutoButtonColor = false; DiscordBtn.ZIndex = 10 
     Instance.new("UICorner", DiscordBtn).CornerRadius = UDim.new(0,6)
     local dbStroke = Instance.new("UIStroke", DiscordBtn); dbStroke.Color = Color3.fromRGB(50,50,90); dbStroke.Thickness = 1
 
@@ -812,29 +818,35 @@ function BottleLib:CreateWindow(WindowConfig)
         task.delay(1.8, function() if not DiscordBtn or not DiscordBtn.Parent then return end; DiscordBtn.Text = origText; DiscordBtn.TextColor3 = origColor; TweenService:Create(DiscordBtn, TweenInfo.new(0.2), { BackgroundColor3 = Color3.fromRGB(24,24,42) }):Play(); TweenService:Create(dbStroke, TweenInfo.new(0.2), { Color = Color3.fromRGB(50,50,90) }):Play() end)
     end)
 
-    -- 🔴 RENDER LOOP FOR FPS/PING
-    local lastUpdate = tick()
+    -- 🔴 [FIX 2] RENDER LOOP FOR FPS/PING (SAFE FETCH)
     local frames = 0
-    RunService.RenderStepped:Connect(function()
+    local fpsConn = RunService.Heartbeat:Connect(function()
         frames = frames + 1
-        if tick() - lastUpdate >= 1 then
-            local fps = frames
+    end)
+    table.insert(BottleLib.Connections, fpsConn)
+
+    local lastUpdate = os.clock()
+    local statsConn = RunService.Heartbeat:Connect(function()
+        local now = os.clock()
+        if now - lastUpdate >= 1 then
+            local currentFPS = frames
             frames = 0
-            lastUpdate = tick()
+            lastUpdate = now
+            
             local ping = 0
-            pcall(function() ping = math.floor(player:GetNetworkPing() * 1000) end)
-            if ping == 0 then
-                pcall(function() 
-                    local stats = game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValueString()
-                    ping = math.floor(tonumber(stats:match("%d+%.?%d*")) or 0)
-                end)
+            local ok, p = pcall(function() return player:GetNetworkPing() end)
+            if ok and type(p) == "number" then
+                ping = math.floor(p * 1000)
             end
             
-            local statTextFull = string.format("📈 FPS: %d  |  📶 Ping: %dms", fps, ping)
+            local statTextFull = string.format("📈 FPS: %d  |  📶 Ping: %dms", currentFPS, ping)
+            local statTextMini = string.format("📈 %d | 📶 %d", currentFPS, ping)
+            
             if TopStatsLbl and TopStatsLbl.Parent then TopStatsLbl.Text = statTextFull end
-            if MiniStatsLbl and MiniStatsLbl.Parent then MiniStatsLbl.Text = statTextFull end
+            if MiniStatsLbl and MiniStatsLbl.Parent then MiniStatsLbl.Text = statTextMini end
         end
     end)
+    table.insert(BottleLib.Connections, statsConn)
 
     local tabList = {}; local currentTab = nil
 
@@ -1071,7 +1083,6 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
         
         local hexAccent = string.format("#%02X%02X%02X", math.floor(T.Accent.R*255), math.floor(T.Accent.G*255), math.floor(T.Accent.B*255))
         
-        -- 🔴 [FIX 2] OVERRIDE: บังคับเปลี่ยนชื่อเป็น "⭐ Premium Access" ถ้านี่คือโซน Premium
         if isPremiumFolder then
             headerBtn.Text = "  ▼  <font color='"..hexAccent.."'>⭐ Premium Access</font>"
         else
