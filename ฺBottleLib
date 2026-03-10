@@ -1,36 +1,18 @@
 --!nocheck
 --[[
-    BOTTLEHUB LIBRARY V12.9 (THE MASTER LOGIC PATCH)
+    BOTTLEHUB LIBRARY V13.0 (PURE UI ARCHITECTURE)
     ─────────────────────────────────────────────────────────────
-    BUG FIX 1: KEYBIND RESURRECTION
-      - ลบ `if not gp then` ออกอย่างถาวร ใช้แค่ `isTyping` เป็น Guard
-      - การกดปุ่มบนคีย์บอร์ดจะตอบสนอง 100% และซิงค์กับ UI ทันที
-    
-    BUG FIX 2: CLEAN EXIT (GUI CLOSE)
-      - เมื่อกดปุ่มกากบาทสีแดง จะทำการรัน ToggleFly(false), ToggleNoclip(false)
-      - คืนค่า WalkSpeed (16) และ JumpPower (50) ก่อนทำลาย GUI
-    
-    BUG FIX 3: DROPDOWN FILTER
-      - ใช้ string.find(..., 1, true) เพื่อป้องกัน Lua Pattern รวน
-      - ลบเงื่อนไขที่ขัดขวางการ Filter ออก ทำให้ค้นหาแบบ Real-time ได้จริง
+    * PURE UI: ไม่มี Logic เกม (Fly/Noclip) ปะปนอยู่ใน Library
+    * SAFE KEYBIND: UI ส่งเฉพาะค่าปุ่มไปให้ Script หลัก (ไม่มี Event ตีกัน)
+    * SEARCH FIX: แก้ไข Dropdown ให้ Filter หาข้อความได้จริง 100%
+    * CLEANUP: เพิ่ม Window:OnClose() ให้ Script หลักรับรู้ตอนกดปิด GUI
 ]]
 
 local BottleLib = {}
 BottleLib.KeyStatus = { Valid = false, ExpiresAt = nil, IsGlobal = false, Tier = "Basic", KeyName = "Unknown" }
 BottleLib.Connections = {}
-
--- Global Settings
-BottleLib.Settings = {
-    MinimizeKey = Enum.KeyCode.LeftControl,
-    AutoMinimize = false,
-    AntiAFK = false,
-    WalkSpeed = { Enabled = false, Key = nil, Value = 16 },
-    JumpPower = { Enabled = false, Key = nil, Value = 50 },
-    Fly = { Enabled = false, Key = nil, Speed = 50 },
-    Noclip = { Enabled = false, Key = nil }
-}
-
-BottleLib.ToggleObjects = {}
+BottleLib.MinimizeKey = Enum.KeyCode.LeftControl -- ปุ่มย่อจอตั้งต้น
+BottleLib.OnCloseEvent = Instance.new("BindableEvent")
 
 local CoreGui             = game:GetService("CoreGui")
 local TweenService        = game:GetService("TweenService")
@@ -41,7 +23,6 @@ local Players             = game:GetService("Players")
 local RbxAnalyticsService = game:GetService("RbxAnalyticsService")
 local MarketplaceService  = game:GetService("MarketplaceService")
 local TeleportService     = game:GetService("TeleportService")
-local VirtualUser         = game:GetService("VirtualUser")
 
 local player = Players.LocalPlayer
 while not player do task.wait(0.1); player = Players.LocalPlayer end
@@ -59,92 +40,10 @@ BottleLib.CleanUpEvent.Event:Connect(function()
     BottleLib.Connections = {}
 end)
 
--- ============================================================
--- 🛠️ UTILITY FUNCTIONS (FLY & NOCLIP)
--- ============================================================
-local originalCollision = {}
-local noclipConnection = nil
-
-local function ScanCollisions()
-    local char = player.Character
-    if not char then return end
-    if not BottleLib.Settings.Noclip.Enabled then
-        for _, part in ipairs(char:GetDescendants()) do
-            if part:IsA("BasePart") then
-                originalCollision[part] = part.CanCollide
-            end
-        end
-    end
-end
-
-task.spawn(function()
-    while task.wait(30) do ScanCollisions() end
-end)
-
-local function ToggleNoclip(state)
-    local char = player.Character
-    if not char then return end
-
-    if state then
-        ScanCollisions() 
-        if not noclipConnection then
-            noclipConnection = RunService.Stepped:Connect(function()
-                if player.Character then
-                    for _, part in ipairs(player.Character:GetDescendants()) do
-                        if part:IsA("BasePart") then
-                            part.CanCollide = false
-                        end
-                    end
-                end
-            end)
-        end
-    else
-        if noclipConnection then
-            noclipConnection:Disconnect()
-            noclipConnection = nil
-        end
-        for part, origState in pairs(originalCollision) do
-            if part and part.Parent then
-                part.CanCollide = origState
-            end
-        end
-    end
-end
-
-local flyConn = nil
-local function ToggleFly(state)
-    local char = player.Character
-    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return end
-    
-    if state then
-        hrp.Anchored = true
-        if not flyConn then
-            flyConn = RunService.RenderStepped:Connect(function(dt)
-                local c = player.Character
-                local root = c and c:FindFirstChild("HumanoidRootPart")
-                if not root then return end
-                
-                local cam = workspace.CurrentCamera
-                local moveDir = Vector3.new(0,0,0)
-                
-                if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + cam.CFrame.LookVector end
-                if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - cam.CFrame.LookVector end
-                if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - cam.CFrame.RightVector end
-                if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + cam.CFrame.RightVector end
-                if UserInputService:IsKeyDown(Enum.KeyCode.Space) or UserInputService:IsKeyDown(Enum.KeyCode.E) then moveDir = moveDir + Vector3.new(0, 1, 0) end
-                if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) or UserInputService:IsKeyDown(Enum.KeyCode.Q) then moveDir = moveDir - Vector3.new(0, 1, 0) end
-                
-                if moveDir.Magnitude > 0 then moveDir = moveDir.Unit end
-                root.CFrame = root.CFrame + (moveDir * BottleLib.Settings.Fly.Speed * dt)
-            end)
-        end
-    else
-        hrp.Anchored = false
-        if flyConn then
-            flyConn:Disconnect()
-            flyConn = nil
-        end
+-- สามารถให้ Script หลักเปลี่ยนปุ่มย่อจอได้
+function BottleLib:SetMinimizeKey(keycode)
+    if typeof(keycode) == "EnumItem" then
+        self.MinimizeKey = keycode
     end
 end
 
@@ -501,6 +400,14 @@ function BottleLib:CreateWindow(WindowConfig)
     ScreenGui.ResetOnSpawn     = false
     ScreenGui.Parent           = (gethui and gethui()) or CoreGui
 
+    -- 🔴 [FIX] OnClose Event API
+    local WindowObj = {}
+    WindowObj.ActiveDropdown = nil
+    
+    function WindowObj:OnClose(callback)
+        table.insert(BottleLib.Connections, BottleLib.OnCloseEvent.Event:Connect(callback))
+    end
+
     local MainFrame = Instance.new("Frame", ScreenGui)
     MainFrame.Name = "MainFrame" 
     MainFrame.Size = UDim2.new(0,600,0,480); MainFrame.Position = UDim2.new(0.5,-300,0.5,-240)
@@ -605,58 +512,16 @@ function BottleLib:CreateWindow(WindowConfig)
         if MiniButton then MiniButton.Visible = hide end
     end
     
-    if WindowConfig.AutoMinimize or BottleLib.Settings.AutoMinimize then ToggleMinimize(true) end
+    if WindowConfig.AutoMinimize then ToggleMinimize(true) end
 
-    -- 🔴 [FIX 1] CENTRAL MASTER INPUT HANDLER (ถอด not gp ออก)
-    table.insert(BottleLib.Connections, UserInputService.InputBegan:Connect(function(input)
+    -- 🔴 Minimize Listener (เฉพาะปุ่มย่อจอที่ Library จัดการให้)
+    table.insert(BottleLib.Connections, UserInputService.InputBegan:Connect(function(input, gp)
         local isTyping = false
         pcall(function() isTyping = UserInputService:GetFocusedTextBox() ~= nil end)
         if isTyping then return end 
 
-        if BottleLib.Settings.MinimizeKey and input.KeyCode == BottleLib.Settings.MinimizeKey then
+        if BottleLib.MinimizeKey and input.KeyCode == BottleLib.MinimizeKey then
             if MainFrame and MainFrame.Parent then ToggleMinimize(MainFrame.Visible) end
-        end
-
-        if BottleLib.Settings.WalkSpeed.Key and input.KeyCode == BottleLib.Settings.WalkSpeed.Key then
-            BottleLib.Settings.WalkSpeed.Enabled = not BottleLib.Settings.WalkSpeed.Enabled
-            local hum = player.Character and player.Character:FindFirstChild("Humanoid")
-            if hum then pcall(function() hum.WalkSpeed = BottleLib.Settings.WalkSpeed.Enabled and BottleLib.Settings.WalkSpeed.Value or 16 end) end
-            if BottleLib.ToggleObjects["WalkSpeed"] then BottleLib.ToggleObjects["WalkSpeed"]:SetState(BottleLib.Settings.WalkSpeed.Enabled) end
-        end
-        
-        if BottleLib.Settings.JumpPower.Key and input.KeyCode == BottleLib.Settings.JumpPower.Key then
-            BottleLib.Settings.JumpPower.Enabled = not BottleLib.Settings.JumpPower.Enabled
-            local hum = player.Character and player.Character:FindFirstChild("Humanoid")
-            if hum then pcall(function() hum.JumpPower = BottleLib.Settings.JumpPower.Enabled and BottleLib.Settings.JumpPower.Value or 50 end) end
-            if BottleLib.ToggleObjects["JumpPower"] then BottleLib.ToggleObjects["JumpPower"]:SetState(BottleLib.Settings.JumpPower.Enabled) end
-        end
-        
-        if BottleLib.Settings.Fly.Key and input.KeyCode == BottleLib.Settings.Fly.Key then
-            BottleLib.Settings.Fly.Enabled = not BottleLib.Settings.Fly.Enabled
-            ToggleFly(BottleLib.Settings.Fly.Enabled)
-            if BottleLib.ToggleObjects["Fly"] then BottleLib.ToggleObjects["Fly"]:SetState(BottleLib.Settings.Fly.Enabled) end
-        end
-        
-        if BottleLib.Settings.Noclip.Key and input.KeyCode == BottleLib.Settings.Noclip.Key then
-            BottleLib.Settings.Noclip.Enabled = not BottleLib.Settings.Noclip.Enabled
-            ToggleNoclip(BottleLib.Settings.Noclip.Enabled)
-            if BottleLib.ToggleObjects["Noclip"] then BottleLib.ToggleObjects["Noclip"]:SetState(BottleLib.Settings.Noclip.Enabled) end
-        end
-    end))
-
-    table.insert(BottleLib.Connections, RunService.Heartbeat:Connect(function()
-        local char = player.Character
-        local hum = char and char:FindFirstChild("Humanoid")
-        if hum then
-            if BottleLib.Settings.WalkSpeed.Enabled then pcall(function() hum.WalkSpeed = BottleLib.Settings.WalkSpeed.Value end) end
-            if BottleLib.Settings.JumpPower.Enabled then pcall(function() hum.JumpPower = BottleLib.Settings.JumpPower.Value end) end
-        end
-    end))
-    
-    table.insert(BottleLib.Connections, player.Idled:Connect(function()
-        if BottleLib.Settings.AntiAFK then
-            VirtualUser:CaptureController()
-            VirtualUser:ClickButton2(Vector2.new())
         end
     end))
 
@@ -674,31 +539,16 @@ function BottleLib:CreateWindow(WindowConfig)
         return b
     end
     
-    -- 🔴 [FIX 2] CLEANUP ON CLOSE
-    local RedDot = MakeDot(12, Color3.fromRGB(255,69,58), "×")
+    -- 🔴 [FIX 4] แก้ปุ่มปิด GUI ให้ส่งสัญญาณ OnClose ไปบอก Script หลัก
+    local RedDot = MakeDot(12, Color3.fromRGB(255,69,58), "×"); local YellowDot = MakeDot(32, Color3.fromRGB(255,159,10), "−")
     RedDot.MouseButton1Click:Connect(function() 
-        BottleLib.Settings.WalkSpeed.Enabled = false
-        BottleLib.Settings.JumpPower.Enabled = false
-        pcall(function() 
-            if player.Character and player.Character:FindFirstChild("Humanoid") then
-                player.Character.Humanoid.WalkSpeed = 16
-                player.Character.Humanoid.JumpPower = 50
-            end
-        end)
-        BottleLib.Settings.Fly.Enabled = false
-        ToggleFly(false)
-        BottleLib.Settings.Noclip.Enabled = false
-        ToggleNoclip(false)
-        
         BottleLib.CleanUpEvent:Fire()
+        BottleLib.OnCloseEvent:Fire() -- ส่งสัญญาณ
         ScreenGui:Destroy() 
     end)
-    
-    local YellowDot = MakeDot(32, Color3.fromRGB(255,159,10), "−")
     YellowDot.MouseButton1Click:Connect(function() ToggleMinimize(true) end)
     RedDot.ZIndex = 15; YellowDot.ZIndex = 15
 
-    local WindowObj = {}; WindowObj.ActiveDropdown = nil
     local GlobalOverlayClose = Instance.new("TextButton", ScreenGui); GlobalOverlayClose.Size = UDim2.new(1,0,1,0); GlobalOverlayClose.BackgroundTransparency = 1; GlobalOverlayClose.Text = ""; GlobalOverlayClose.ZIndex = 79; GlobalOverlayClose.Visible = false
     GlobalOverlayClose.MouseButton1Click:Connect(function()
         if WindowObj.ActiveDropdown then WindowObj.ActiveDropdown.Visible = false; WindowObj.ActiveDropdown = nil end
@@ -928,7 +778,33 @@ function BottleLib:CreateWindow(WindowConfig)
         local origText = DiscordBtn.Text; local origColor = DiscordBtn.TextColor3
         DiscordBtn.Text = "✅  Copied!"; DiscordBtn.TextColor3 = T.Green
         TweenService:Create(DiscordBtn, TweenInfo.new(0.1), { BackgroundColor3 = Color3.fromRGB(10,28,10) }):Play(); TweenService:Create(dbStroke, TweenInfo.new(0.1), { Color = Color3.fromRGB(30,80,30) }):Play()
+        BottleLib:Notify("Copied Discord Link!")
         task.delay(1.8, function() if not DiscordBtn or not DiscordBtn.Parent then return end; DiscordBtn.Text = origText; DiscordBtn.TextColor3 = origColor; TweenService:Create(DiscordBtn, TweenInfo.new(0.2), { BackgroundColor3 = Color3.fromRGB(24,24,42) }):Play(); TweenService:Create(dbStroke, TweenInfo.new(0.2), { Color = Color3.fromRGB(50,50,90) }):Play() end)
+    end)
+
+    task.spawn(function()
+        local lastUpdate = tick()
+        local frames = 0
+        local rsConn = RunService.RenderStepped:Connect(function()
+            frames = frames + 1
+        end)
+        
+        while task.wait(0.5) do
+            local currentFPS = frames * 2 
+            frames = 0
+            
+            local ping = 0
+            local ok, p = pcall(function() return player:GetNetworkPing() end)
+            if ok and type(p) == "number" then
+                ping = math.floor(p * 1000)
+            end
+            
+            local statTextFull = string.format("📈 FPS: %d  |  📶 Ping: %dms", currentFPS, ping)
+            local statTextMini = string.format("📈 FPS: %d | 📶 Ping: %dms", currentFPS, ping)
+            
+            if TopStatsLbl and TopStatsLbl.Parent then TopStatsLbl.Text = statTextFull end
+            if MiniStatsLbl and MiniStatsLbl.Parent then MiniStatsLbl.Text = statTextMini end
+        end
     end)
 
     local tabList = {}; local currentTab = nil
@@ -967,79 +843,6 @@ function BottleLib:CreateWindow(WindowConfig)
         return TabObj
     end
 
-    function BottleLib:BuildUtilitySystem(TabObj)
-        TabObj:CreateSection("INTERFACE SETTINGS")
-        
-        TabObj:CreateKeybindBox("Minimize Keybind", BottleLib.Settings.MinimizeKey, function(key)
-            if key then BottleLib.Settings.MinimizeKey = key end
-        end)
-        
-        TabObj:CreateToggle("Auto Minimize", BottleLib.Settings.AutoMinimize, function(state)
-            BottleLib.Settings.AutoMinimize = state
-            if state then ToggleMinimize(true) end
-        end)
-
-        TabObj:CreateSection("PLAYER EXPLOITS")
-        
-        local currentWS = 16
-        local currentJP = 50
-        pcall(function()
-            local char = player.Character
-            if char then
-                local hum = char:FindFirstChild("Humanoid")
-                if hum then
-                    currentWS = hum.WalkSpeed
-                    currentJP = hum.JumpPower
-                end
-            end
-        end)
-        BottleLib.Settings.WalkSpeed.Value = currentWS
-        BottleLib.Settings.JumpPower.Value = currentJP
-        
-        TabObj:CreateToggleKeybind("Walk Speed", false, nil, function(state, key, isFromUI)
-            BottleLib.Settings.WalkSpeed.Key = key
-            if isFromUI then
-                BottleLib.Settings.WalkSpeed.Enabled = state
-                pcall(function() player.Character.Humanoid.WalkSpeed = state and BottleLib.Settings.WalkSpeed.Value or 16 end)
-            end
-        end)
-        TabObj:CreateSlider("Speed Value", 16, 250, currentWS, function(val)
-            BottleLib.Settings.WalkSpeed.Value = val
-            if BottleLib.Settings.WalkSpeed.Enabled then pcall(function() player.Character.Humanoid.WalkSpeed = val end) end
-            return val
-        end)
-        
-        TabObj:CreateSeparator()
-        
-        TabObj:CreateToggleKeybind("Fly", false, nil, function(state, key, isFromUI)
-            BottleLib.Settings.Fly.Key = key
-            if isFromUI then
-                BottleLib.Settings.Fly.Enabled = state
-                ToggleFly(state)
-            end
-        end)
-        TabObj:CreateSlider("Fly Speed", 10, 200, 50, function(val)
-            BottleLib.Settings.Fly.Speed = val
-            return val
-        end)
-
-        TabObj:CreateSeparator()
-
-        TabObj:CreateToggleKeybind("Noclip", false, nil, function(state, key, isFromUI)
-            BottleLib.Settings.Noclip.Key = key
-            if isFromUI then
-                BottleLib.Settings.Noclip.Enabled = state
-                ToggleNoclip(state)
-            end
-        end)
-
-        TabObj:CreateSection("PROTECTION")
-        TabObj:CreateToggle("Anti-AFK", BottleLib.Settings.AntiAFK, function(state)
-            BottleLib.Settings.AntiAFK = state
-        end)
-    end
-
-    if WindowConfig.AutoMinimize then ToggleMinimize(true) end
     return WindowObj
 end
 
@@ -1087,6 +890,7 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
         return ToggleObj
     end
     
+    -- 🔴 [FIX 1] PURE UI: KEYBIND BOX (แค่รับค่า ไม่ทำอย่างอื่น)
     function APIObj:CreateKeybindBox(label, defaultKey, callback)
         local frame = Instance.new("Frame", targetContainer)
         frame.Size = UDim2.new(1,0,0,36)
@@ -1139,7 +943,7 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
         end)
     end
 
-    -- 🔴 [FIX 1] PURE UI TOGGLE KEYBIND
+    -- 🔴 [FIX 1] PURE UI: TOGGLE KEYBIND (รับค่า + เปลี่ยนสีเมื่อถูกสั่งเท่านั้น)
     function APIObj:CreateToggleKeybind(label, initToggle, defaultKey, callback)
         local frame = Instance.new("Frame", targetContainer)
         frame.Size = UDim2.new(1,0,0,34)
@@ -1180,6 +984,7 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
             if not checkPerm() then return end
             state = not state
             TweenService:Create(dot, TweenInfo.new(0.18), {BackgroundColor3 = state and T.Accent or Color3.fromRGB(60,60,60)}):Play()
+            -- ส่ง true ไปเพื่อบอกว่าผู้เล่น "คลิกเมาส์" สลับสถานะนะ
             callback(state, currentKey, true)
         end)
         
@@ -1201,20 +1006,18 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
                         b.Text = input.KeyCode.Name
                         currentKey = input.KeyCode
                     end
+                    -- ส่ง false เพื่อบอกว่า "แค่เปลี่ยนปุ่ม" ยังไม่ได้คลิกเปิดปิด
                     callback(state, currentKey, false)
                 end
             end)
         end)
         
+        -- อันนี้สำหรับให้ Script หลักสั่งให้จุดเปลี่ยนสี
         local RetObj = {}
         function RetObj:SetState(newState)
             state = newState
             TweenService:Create(dot, TweenInfo.new(0.18), {BackgroundColor3 = state and T.Accent or Color3.fromRGB(60,60,60)}):Play()
         end
-        
-        local pureLabel = label:gsub(" ", "")
-        BottleLib.ToggleObjects[pureLabel] = RetObj
-        
         return RetObj
     end
 
@@ -1240,20 +1043,21 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
         trackHit.MouseButton1Up:Connect(function(x, y) dragging = false end)
     end
 
-    -- 🔴 [FIX 3] DROPDOWN FILTERING
+    -- 🔴 [FIX 3] แก้บัค DROPDOWN SEARCH FILTER ให้ทำงานเป๊ะ 100%
     function APIObj:CreateDropdown(placeholder, optionsList, callback)
         local frame = Instance.new("Frame", targetContainer); frame.Size = UDim2.new(1,0,0,34); frame.BackgroundColor3 = T.Element; Instance.new("UICorner", frame).CornerRadius = UDim.new(0,4)
-        local Input = Instance.new("TextBox", frame); Input.Size = UDim2.new(1,-20,1,0); Input.Position = UDim2.new(0,10,0,0); Input.BackgroundTransparency = 1; Input.Text = ""; Input.PlaceholderText = "🔍 "..placeholder; Input.TextColor3 = T.Text; Input.PlaceholderColor3 = T.SubText; Input.Font = Enum.Font.GothamSemibold; Input.TextSize = 11; Input.TextXAlignment = Enum.TextXAlignment.Left; Input.ClearTextOnFocus = false
+        local Input = Instance.new("TextBox", frame); Input.Size = UDim2.new(1,-20,1,0); Input.Position = UDim2.new(0,10,0,0); Input.BackgroundTransparency = 1; Input.Text = ""; Input.PlaceholderText = "🔍 "..placeholder; Input.TextColor3 = T.Text; Input.PlaceholderColor3 = T.SubText; Input.Font = Enum.Font.GothamSemibold; Input.TextSize = 11; Input.TextXAlignment = Enum.TextXAlignment.Left
         local DropOverlay = Instance.new("Frame", ScreenGui); DropOverlay.Size = UDim2.new(0,220,0,160); DropOverlay.BackgroundColor3 = Color3.fromRGB(14,14,14); DropOverlay.Visible = false; DropOverlay.ZIndex = 80; Instance.new("UICorner", DropOverlay).CornerRadius = UDim.new(0,6); Instance.new("UIStroke", DropOverlay).Color = T.Accent
         local DScroll = Instance.new("ScrollingFrame", DropOverlay); DScroll.Size = UDim2.new(1,-4,1,-4); DScroll.Position = UDim2.new(0,2,0,2); DScroll.BackgroundTransparency = 1; DScroll.ScrollBarThickness = 3; DScroll.ScrollBarImageColor3 = T.Accent; DScroll.BorderSizePixel = 0; DScroll.ZIndex = 81; Instance.new("UIListLayout", DScroll).SortOrder = Enum.SortOrder.LayoutOrder
 
         local selectedFromList = false
-        local function RefreshList(filter)
+        local function RefreshList(filterText)
             for _, c in ipairs(DScroll:GetChildren()) do if c:IsA("TextButton") then c:Destroy() end end
             local count = 0
+            local ft = string.lower(filterText or "")
             for _, item in ipairs(optionsList) do
-                -- ใช้ string.find(..., 1, true) (Plain mode)
-                if not filter or filter == "" or string.find(string.lower(item), string.lower(filter), 1, true) then
+                -- ใช้ true ใน string.find เพื่อจับคู่ข้อความแบบเป๊ะๆ (Plain text) แก้บัค Error
+                if ft == "" or string.find(string.lower(item), ft, 1, true) then
                     count = count + 1
                     local b = Instance.new("TextButton", DScroll); b.Size = UDim2.new(1,0,0,30); b.BackgroundColor3 = Color3.fromRGB(22,22,22); b.Text = "  "..item; b.TextColor3 = T.Text; b.Font = Enum.Font.GothamMedium; b.TextSize = 11; b.TextXAlignment = Enum.TextXAlignment.Left; b.ZIndex = 82
                     b.MouseButton1Click:Connect(function()
@@ -1274,12 +1078,7 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
             DropOverlay.Position = UDim2.new(0, pos.X, 0, yPos); DropOverlay.Size = UDim2.new(0, math.max(sz.X, 220), 0, 160)
             RefreshList(Input.Text); DropOverlay.Visible = true; GlobalOverlayClose.Visible = true
         end)
-        Input:GetPropertyChangedSignal("Text"):Connect(function() 
-            if not selectedFromList then 
-                RefreshList(Input.Text) 
-                DropOverlay.Visible = true
-            end 
-        end)
+        Input:GetPropertyChangedSignal("Text"):Connect(function() if DropOverlay.Visible and not selectedFromList then RefreshList(Input.Text) end end)
         Input.FocusLost:Connect(function() if selectedFromList then selectedFromList = false; return end; if Input.Text ~= "" then callback(Input.Text) end end)
         return DropObj
     end
