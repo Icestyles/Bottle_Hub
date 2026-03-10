@@ -1,33 +1,34 @@
 --!nocheck
 --[[
-    BOTTLEHUB LIBRARY V12.5 (THE CORE PERFECTION)
+    BOTTLEHUB LIBRARY V12.6 (THE ZERO-CRASH PATCH)
     ─────────────────────────────────────────────────────────────
-    FIX 1: TRUE KEYBIND LISTENER
-      - เพิ่ม UserInputService.InputBegan เข้าไปฝังใน UI ToggleKeybind
-      - เมื่อผู้เล่นกดปุ่ม UI จะตอบสนองและเรียกใช้ Feature ทันที
+    FIX 1: FATAL CRASH RESOLVED (Line 1247 Fix)
+      - แก้ไขบัค attempt to index nil with 'WalkSpeed' 
+      - ป้องกันการดึงค่าจากตัวละครที่ยังไม่เกิด ซึ่งเป็นต้นเหตุที่ทำให้ Keybind พังทั้งหมด
     
-    FIX 2: BULLETPROOF PING & FPS
-      - แยก Thread อัปเดต UI ออกมาใช้ task.wait(1) 
-      - ป้องกัน Executor แครชเวลาเจาะเข้า CoreStats
+    FIX 2: FOLDER LAYOUT SNAP
+      - แก้ไขปัญหา Premium Folder ขาดตอน โดยตั้งค่า UIListLayout และ Padding ใหม่ให้แนบสนิท
     
-    NEW FEATURE: BuildUtilityTab()
-      - คำสั่งสำเร็จรูปสำหรับสร้างฟีเจอร์พื้นฐาน (WalkSpeed, Fly, Noclip, Minimize)
+    FIX 3: MINI MONITOR TEXT
+      - คืนค่าข้อความ "📈 FPS: 60 | 📶 Ping: 50ms" ในตอนย่อจอ พร้อมขยายพื้นหลัง
 ]]
 
 local BottleLib = {}
 BottleLib.KeyStatus = { Valid = false, ExpiresAt = nil, IsGlobal = false, Tier = "Basic", KeyName = "Unknown" }
 BottleLib.Connections = {}
 
--- ตัวแปร Global สำหรับเก็บสถานะฟีเจอร์พื้นฐาน
+-- Global Settings
 BottleLib.Settings = {
     MinimizeKey = Enum.KeyCode.LeftControl,
     AutoMinimize = false,
     AntiAFK = false,
-    WalkSpeed = { Enabled = false, Value = 16 },
-    JumpPower = { Enabled = false, Value = 50 },
-    Fly = { Enabled = false, Speed = 50 },
-    Noclip = { Enabled = false }
+    WalkSpeed = { Enabled = false, Key = nil, Value = 16 },
+    JumpPower = { Enabled = false, Key = nil, Value = 50 },
+    Fly = { Enabled = false, Key = nil, Speed = 50 },
+    Noclip = { Enabled = false, Key = nil }
 }
+
+BottleLib.ToggleObjects = {}
 
 local CoreGui             = game:GetService("CoreGui")
 local TweenService        = game:GetService("TweenService")
@@ -163,47 +164,26 @@ function BottleLib:Notify(msg)
         if not mainWin then return end
 
         local dimOverlay = Instance.new("TextButton", mainWin)
-        dimOverlay.Size = UDim2.new(1, 0, 1, 0)
-        dimOverlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-        dimOverlay.BackgroundTransparency = 1
-        dimOverlay.Text = ""
-        dimOverlay.AutoButtonColor = false
-        dimOverlay.ZIndex = 98
-        Instance.new("UICorner", dimOverlay).CornerRadius = UDim.new(0, 8)
+        dimOverlay.Size = UDim2.new(1, 0, 1, 0); dimOverlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+        dimOverlay.BackgroundTransparency = 1; dimOverlay.Text = ""; dimOverlay.AutoButtonColor = false
+        dimOverlay.ZIndex = 98; Instance.new("UICorner", dimOverlay).CornerRadius = UDim.new(0, 8)
 
         local notif = Instance.new("Frame", dimOverlay)
-        notif.Size = UDim2.new(0, 280, 0, 45)
-        notif.Position = UDim2.new(0.5, 0, 0.5, 0)
-        notif.AnchorPoint = Vector2.new(0.5, 0.5)
-        notif.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-        notif.BackgroundTransparency = 1
-        notif.ZIndex = 99
-        Instance.new("UICorner", notif).CornerRadius = UDim.new(0, 6)
+        notif.Size = UDim2.new(0, 280, 0, 45); notif.Position = UDim2.new(0.5, 0, 0.5, 0)
+        notif.AnchorPoint = Vector2.new(0.5, 0.5); notif.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+        notif.BackgroundTransparency = 1; notif.ZIndex = 99; Instance.new("UICorner", notif).CornerRadius = UDim.new(0, 6)
         
-        local stroke = Instance.new("UIStroke", notif)
-        stroke.Color = Color3.fromRGB(255, 69, 58)
-        stroke.Transparency = 1
+        local stroke = Instance.new("UIStroke", notif); stroke.Color = Color3.fromRGB(255, 69, 58); stroke.Transparency = 1
 
         local icon = Instance.new("TextLabel", notif)
-        icon.Size = UDim2.new(0, 35, 1, 0)
-        icon.BackgroundTransparency = 1
-        icon.Text = "⛔"
-        icon.TextSize = 16
-        icon.TextTransparency = 1
-        icon.ZIndex = 100
+        icon.Size = UDim2.new(0, 35, 1, 0); icon.BackgroundTransparency = 1; icon.Text = "⛔"
+        icon.TextSize = 16; icon.TextTransparency = 1; icon.ZIndex = 100
 
         local lbl = Instance.new("TextLabel", notif)
-        lbl.Size = UDim2.new(1, -40, 1, 0)
-        lbl.Position = UDim2.new(0, 35, 0, 0)
-        lbl.BackgroundTransparency = 1
-        lbl.Text = msg
-        lbl.TextColor3 = Color3.fromRGB(255, 200, 200)
-        lbl.Font = Enum.Font.GothamBold
-        lbl.TextSize = 11
-        lbl.TextXAlignment = Enum.TextXAlignment.Left
-        lbl.TextWrapped = true
-        lbl.TextTransparency = 1
-        lbl.ZIndex = 100
+        lbl.Size = UDim2.new(1, -40, 1, 0); lbl.Position = UDim2.new(0, 35, 0, 0)
+        lbl.BackgroundTransparency = 1; lbl.Text = msg; lbl.TextColor3 = Color3.fromRGB(255, 200, 200)
+        lbl.Font = Enum.Font.GothamBold; lbl.TextSize = 11; lbl.TextXAlignment = Enum.TextXAlignment.Left
+        lbl.TextWrapped = true; lbl.TextTransparency = 1; lbl.ZIndex = 100
 
         TweenService:Create(dimOverlay, TweenInfo.new(0.2), {BackgroundTransparency = 0.4}):Play()
         TweenService:Create(notif, TweenInfo.new(0.2), {BackgroundTransparency = 0}):Play()
@@ -222,51 +202,31 @@ function BottleLib:Notify(msg)
                 if dimOverlay and dimOverlay.Parent then dimOverlay:Destroy() end
             end
         end)
-
     else
         local container = sg:FindFirstChild("NotifyContainer")
         if not container then
             container = Instance.new("Frame", sg)
             container.Name = "NotifyContainer"
-            container.Size = UDim2.new(0, 260, 1, -20)
-            container.Position = UDim2.new(1, -20, 1, -20)
-            container.AnchorPoint = Vector2.new(1, 1) 
-            container.BackgroundTransparency = 1
-            container.ZIndex = 100
-            
-            local layout = Instance.new("UIListLayout", container)
-            layout.SortOrder = Enum.SortOrder.LayoutOrder
-            layout.VerticalAlignment = Enum.VerticalAlignment.Bottom
-            layout.Padding = UDim.new(0, 10)
+            container.Size = UDim2.new(0, 260, 1, -20); container.Position = UDim2.new(1, -20, 1, -20)
+            container.AnchorPoint = Vector2.new(1, 1); container.BackgroundTransparency = 1; container.ZIndex = 100
+            local layout = Instance.new("UIListLayout", container); layout.SortOrder = Enum.SortOrder.LayoutOrder
+            layout.VerticalAlignment = Enum.VerticalAlignment.Bottom; layout.Padding = UDim.new(0, 10)
         end
 
         local notif = Instance.new("Frame", container)
-        notif.Size = UDim2.new(1, 0, 0, 45)
-        notif.BackgroundColor3 = Color3.fromRGB(20,20,20)
-        notif.BackgroundTransparency = 1
-        Instance.new("UICorner", notif).CornerRadius = UDim.new(0,6)
-        local stroke = Instance.new("UIStroke", notif)
-        stroke.Color = Color3.fromHex("#e60852")
-        stroke.Transparency = 1
+        notif.Size = UDim2.new(1, 0, 0, 45); notif.BackgroundColor3 = Color3.fromRGB(20,20,20)
+        notif.BackgroundTransparency = 1; Instance.new("UICorner", notif).CornerRadius = UDim.new(0,6)
+        local stroke = Instance.new("UIStroke", notif); stroke.Color = Color3.fromHex("#e60852"); stroke.Transparency = 1
 
         local icon = Instance.new("TextLabel", notif)
-        icon.Size = UDim2.new(0, 35, 1, 0)
-        icon.BackgroundTransparency = 1
-        icon.Text = "🔔"
-        icon.TextSize = 16
-        icon.TextTransparency = 1
+        icon.Size = UDim2.new(0, 35, 1, 0); icon.BackgroundTransparency = 1; icon.Text = "🔔"
+        icon.TextSize = 16; icon.TextTransparency = 1
 
         local lbl = Instance.new("TextLabel", notif)
-        lbl.Size = UDim2.new(1, -40, 1, 0)
-        lbl.Position = UDim2.new(0, 35, 0, 0)
-        lbl.BackgroundTransparency = 1
-        lbl.Text = msg
-        lbl.TextColor3 = Color3.fromRGB(240,240,240)
-        lbl.Font = Enum.Font.GothamMedium
-        lbl.TextSize = 11
-        lbl.TextXAlignment = Enum.TextXAlignment.Left
-        lbl.TextWrapped = true
-        lbl.TextTransparency = 1
+        lbl.Size = UDim2.new(1, -40, 1, 0); lbl.Position = UDim2.new(0, 35, 0, 0)
+        lbl.BackgroundTransparency = 1; lbl.Text = msg; lbl.TextColor3 = Color3.fromRGB(240,240,240)
+        lbl.Font = Enum.Font.GothamMedium; lbl.TextSize = 11; lbl.TextXAlignment = Enum.TextXAlignment.Left
+        lbl.TextWrapped = true; lbl.TextTransparency = 1
 
         TweenService:Create(notif, TweenInfo.new(0.3), {BackgroundTransparency=0.05}):Play()
         TweenService:Create(stroke, TweenInfo.new(0.3), {Transparency=0}):Play()
@@ -279,8 +239,7 @@ function BottleLib:Notify(msg)
                 TweenService:Create(stroke, TweenInfo.new(0.3), {Transparency=1}):Play()
                 TweenService:Create(icon, TweenInfo.new(0.3), {TextTransparency=1}):Play()
                 TweenService:Create(lbl, TweenInfo.new(0.3), {TextTransparency=1}):Play()
-                task.wait(0.3)
-                if notif and notif.Parent then notif:Destroy() end
+                task.wait(0.3); if notif and notif.Parent then notif:Destroy() end
             end
         end)
     end
@@ -298,8 +257,7 @@ function BottleLib:ShowLoader(message)
     if _loaderDotsConn then _loaderDotsConn:Disconnect() end
 
     local sg = Instance.new("ScreenGui")
-    sg.Name = "BOTTLEHUB_LOADER"
-    sg.ResetOnSpawn = false; sg.Parent = (gethui and gethui()) or CoreGui
+    sg.Name = "BOTTLEHUB_LOADER"; sg.ResetOnSpawn = false; sg.Parent = (gethui and gethui()) or CoreGui
     _loaderGui = sg
 
     local overlay = Instance.new("Frame", sg)
@@ -327,9 +285,7 @@ function BottleLib:ShowLoader(message)
     arcStroke.Color = Color3.fromRGB(255,255,255); arcStroke.Thickness = 3
     local gradient = Instance.new("UIGradient", arcStroke)
     gradient.Color = ColorSequence.new(Color3.fromHex("#e60852")) 
-    gradient.Transparency = NumberSequence.new({
-        NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(0.7, 1), NumberSequenceKeypoint.new(1, 1)     
-    })
+    gradient.Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(0.7, 1), NumberSequenceKeypoint.new(1, 1)})
     gradient.Rotation = 180
 
     local angle = 0
@@ -347,10 +303,7 @@ function BottleLib:ShowLoader(message)
     _loaderDotsConn = RunService.Heartbeat:Connect(function(dt)
         if not msgLbl or not msgLbl.Parent then return end
         dotTimer = dotTimer + dt
-        if dotTimer >= 0.4 then 
-            dotTimer = 0; dotCount = (dotCount + 1) % 4
-            msgLbl.Text = message .. string.rep(".", dotCount)
-        end
+        if dotTimer >= 0.4 then dotTimer = 0; dotCount = (dotCount + 1) % 4; msgLbl.Text = message .. string.rep(".", dotCount) end
     end)
 
     task.spawn(function()
@@ -358,8 +311,7 @@ function BottleLib:ShowLoader(message)
         while card and card.Parent do
             alpha = alpha + 0.02 * pulseDir
             if alpha >= 1 then alpha = 1; pulseDir = -1 elseif alpha <= 0 then alpha = 0; pulseDir = 1 end
-            pcall(function() stroke.Transparency = 0.3 + alpha * 0.5 end)
-            task.wait(0.03)
+            pcall(function() stroke.Transparency = 0.3 + alpha * 0.5 end); task.wait(0.03)
         end
     end)
 
@@ -570,7 +522,6 @@ function BottleLib:CreateWindow(WindowConfig)
     ContentContainer.BackgroundTransparency = 0.75
     Instance.new("UICorner", ContentContainer).CornerRadius = UDim.new(0,6)
 
-    -- 🔴 TOP RIGHT FPS/PING MONITOR
     local TopStatsLbl = Instance.new("TextLabel", MainFrame)
     TopStatsLbl.Size = UDim2.new(0, 150, 0, 20)
     TopStatsLbl.Position = UDim2.new(1, -20, 0, 10)
@@ -617,8 +568,9 @@ function BottleLib:CreateWindow(WindowConfig)
     MiniButton.Active = true
     Instance.new("UICorner", MiniButton).CornerRadius = UDim.new(0,8); Instance.new("UIStroke", MiniButton).Color = T.Accent
 
+    -- 🔴 [FIX 3] ขยายความกว้างป้าย Mini ให้พอดีกับคำว่า FPS และ Ping
     local MiniStatsBg = Instance.new("Frame", MiniButton)
-    MiniStatsBg.Size = UDim2.new(0, 130, 0, 20)
+    MiniStatsBg.Size = UDim2.new(0, 150, 0, 20)
     MiniStatsBg.Position = UDim2.new(0.5, 0, 1, 6)
     MiniStatsBg.AnchorPoint = Vector2.new(0.5, 0)
     MiniStatsBg.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
@@ -661,19 +613,69 @@ function BottleLib:CreateWindow(WindowConfig)
         if MainFrame then MainFrame.Visible = not hide end
         if MiniButton then MiniButton.Visible = hide end
     end
+    
+    if WindowConfig.AutoMinimize or BottleLib.Settings.AutoMinimize then ToggleMinimize(true) end
 
-    -- 🔴 [FIX 1] LEFT CTRL MINIMIZE (No 'gameProcessed' block)
-    table.insert(BottleLib.Connections, UserInputService.InputBegan:Connect(function(input)
-        -- เช็คว่าพิมพ์ข้อความอยู่ไหม ถ้าพิมพ์อยู่ให้ยกเลิกการทำงาน
+    -- 🔴 [FIX 1] MASTER INPUT HANDLER (SAFE MODE)
+    table.insert(BottleLib.Connections, UserInputService.InputBegan:Connect(function(input, gp)
         local isTyping = false
         pcall(function() isTyping = UserInputService:GetFocusedTextBox() ~= nil end)
         if isTyping then return end 
 
-        -- Toggle ย่อหน้าต่าง
         if input.KeyCode == BottleLib.Settings.MinimizeKey then
-            if MainFrame and MainFrame.Parent then 
-                ToggleMinimize(MainFrame.Visible) 
+            if MainFrame and MainFrame.Parent then ToggleMinimize(MainFrame.Visible) end
+        end
+
+        if not gp then 
+            if BottleLib.Settings.WalkSpeed.Key and input.KeyCode == BottleLib.Settings.WalkSpeed.Key then
+                BottleLib.Settings.WalkSpeed.Enabled = not BottleLib.Settings.WalkSpeed.Enabled
+                local hum = player.Character and player.Character:FindFirstChild("Humanoid")
+                if hum then hum.WalkSpeed = BottleLib.Settings.WalkSpeed.Enabled and BottleLib.Settings.WalkSpeed.Value or 16 end
+                if BottleLib.ToggleObjects["WalkSpeed"] then BottleLib.ToggleObjects["WalkSpeed"]:SetState(BottleLib.Settings.WalkSpeed.Enabled) end
+                BottleLib:Notify("WalkSpeed: " .. (BottleLib.Settings.WalkSpeed.Enabled and "ON" or "OFF"))
             end
+            
+            if BottleLib.Settings.JumpPower.Key and input.KeyCode == BottleLib.Settings.JumpPower.Key then
+                BottleLib.Settings.JumpPower.Enabled = not BottleLib.Settings.JumpPower.Enabled
+                local hum = player.Character and player.Character:FindFirstChild("Humanoid")
+                if hum then hum.JumpPower = BottleLib.Settings.JumpPower.Enabled and BottleLib.Settings.JumpPower.Value or 50 end
+                if BottleLib.ToggleObjects["JumpPower"] then BottleLib.ToggleObjects["JumpPower"]:SetState(BottleLib.Settings.JumpPower.Enabled) end
+                BottleLib:Notify("JumpPower: " .. (BottleLib.Settings.JumpPower.Enabled and "ON" or "OFF"))
+            end
+            
+            if BottleLib.Settings.Fly.Key and input.KeyCode == BottleLib.Settings.Fly.Key then
+                BottleLib.Settings.Fly.Enabled = not BottleLib.Settings.Fly.Enabled
+                ToggleFly(BottleLib.Settings.Fly.Enabled, BottleLib.Settings.Fly.Speed)
+                if BottleLib.ToggleObjects["Fly"] then BottleLib.ToggleObjects["Fly"]:SetState(BottleLib.Settings.Fly.Enabled) end
+                BottleLib:Notify("Fly: " .. (BottleLib.Settings.Fly.Enabled and "ON" or "OFF"))
+            end
+            
+            if BottleLib.Settings.Noclip.Key and input.KeyCode == BottleLib.Settings.Noclip.Key then
+                BottleLib.Settings.Noclip.Enabled = not BottleLib.Settings.Noclip.Enabled
+                ToggleNoclip(BottleLib.Settings.Noclip.Enabled)
+                if BottleLib.ToggleObjects["Noclip"] then BottleLib.ToggleObjects["Noclip"]:SetState(BottleLib.Settings.Noclip.Enabled) end
+                BottleLib:Notify("Noclip: " .. (BottleLib.Settings.Noclip.Enabled and "ON" or "OFF"))
+            end
+        end
+    end))
+
+    table.insert(BottleLib.Connections, RunService.Heartbeat:Connect(function()
+        local char = player.Character
+        local hum = char and char:FindFirstChild("Humanoid")
+        if hum then
+            if BottleLib.Settings.WalkSpeed.Enabled and hum.WalkSpeed ~= BottleLib.Settings.WalkSpeed.Value then
+                hum.WalkSpeed = BottleLib.Settings.WalkSpeed.Value
+            end
+            if BottleLib.Settings.JumpPower.Enabled and hum.JumpPower ~= BottleLib.Settings.JumpPower.Value then
+                hum.JumpPower = BottleLib.Settings.JumpPower.Value
+            end
+        end
+    end))
+    
+    table.insert(BottleLib.Connections, player.Idled:Connect(function()
+        if BottleLib.Settings.AntiAFK then
+            VirtualUser:CaptureController()
+            VirtualUser:ClickButton2(Vector2.new())
         end
     end))
 
@@ -932,26 +934,26 @@ function BottleLib:CreateWindow(WindowConfig)
         task.delay(1.8, function() if not DiscordBtn or not DiscordBtn.Parent then return end; DiscordBtn.Text = origText; DiscordBtn.TextColor3 = origColor; TweenService:Create(DiscordBtn, TweenInfo.new(0.2), { BackgroundColor3 = Color3.fromRGB(24,24,42) }):Play(); TweenService:Create(dbStroke, TweenInfo.new(0.2), { Color = Color3.fromRGB(50,50,90) }):Play() end)
     end)
 
-    -- 🔴 [FIX 2] BULLETPROOF RENDER LOOP FOR FPS/PING
+    -- 🔴 [FIX 3] SAFE RENDER LOOP FOR FPS/PING
     task.spawn(function()
+        local lastUpdate = tick()
         local frames = 0
         local rsConn = RunService.RenderStepped:Connect(function()
             frames = frames + 1
         end)
         
-        while task.wait(1) do
-            local currentFPS = frames
+        while task.wait(0.5) do
+            local currentFPS = frames * 2 -- คูณ 2 เพราะลูปวิ่งทุก 0.5 วิ
             frames = 0
             
             local ping = 0
-            -- ป้องกันการ Crash จาก CoreStats 100%
             local ok, p = pcall(function() return player:GetNetworkPing() end)
             if ok and type(p) == "number" then
                 ping = math.floor(p * 1000)
             end
             
             local statTextFull = string.format("📈 FPS: %d  |  📶 Ping: %dms", currentFPS, ping)
-            local statTextMini = string.format("📈 %d | 📶 %d", currentFPS, ping)
+            local statTextMini = string.format("📈 FPS: %d | 📶 Ping: %dms", currentFPS, ping)
             
             if TopStatsLbl and TopStatsLbl.Parent then TopStatsLbl.Text = statTextFull end
             if MiniStatsLbl and MiniStatsLbl.Parent then MiniStatsLbl.Text = statTextMini end
@@ -995,7 +997,7 @@ function BottleLib:CreateWindow(WindowConfig)
     end
     
     -- ============================================================
-    -- 🔴 [NEW] ฟังก์ชันสำหรับสร้างหน้า Utility พื้นฐานในครั้งเดียว
+    -- 🔴 NEW FEATURE: BUILD UTILITY SYSTEM
     -- ============================================================
     function BottleLib:BuildUtilitySystem(TabObj)
         TabObj:CreateSection("INTERFACE SETTINGS")
@@ -1011,9 +1013,21 @@ function BottleLib:CreateWindow(WindowConfig)
 
         TabObj:CreateSection("PLAYER EXPLOITS")
         
+        -- Safe Character Fetcher ป้องกันการแครช 100%
         local currentWS = 16
-        pcall(function() currentWS = player.Character.Humanoid.WalkSpeed end)
+        local currentJP = 50
+        pcall(function()
+            local char = player.Character
+            if char then
+                local hum = char:FindFirstChild("Humanoid")
+                if hum then
+                    currentWS = hum.WalkSpeed
+                    currentJP = hum.JumpPower
+                end
+            end
+        end)
         BottleLib.Settings.WalkSpeed.Value = currentWS
+        BottleLib.Settings.JumpPower.Value = currentJP
         
         TabObj:CreateToggleKeybind("Walk Speed", false, nil, function(state, key)
             BottleLib.Settings.WalkSpeed.Enabled = state
@@ -1152,7 +1166,6 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
         end)
     end
 
-    -- 🔴 [FIX 1] TRUE KEYBIND LISTENER: ฟังเสียงคีย์บอร์ดแล้ว Toggle สวิตช์อัตโนมัติ
     function APIObj:CreateToggleKeybind(label, initToggle, defaultKey, callback)
         local frame = Instance.new("Frame", targetContainer)
         frame.Size = UDim2.new(1,0,0,34)
@@ -1222,20 +1235,6 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
                 end
             end)
         end)
-        
-        -- ลูปฟังการกดปุ่มจากคีย์บอร์ดแล้วบังคับ Toggle สวิตช์
-        local kbConn = UserInputService.InputBegan:Connect(function(input, gp)
-            if currentKey and input.KeyCode == currentKey then
-                local isTyping = false
-                pcall(function() isTyping = UserInputService:GetFocusedTextBox() ~= nil end)
-                if not isTyping then
-                    state = not state
-                    TweenService:Create(dot, TweenInfo.new(0.18), {BackgroundColor3 = state and T.Accent or Color3.fromRGB(60,60,60)}):Play()
-                    FireCallback()
-                end
-            end
-        end)
-        table.insert(BottleLib.Connections, kbConn)
         
         local RetObj = {}
         function RetObj:SetState(newState)
@@ -1388,11 +1387,17 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
         return SelectorObj
     end
 
+    -- 🔴 [FIX 2] บังคับให้ช่องว่าง (Padding) ของ Folder แนบสนิทกัน 100%
     function APIObj:CreateFolder(folderName, isPremiumFolder)
         local folderFrame = Instance.new("Frame", targetContainer)
         folderFrame.Size = UDim2.new(1,0,0,34); folderFrame.AutomaticSize = Enum.AutomaticSize.Y; folderFrame.BackgroundColor3 = Color3.fromRGB(15,15,15)
         Instance.new("UICorner", folderFrame).CornerRadius = UDim.new(0,4)
         local fStroke = Instance.new("UIStroke", folderFrame); fStroke.Color = Color3.fromRGB(35,35,35)
+        
+        -- ใช้ UIListLayout โดยบังคับระยะห่างระหว่างปุ่มกับเนื้อหาด้านในให้เป็น 0
+        local fLayout = Instance.new("UIListLayout", folderFrame)
+        fLayout.SortOrder = Enum.SortOrder.LayoutOrder
+        fLayout.Padding = UDim.new(0, 0)
         
         local headerBtn = Instance.new("TextButton", folderFrame)
         headerBtn.Size = UDim2.new(1,0,0,34); headerBtn.BackgroundTransparency = 1
@@ -1407,15 +1412,30 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
         
         headerBtn.RichText = true; headerBtn.TextColor3 = T.Text; headerBtn.Font = Enum.Font.GothamBold; headerBtn.TextSize = 12; headerBtn.TextXAlignment = Enum.TextXAlignment.Left
 
+        -- เส้นแบ่งบางๆ ระหว่าง Header กับ Content (เพิ่มความสวยงามตอนกดเปิด)
+        local headerSep = Instance.new("Frame", folderFrame)
+        headerSep.Size = UDim2.new(1,0,0,1)
+        headerSep.BackgroundColor3 = Color3.fromRGB(35,35,35)
+        headerSep.BorderSizePixel = 0
+        headerSep.Visible = true
+
         local innerContainer = Instance.new("Frame", folderFrame)
         innerContainer.Size = UDim2.new(1,0,0,0); innerContainer.AutomaticSize = Enum.AutomaticSize.Y; innerContainer.BackgroundTransparency = 1; innerContainer.ClipsDescendants = true
         
         local innerLayout = Instance.new("UIListLayout", innerContainer); innerLayout.SortOrder = Enum.SortOrder.LayoutOrder; innerLayout.Padding = UDim.new(0,6)
-        local innerPad = Instance.new("UIPadding", innerContainer); innerPad.PaddingBottom = UDim.new(0,8); innerPad.PaddingLeft = UDim.new(0,10); innerPad.PaddingRight = UDim.new(0,10)
+        
+        -- เพิ่ม PaddingTop เพื่อไม่ให้บรรทัดแรกติดขอบบนเกินไป (แต่ไม่ทำให้เกิดช่องโหว่ด้านนอก)
+        local innerPad = Instance.new("UIPadding", innerContainer)
+        innerPad.PaddingTop = UDim.new(0,6)
+        innerPad.PaddingBottom = UDim.new(0,8)
+        innerPad.PaddingLeft = UDim.new(0,10)
+        innerPad.PaddingRight = UDim.new(0,10)
 
         local isOpen = true
         headerBtn.MouseButton1Click:Connect(function()
-            isOpen = not isOpen; innerContainer.Visible = isOpen
+            isOpen = not isOpen; 
+            innerContainer.Visible = isOpen
+            headerSep.Visible = isOpen
             if isPremiumFolder then
                 headerBtn.Text = (isOpen and "  ▼  " or "  ▶  ") .. "<font color='"..hexAccent.."'>⭐ Premium Access</font>"
             else
