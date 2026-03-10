@@ -1,28 +1,21 @@
 --!nocheck
 --[[
-    BOTTLEHUB LIBRARY V12.7 (THE FEATURE PERFECTION)
+    BOTTLEHUB LIBRARY V12.8 (THE PURE UI ARCHITECTURE)
     ─────────────────────────────────────────────────────────────
-    ** FPS, PING AND PADDING LOGIC ARE UNTOUCHED (STABLE) **
+    FIX 1: KEYBIND ARCHITECTURE (SEPARATION OF CONCERNS)
+      - ถอด UserInputService ออกจากตัว UI CreateToggleKeybind แบบหมดจด
+      - UI ทำหน้าที่แค่เปลี่ยนสีและส่งค่ากลับ 
+      - Script เกม (หรือ BuildUtilitySystem) จะเป็นตัวดักจับปุ่มและสั่งการเอง
     
-    FIX 1: KEYBIND DOUBLE EVENT
-      - ลบ Input Listener ออกจาก UI Component ป้องกันการทริกเกอร์ซ้อน
-      - รวมการควบคุมไว้ที่ Master Input Handler อย่างเดียว (One-Way Data Flow)
-    
-    FIX 2: ADVANCED FLY SYSTEM
-      - เปลี่ยนจาก BodyVelocity เป็น CFrame Manipulation (Anchored Method)
-      - บินตามทิศทางกล้องลื่นไหล 100% ไม่มีอาการบัคติดกำแพง
-    
-    FIX 3: NOCLIP STATE CACHING
-      - สร้างระบบ ScanCollisions() ดึงค่าตั้งต้นของตัวละครมาเก็บไว้
-      - คืนค่า (Restore) ชิ้นส่วนต่างๆ กลับสู่สถานะก่อนเปิด Noclip ได้อย่างสมบูรณ์
-      - มีลูป Auto-Scan ทุกๆ 30 วินาที
+    FIX 2: NOTIFICATION SPAM REDUCTION
+      - ลบแจ้งเตือนเมื่อเปิด/ปิดฟีเจอร์ทั้งหมด เพื่อไม่ให้รกจอ
+      - คงเหลือแจ้งเตือนสำคัญ: Copied ID และ Permission Blocked
 ]]
 
 local BottleLib = {}
 BottleLib.KeyStatus = { Valid = false, ExpiresAt = nil, IsGlobal = false, Tier = "Basic", KeyName = "Unknown" }
 BottleLib.Connections = {}
 
--- Global Settings
 BottleLib.Settings = {
     MinimizeKey = Enum.KeyCode.LeftControl,
     AutoMinimize = false,
@@ -65,15 +58,12 @@ end)
 -- ============================================================
 -- 🛠️ UTILITY FUNCTIONS (FLY & NOCLIP)
 -- ============================================================
-
--- [ Noclip Caching System ]
 local originalCollision = {}
 local noclipConnection = nil
 
 local function ScanCollisions()
     local char = player.Character
     if not char then return end
-    -- สแกนเก็บเฉพาะตอนที่ Noclip ปิดอยู่เท่านั้น ป้องกันการเก็บค่า false ผิดพลาด
     if not BottleLib.Settings.Noclip.Enabled then
         for _, part in ipairs(char:GetDescendants()) do
             if part:IsA("BasePart") then
@@ -83,11 +73,8 @@ local function ScanCollisions()
     end
 end
 
--- สแกนหาชิ้นส่วนใหม่ๆ อัตโนมัติทุก 30 วินาที
 task.spawn(function()
-    while task.wait(30) do
-        ScanCollisions()
-    end
+    while task.wait(30) do ScanCollisions() end
 end)
 
 local function ToggleNoclip(state)
@@ -95,7 +82,7 @@ local function ToggleNoclip(state)
     if not char then return end
 
     if state then
-        ScanCollisions() -- ดึงค่าล่าสุดก่อนทะลุ
+        ScanCollisions() 
         if not noclipConnection then
             noclipConnection = RunService.Stepped:Connect(function()
                 if player.Character then
@@ -112,7 +99,6 @@ local function ToggleNoclip(state)
             noclipConnection:Disconnect()
             noclipConnection = nil
         end
-        -- คืนค่าตั้งต้นแบบเป๊ะๆ
         for part, origState in pairs(originalCollision) do
             if part and part.Parent then
                 part.CanCollide = origState
@@ -121,16 +107,13 @@ local function ToggleNoclip(state)
     end
 end
 
--- [ CFrame Fly System ]
 local flyConn = nil
-
 local function ToggleFly(state)
     local char = player.Character
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
     
     if state then
-        -- ล็อคตัวละครกลางอากาศ
         hrp.Anchored = true
         if not flyConn then
             flyConn = RunService.RenderStepped:Connect(function(dt)
@@ -141,7 +124,6 @@ local function ToggleFly(state)
                 local cam = workspace.CurrentCamera
                 local moveDir = Vector3.new(0,0,0)
                 
-                -- ดึงค่าปุ่มตามทิศทางกล้อง
                 if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + cam.CFrame.LookVector end
                 if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - cam.CFrame.LookVector end
                 if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - cam.CFrame.RightVector end
@@ -149,16 +131,11 @@ local function ToggleFly(state)
                 if UserInputService:IsKeyDown(Enum.KeyCode.Space) or UserInputService:IsKeyDown(Enum.KeyCode.E) then moveDir = moveDir + Vector3.new(0, 1, 0) end
                 if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) or UserInputService:IsKeyDown(Enum.KeyCode.Q) then moveDir = moveDir - Vector3.new(0, 1, 0) end
                 
-                if moveDir.Magnitude > 0 then
-                    moveDir = moveDir.Unit
-                end
-                
-                -- ขยับพิกัด CFrame
+                if moveDir.Magnitude > 0 then moveDir = moveDir.Unit end
                 root.CFrame = root.CFrame + (moveDir * BottleLib.Settings.Fly.Speed * dt)
             end)
         end
     else
-        -- คืนค่าแรงโน้มถ่วง
         hrp.Anchored = false
         if flyConn then
             flyConn:Disconnect()
@@ -580,7 +557,7 @@ function BottleLib:CreateWindow(WindowConfig)
     Instance.new("UICorner", MiniButton).CornerRadius = UDim.new(0,8); Instance.new("UIStroke", MiniButton).Color = T.Accent
 
     local MiniStatsBg = Instance.new("Frame", MiniButton)
-    MiniStatsBg.Size = UDim2.new(0, 130, 0, 20)
+    MiniStatsBg.Size = UDim2.new(0, 150, 0, 20)
     MiniStatsBg.Position = UDim2.new(0.5, 0, 1, 6)
     MiniStatsBg.AnchorPoint = Vector2.new(0.5, 0)
     MiniStatsBg.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
@@ -626,28 +603,22 @@ function BottleLib:CreateWindow(WindowConfig)
     
     if WindowConfig.AutoMinimize or BottleLib.Settings.AutoMinimize then ToggleMinimize(true) end
 
-    -- 🔴 [FIX 1] MASTER INPUT HANDLER (Centralized, No UI logic collision)
+    -- 🔴 [FIX 1] CENTRAL MASTER INPUT HANDLER (Script Logic only, no double events)
     table.insert(BottleLib.Connections, UserInputService.InputBegan:Connect(function(input, gp)
-        -- เช็คว่าพิมพ์ข้อความอยู่ไหม ถ้าพิมพ์อยู่ให้ยกเลิกการทำงานทั้งหมด
         local isTyping = false
         pcall(function() isTyping = UserInputService:GetFocusedTextBox() ~= nil end)
         if isTyping then return end 
 
-        -- Toggle ย่อหน้าต่าง
         if BottleLib.Settings.MinimizeKey and input.KeyCode == BottleLib.Settings.MinimizeKey then
-            if MainFrame and MainFrame.Parent then 
-                ToggleMinimize(MainFrame.Visible) 
-            end
+            if MainFrame and MainFrame.Parent then ToggleMinimize(MainFrame.Visible) end
         end
 
-        -- Toggle Feature อื่นๆ (เฉพาะตอนที่ไม่ได้กดพิมพ์หรือกดเมนูในเกม)
         if not gp then 
             if BottleLib.Settings.WalkSpeed.Key and input.KeyCode == BottleLib.Settings.WalkSpeed.Key then
                 BottleLib.Settings.WalkSpeed.Enabled = not BottleLib.Settings.WalkSpeed.Enabled
                 local hum = player.Character and player.Character:FindFirstChild("Humanoid")
                 if hum then pcall(function() hum.WalkSpeed = BottleLib.Settings.WalkSpeed.Enabled and BottleLib.Settings.WalkSpeed.Value or 16 end) end
                 if BottleLib.ToggleObjects["WalkSpeed"] then BottleLib.ToggleObjects["WalkSpeed"]:SetState(BottleLib.Settings.WalkSpeed.Enabled) end
-                BottleLib:Notify("WalkSpeed: " .. (BottleLib.Settings.WalkSpeed.Enabled and "ON" or "OFF"))
             end
             
             if BottleLib.Settings.JumpPower.Key and input.KeyCode == BottleLib.Settings.JumpPower.Key then
@@ -655,26 +626,22 @@ function BottleLib:CreateWindow(WindowConfig)
                 local hum = player.Character and player.Character:FindFirstChild("Humanoid")
                 if hum then pcall(function() hum.JumpPower = BottleLib.Settings.JumpPower.Enabled and BottleLib.Settings.JumpPower.Value or 50 end) end
                 if BottleLib.ToggleObjects["JumpPower"] then BottleLib.ToggleObjects["JumpPower"]:SetState(BottleLib.Settings.JumpPower.Enabled) end
-                BottleLib:Notify("JumpPower: " .. (BottleLib.Settings.JumpPower.Enabled and "ON" or "OFF"))
             end
             
             if BottleLib.Settings.Fly.Key and input.KeyCode == BottleLib.Settings.Fly.Key then
                 BottleLib.Settings.Fly.Enabled = not BottleLib.Settings.Fly.Enabled
                 ToggleFly(BottleLib.Settings.Fly.Enabled)
                 if BottleLib.ToggleObjects["Fly"] then BottleLib.ToggleObjects["Fly"]:SetState(BottleLib.Settings.Fly.Enabled) end
-                BottleLib:Notify("Fly: " .. (BottleLib.Settings.Fly.Enabled and "ON" or "OFF"))
             end
             
             if BottleLib.Settings.Noclip.Key and input.KeyCode == BottleLib.Settings.Noclip.Key then
                 BottleLib.Settings.Noclip.Enabled = not BottleLib.Settings.Noclip.Enabled
                 ToggleNoclip(BottleLib.Settings.Noclip.Enabled)
                 if BottleLib.ToggleObjects["Noclip"] then BottleLib.ToggleObjects["Noclip"]:SetState(BottleLib.Settings.Noclip.Enabled) end
-                BottleLib:Notify("Noclip: " .. (BottleLib.Settings.Noclip.Enabled and "ON" or "OFF"))
             end
         end
     end))
 
-    -- Constant Value Maintenance (ป้องกันเกมเซ็ตค่าคืน)
     table.insert(BottleLib.Connections, RunService.Heartbeat:Connect(function()
         local char = player.Character
         local hum = char and char:FindFirstChild("Humanoid")
@@ -892,7 +859,6 @@ function BottleLib:CreateWindow(WindowConfig)
     RejoinBtn.MouseLeave:Connect(function() TweenService:Create(RejoinBtn, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(40,40,40)}):Play(); TweenService:Create(rStroke, TweenInfo.new(0.1), {Color = Color3.fromRGB(80,80,80)}):Play() end)
     RejoinBtn.MouseButton1Click:Connect(function()
         if not isPremiumQA() then return end
-        BottleLib:Notify("Rejoining Server...")
         TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, player)
     end)
 
@@ -900,7 +866,6 @@ function BottleLib:CreateWindow(WindowConfig)
     HopBtn.MouseLeave:Connect(function() TweenService:Create(HopBtn, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(40,40,40)}):Play(); TweenService:Create(hStroke, TweenInfo.new(0.1), {Color = Color3.fromRGB(80,80,80)}):Play() end)
     HopBtn.MouseButton1Click:Connect(function()
         if not isPremiumQA() then return end
-        BottleLib:Notify("Searching for new server...")
         task.spawn(function()
             local url = "https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100"
             local req = (syn and syn.request) or (http and http.request) or http_request or request
@@ -911,7 +876,6 @@ function BottleLib:CreateWindow(WindowConfig)
                     if decoded and decoded.data then
                         for _, v in ipairs(decoded.data) do
                             if v.id ~= game.JobId and v.playing < v.maxPlayers then
-                                BottleLib:Notify("Teleporting...")
                                 TeleportService:TeleportToPlaceInstance(game.PlaceId, v.id, player)
                                 return
                             end
@@ -919,7 +883,6 @@ function BottleLib:CreateWindow(WindowConfig)
                     end
                 end
             end
-            BottleLib:Notify("Hop Failed: No servers found.")
         end)
     end)
 
@@ -1179,6 +1142,7 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
         end)
     end
 
+    -- 🔴 [FIX 1] PURE UI TOGGLE KEYBIND (ไม่มี UserInputService แฝงตัวอยู่ข้างใน)
     function APIObj:CreateToggleKeybind(label, initToggle, defaultKey, callback)
         local frame = Instance.new("Frame", targetContainer)
         frame.Size = UDim2.new(1,0,0,34)
@@ -1219,7 +1183,7 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
             if not checkPerm() then return end
             state = not state
             TweenService:Create(dot, TweenInfo.new(0.18), {BackgroundColor3 = state and T.Accent or Color3.fromRGB(60,60,60)}):Play()
-            -- ส่ง true ไปเพื่อบอกว่าผู้เล่นกดจาก UI
+            -- ส่งสถานะ isFromUI เป็น true
             callback(state, currentKey, true)
         end)
         
@@ -1241,7 +1205,7 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
                         b.Text = input.KeyCode.Name
                         currentKey = input.KeyCode
                     end
-                    -- ส่ง false เพื่อบอกว่าแค่เปลี่ยนปุ่มเฉยๆ ยังไม่ต้องทำสลับการทำงาน
+                    -- ส่งสถานะ isFromUI เป็น false (เพราะแค่เปลี่ยนปุ่มเฉยๆ)
                     callback(state, currentKey, false)
                 end
             end)
