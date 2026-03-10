@@ -1,20 +1,25 @@
 --!nocheck
 --[[
-    BOTTLEHUB LIBRARY V12.3 (THE COMPLETE FEATURE EXPANSION)
+    BOTTLEHUB LIBRARY V12.4 (THE ULTIMATE UX & KEYBIND PATCH)
     ─────────────────────────────────────────────────────────────
-    NEW FEATURES IN THIS VERSION:
-      - Custom Minimize Keybind (กำหนดปุ่มย่อจอเองได้)
-      - Player Utility Tab (WalkSpeed, JumpPower, Fly, Noclip)
-      - System Utility Tab (Auto Minimize, Anti-AFK)
-      - UI Components: KeybindBox, KeybindToggle, ToggleSlider
-      - Default values matching game's current states
+    FIX 1: TRUE KEYBIND SYSTEM (Click-to-Bind)
+      - เปลี่ยน TextBox เป็น TextButton สำหรับตั้งปุ่ม
+      - ผู้ใช้แค่ "คลิก" แล้ว "กดปุ่มคีย์บอร์ด" ระบบจะจับค่าปุ่มให้เลย (ไม่ต้องพิมพ์)
+      - กด Backspace / Escape เพื่อ Unbind
+    
+    FIX 2: MASTER INPUT HANDLER
+      - รวมการดักจับปุ่ม (Minimize, WalkSpeed, Fly, Noclip) ไว้ในลูปเดียว
+      - แก้บัคกดปุ่มแล้วฟีเจอร์ไม่ทำงาน
+    
+    FIX 3: FPS & PING RENDER
+      - ใช้สูตร (1 / deltaTime) ใน Heartbeat เพื่อรับประกันว่า FPS วิ่งเสมอ
 ]]
 
 local BottleLib = {}
 BottleLib.KeyStatus = { Valid = false, ExpiresAt = nil, IsGlobal = false, Tier = "Basic", KeyName = "Unknown" }
 BottleLib.Connections = {}
 
--- ตัวแปร Global สำหรับเก็บสถานะฟีเจอร์พื้นฐาน
+-- Global Settings (ฝังใน Lib)
 BottleLib.Settings = {
     MinimizeKey = Enum.KeyCode.LeftControl,
     AutoMinimize = false,
@@ -23,6 +28,14 @@ BottleLib.Settings = {
     JumpPower = { Enabled = false, Key = nil, Value = 50 },
     Fly = { Enabled = false, Key = nil, Speed = 50 },
     Noclip = { Enabled = false, Key = nil }
+}
+
+-- เก็บ Object ของ Toggle เพื่อใช้อัปเดต UI ตอนกดปุ่มลัด
+BottleLib.ToggleObjects = {
+    WalkSpeed = nil,
+    JumpPower = nil,
+    Fly = nil,
+    Noclip = nil
 }
 
 local CoreGui             = game:GetService("CoreGui")
@@ -112,10 +125,9 @@ local function HandleFlyMovement()
     flyBodyGyro.CFrame = cam.CFrame
 end
 
-RunService.RenderStepped:Connect(HandleFlyMovement)
+table.insert(BottleLib.Connections, RunService.RenderStepped:Connect(HandleFlyMovement))
 
 local function ToggleNoclip(state)
-    BottleLib.Settings.Noclip.Enabled = state
     if state then
         if not noclipConnection then
             noclipConnection = RunService.Stepped:Connect(function()
@@ -133,7 +145,6 @@ local function ToggleNoclip(state)
         if noclipConnection then
             noclipConnection:Disconnect()
             noclipConnection = nil
-            -- คืนค่า Collision ปกติ
             local char = player.Character
             if char then
                 for _, part in ipairs(char:GetDescendants()) do
@@ -147,7 +158,7 @@ local function ToggleNoclip(state)
 end
 
 -- ============================================================
--- 🔔 NOTIFICATION SYSTEM (SPLIT LOGIC)
+-- 🔔 NOTIFICATION SYSTEM
 -- ============================================================
 function BottleLib:Notify(msg)
     local parentGui = (gethui and gethui()) or CoreGui
@@ -161,47 +172,26 @@ function BottleLib:Notify(msg)
         if not mainWin then return end
 
         local dimOverlay = Instance.new("TextButton", mainWin)
-        dimOverlay.Size = UDim2.new(1, 0, 1, 0)
-        dimOverlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-        dimOverlay.BackgroundTransparency = 1
-        dimOverlay.Text = ""
-        dimOverlay.AutoButtonColor = false
-        dimOverlay.ZIndex = 98
-        Instance.new("UICorner", dimOverlay).CornerRadius = UDim.new(0, 8)
+        dimOverlay.Size = UDim2.new(1, 0, 1, 0); dimOverlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+        dimOverlay.BackgroundTransparency = 1; dimOverlay.Text = ""; dimOverlay.AutoButtonColor = false
+        dimOverlay.ZIndex = 98; Instance.new("UICorner", dimOverlay).CornerRadius = UDim.new(0, 8)
 
         local notif = Instance.new("Frame", dimOverlay)
-        notif.Size = UDim2.new(0, 280, 0, 45)
-        notif.Position = UDim2.new(0.5, 0, 0.5, 0)
-        notif.AnchorPoint = Vector2.new(0.5, 0.5)
-        notif.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-        notif.BackgroundTransparency = 1
-        notif.ZIndex = 99
-        Instance.new("UICorner", notif).CornerRadius = UDim.new(0, 6)
+        notif.Size = UDim2.new(0, 280, 0, 45); notif.Position = UDim2.new(0.5, 0, 0.5, 0)
+        notif.AnchorPoint = Vector2.new(0.5, 0.5); notif.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+        notif.BackgroundTransparency = 1; notif.ZIndex = 99; Instance.new("UICorner", notif).CornerRadius = UDim.new(0, 6)
         
-        local stroke = Instance.new("UIStroke", notif)
-        stroke.Color = Color3.fromRGB(255, 69, 58)
-        stroke.Transparency = 1
+        local stroke = Instance.new("UIStroke", notif); stroke.Color = Color3.fromRGB(255, 69, 58); stroke.Transparency = 1
 
         local icon = Instance.new("TextLabel", notif)
-        icon.Size = UDim2.new(0, 35, 1, 0)
-        icon.BackgroundTransparency = 1
-        icon.Text = "⛔"
-        icon.TextSize = 16
-        icon.TextTransparency = 1
-        icon.ZIndex = 100
+        icon.Size = UDim2.new(0, 35, 1, 0); icon.BackgroundTransparency = 1; icon.Text = "⛔"
+        icon.TextSize = 16; icon.TextTransparency = 1; icon.ZIndex = 100
 
         local lbl = Instance.new("TextLabel", notif)
-        lbl.Size = UDim2.new(1, -40, 1, 0)
-        lbl.Position = UDim2.new(0, 35, 0, 0)
-        lbl.BackgroundTransparency = 1
-        lbl.Text = msg
-        lbl.TextColor3 = Color3.fromRGB(255, 200, 200)
-        lbl.Font = Enum.Font.GothamBold
-        lbl.TextSize = 11
-        lbl.TextXAlignment = Enum.TextXAlignment.Left
-        lbl.TextWrapped = true
-        lbl.TextTransparency = 1
-        lbl.ZIndex = 100
+        lbl.Size = UDim2.new(1, -40, 1, 0); lbl.Position = UDim2.new(0, 35, 0, 0)
+        lbl.BackgroundTransparency = 1; lbl.Text = msg; lbl.TextColor3 = Color3.fromRGB(255, 200, 200)
+        lbl.Font = Enum.Font.GothamBold; lbl.TextSize = 11; lbl.TextXAlignment = Enum.TextXAlignment.Left
+        lbl.TextWrapped = true; lbl.TextTransparency = 1; lbl.ZIndex = 100
 
         TweenService:Create(dimOverlay, TweenInfo.new(0.2), {BackgroundTransparency = 0.4}):Play()
         TweenService:Create(notif, TweenInfo.new(0.2), {BackgroundTransparency = 0}):Play()
@@ -216,55 +206,33 @@ function BottleLib:Notify(msg)
                 TweenService:Create(stroke, TweenInfo.new(0.3), {Transparency = 1}):Play()
                 TweenService:Create(icon, TweenInfo.new(0.3), {TextTransparency = 1}):Play()
                 TweenService:Create(lbl, TweenInfo.new(0.3), {TextTransparency = 1}):Play()
-                task.wait(0.3)
-                if dimOverlay and dimOverlay.Parent then dimOverlay:Destroy() end
+                task.wait(0.3); if dimOverlay and dimOverlay.Parent then dimOverlay:Destroy() end
             end
         end)
-
     else
         local container = sg:FindFirstChild("NotifyContainer")
         if not container then
-            container = Instance.new("Frame", sg)
-            container.Name = "NotifyContainer"
-            container.Size = UDim2.new(0, 260, 1, -20)
-            container.Position = UDim2.new(1, -20, 1, -20)
-            container.AnchorPoint = Vector2.new(1, 1) 
-            container.BackgroundTransparency = 1
-            container.ZIndex = 100
-            
-            local layout = Instance.new("UIListLayout", container)
-            layout.SortOrder = Enum.SortOrder.LayoutOrder
-            layout.VerticalAlignment = Enum.VerticalAlignment.Bottom
-            layout.Padding = UDim.new(0, 10)
+            container = Instance.new("Frame", sg); container.Name = "NotifyContainer"
+            container.Size = UDim2.new(0, 260, 1, -20); container.Position = UDim2.new(1, -20, 1, -20)
+            container.AnchorPoint = Vector2.new(1, 1); container.BackgroundTransparency = 1; container.ZIndex = 100
+            local layout = Instance.new("UIListLayout", container); layout.SortOrder = Enum.SortOrder.LayoutOrder
+            layout.VerticalAlignment = Enum.VerticalAlignment.Bottom; layout.Padding = UDim.new(0, 10)
         end
 
         local notif = Instance.new("Frame", container)
-        notif.Size = UDim2.new(1, 0, 0, 45)
-        notif.BackgroundColor3 = Color3.fromRGB(20,20,20)
-        notif.BackgroundTransparency = 1
-        Instance.new("UICorner", notif).CornerRadius = UDim.new(0,6)
-        local stroke = Instance.new("UIStroke", notif)
-        stroke.Color = Color3.fromHex("#e60852")
-        stroke.Transparency = 1
+        notif.Size = UDim2.new(1, 0, 0, 45); notif.BackgroundColor3 = Color3.fromRGB(20,20,20)
+        notif.BackgroundTransparency = 1; Instance.new("UICorner", notif).CornerRadius = UDim.new(0,6)
+        local stroke = Instance.new("UIStroke", notif); stroke.Color = Color3.fromHex("#e60852"); stroke.Transparency = 1
 
         local icon = Instance.new("TextLabel", notif)
-        icon.Size = UDim2.new(0, 35, 1, 0)
-        icon.BackgroundTransparency = 1
-        icon.Text = "🔔"
-        icon.TextSize = 16
-        icon.TextTransparency = 1
+        icon.Size = UDim2.new(0, 35, 1, 0); icon.BackgroundTransparency = 1; icon.Text = "🔔"
+        icon.TextSize = 16; icon.TextTransparency = 1
 
         local lbl = Instance.new("TextLabel", notif)
-        lbl.Size = UDim2.new(1, -40, 1, 0)
-        lbl.Position = UDim2.new(0, 35, 0, 0)
-        lbl.BackgroundTransparency = 1
-        lbl.Text = msg
-        lbl.TextColor3 = Color3.fromRGB(240,240,240)
-        lbl.Font = Enum.Font.GothamMedium
-        lbl.TextSize = 11
-        lbl.TextXAlignment = Enum.TextXAlignment.Left
-        lbl.TextWrapped = true
-        lbl.TextTransparency = 1
+        lbl.Size = UDim2.new(1, -40, 1, 0); lbl.Position = UDim2.new(0, 35, 0, 0)
+        lbl.BackgroundTransparency = 1; lbl.Text = msg; lbl.TextColor3 = Color3.fromRGB(240,240,240)
+        lbl.Font = Enum.Font.GothamMedium; lbl.TextSize = 11; lbl.TextXAlignment = Enum.TextXAlignment.Left
+        lbl.TextWrapped = true; lbl.TextTransparency = 1
 
         TweenService:Create(notif, TweenInfo.new(0.3), {BackgroundTransparency=0.05}):Play()
         TweenService:Create(stroke, TweenInfo.new(0.3), {Transparency=0}):Play()
@@ -277,8 +245,7 @@ function BottleLib:Notify(msg)
                 TweenService:Create(stroke, TweenInfo.new(0.3), {Transparency=1}):Play()
                 TweenService:Create(icon, TweenInfo.new(0.3), {TextTransparency=1}):Play()
                 TweenService:Create(lbl, TweenInfo.new(0.3), {TextTransparency=1}):Play()
-                task.wait(0.3)
-                if notif and notif.Parent then notif:Destroy() end
+                task.wait(0.3); if notif and notif.Parent then notif:Destroy() end
             end
         end)
     end
@@ -296,8 +263,7 @@ function BottleLib:ShowLoader(message)
     if _loaderDotsConn then _loaderDotsConn:Disconnect() end
 
     local sg = Instance.new("ScreenGui")
-    sg.Name = "BOTTLEHUB_LOADER"
-    sg.ResetOnSpawn = false; sg.Parent = (gethui and gethui()) or CoreGui
+    sg.Name = "BOTTLEHUB_LOADER"; sg.ResetOnSpawn = false; sg.Parent = (gethui and gethui()) or CoreGui
     _loaderGui = sg
 
     local overlay = Instance.new("Frame", sg)
@@ -325,9 +291,7 @@ function BottleLib:ShowLoader(message)
     arcStroke.Color = Color3.fromRGB(255,255,255); arcStroke.Thickness = 3
     local gradient = Instance.new("UIGradient", arcStroke)
     gradient.Color = ColorSequence.new(Color3.fromHex("#e60852")) 
-    gradient.Transparency = NumberSequence.new({
-        NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(0.7, 1), NumberSequenceKeypoint.new(1, 1)     
-    })
+    gradient.Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(0.7, 1), NumberSequenceKeypoint.new(1, 1)})
     gradient.Rotation = 180
 
     local angle = 0
@@ -345,10 +309,7 @@ function BottleLib:ShowLoader(message)
     _loaderDotsConn = RunService.Heartbeat:Connect(function(dt)
         if not msgLbl or not msgLbl.Parent then return end
         dotTimer = dotTimer + dt
-        if dotTimer >= 0.4 then 
-            dotTimer = 0; dotCount = (dotCount + 1) % 4
-            msgLbl.Text = message .. string.rep(".", dotCount)
-        end
+        if dotTimer >= 0.4 then dotTimer = 0; dotCount = (dotCount + 1) % 4; msgLbl.Text = message .. string.rep(".", dotCount) end
     end)
 
     task.spawn(function()
@@ -356,8 +317,7 @@ function BottleLib:ShowLoader(message)
         while card and card.Parent do
             alpha = alpha + 0.02 * pulseDir
             if alpha >= 1 then alpha = 1; pulseDir = -1 elseif alpha <= 0 then alpha = 0; pulseDir = 1 end
-            pcall(function() stroke.Transparency = 0.3 + alpha * 0.5 end)
-            task.wait(0.03)
+            pcall(function() stroke.Transparency = 0.3 + alpha * 0.5 end); task.wait(0.03)
         end
     end)
 
@@ -658,64 +618,57 @@ function BottleLib:CreateWindow(WindowConfig)
         if MainFrame then MainFrame.Visible = not hide end
         if MiniButton then MiniButton.Visible = hide end
     end
+    
+    if WindowConfig.AutoMinimize or BottleLib.Settings.AutoMinimize then ToggleMinimize(true) end
 
-    -- Toggle Minimize ด้วยคีย์ที่ตั้งไว้
+    -- 🔴 [FIX 1 & 2] MASTER INPUT HANDLER (คุมการกดปุ่มทั้งหมดที่นี่)
     table.insert(BottleLib.Connections, UserInputService.InputBegan:Connect(function(input, gp)
+        -- เช็คว่าพิมพ์แชทอยู่ไหม
+        local isTyping = false
+        pcall(function() isTyping = UserInputService:GetFocusedTextBox() ~= nil end)
+        if isTyping then return end 
+
+        -- Toggle Minimize (ไม่สนใจ gameProcessed เพื่อให้กดตอนเดินได้)
         if input.KeyCode == BottleLib.Settings.MinimizeKey then
-            local focused = false
-            pcall(function() focused = UserInputService:GetFocusedTextBox() ~= nil end)
-            if not focused and MainFrame and MainFrame.Parent then
-                ToggleMinimize(MainFrame.Visible)
+            if MainFrame and MainFrame.Parent then ToggleMinimize(MainFrame.Visible) end
+        end
+
+        -- Feature Toggles
+        if not gp then -- ฟีเจอร์ในเกมควรเช็ค gp เพื่อไม่ให้ทับกับเมนู
+            if BottleLib.Settings.WalkSpeed.Key and input.KeyCode == BottleLib.Settings.WalkSpeed.Key then
+                BottleLib.Settings.WalkSpeed.Enabled = not BottleLib.Settings.WalkSpeed.Enabled
+                local hum = player.Character and player.Character:FindFirstChild("Humanoid")
+                if hum then hum.WalkSpeed = BottleLib.Settings.WalkSpeed.Enabled and BottleLib.Settings.WalkSpeed.Value or 16 end
+                if BottleLib.ToggleObjects.WalkSpeed then BottleLib.ToggleObjects.WalkSpeed:SetState(BottleLib.Settings.WalkSpeed.Enabled) end
+                BottleLib:Notify("WalkSpeed: " .. (BottleLib.Settings.WalkSpeed.Enabled and "ON" or "OFF"))
+            end
+            
+            if BottleLib.Settings.JumpPower.Key and input.KeyCode == BottleLib.Settings.JumpPower.Key then
+                BottleLib.Settings.JumpPower.Enabled = not BottleLib.Settings.JumpPower.Enabled
+                local hum = player.Character and player.Character:FindFirstChild("Humanoid")
+                if hum then hum.JumpPower = BottleLib.Settings.JumpPower.Enabled and BottleLib.Settings.JumpPower.Value or 50 end
+                if BottleLib.ToggleObjects.JumpPower then BottleLib.ToggleObjects.JumpPower:SetState(BottleLib.Settings.JumpPower.Enabled) end
+                BottleLib:Notify("JumpPower: " .. (BottleLib.Settings.JumpPower.Enabled and "ON" or "OFF"))
+            end
+            
+            if BottleLib.Settings.Fly.Key and input.KeyCode == BottleLib.Settings.Fly.Key then
+                BottleLib.Settings.Fly.Enabled = not BottleLib.Settings.Fly.Enabled
+                ToggleFly(BottleLib.Settings.Fly.Enabled, BottleLib.Settings.Fly.Speed)
+                if BottleLib.ToggleObjects.Fly then BottleLib.ToggleObjects.Fly:SetState(BottleLib.Settings.Fly.Enabled) end
+                BottleLib:Notify("Fly: " .. (BottleLib.Settings.Fly.Enabled and "ON" or "OFF"))
+            end
+            
+            if BottleLib.Settings.Noclip.Key and input.KeyCode == BottleLib.Settings.Noclip.Key then
+                BottleLib.Settings.Noclip.Enabled = not BottleLib.Settings.Noclip.Enabled
+                ToggleNoclip(BottleLib.Settings.Noclip.Enabled)
+                if BottleLib.ToggleObjects.Noclip then BottleLib.ToggleObjects.Noclip:SetState(BottleLib.Settings.Noclip.Enabled) end
+                BottleLib:Notify("Noclip: " .. (BottleLib.Settings.Noclip.Enabled and "ON" or "OFF"))
             end
         end
     end))
-    
-    -- Auto Minimize Logic
-    if WindowConfig.AutoMinimize or BottleLib.Settings.AutoMinimize then
-        ToggleMinimize(true)
-    end
-    
-    -- System Actions Check
-    table.insert(BottleLib.Connections, UserInputService.InputBegan:Connect(function(input, gp)
-        if gp then return end
-        
-        if input.KeyCode == BottleLib.Settings.WalkSpeed.Key and BottleLib.Settings.WalkSpeed.Enabled then
-            BottleLib.Settings.WalkSpeed.Enabled = false
-            local hum = player.Character and player.Character:FindFirstChild("Humanoid")
-            if hum then hum.WalkSpeed = 16 end
-            BottleLib:Notify("WalkSpeed: OFF")
-        elseif input.KeyCode == BottleLib.Settings.WalkSpeed.Key and not BottleLib.Settings.WalkSpeed.Enabled then
-            BottleLib.Settings.WalkSpeed.Enabled = true
-            local hum = player.Character and player.Character:FindFirstChild("Humanoid")
-            if hum then hum.WalkSpeed = BottleLib.Settings.WalkSpeed.Value end
-            BottleLib:Notify("WalkSpeed: ON")
-        end
-        
-        if input.KeyCode == BottleLib.Settings.JumpPower.Key and BottleLib.Settings.JumpPower.Enabled then
-            BottleLib.Settings.JumpPower.Enabled = false
-            local hum = player.Character and player.Character:FindFirstChild("Humanoid")
-            if hum then hum.JumpPower = 50 end
-            BottleLib:Notify("JumpPower: OFF")
-        elseif input.KeyCode == BottleLib.Settings.JumpPower.Key and not BottleLib.Settings.JumpPower.Enabled then
-            BottleLib.Settings.JumpPower.Enabled = true
-            local hum = player.Character and player.Character:FindFirstChild("Humanoid")
-            if hum then hum.JumpPower = BottleLib.Settings.JumpPower.Value end
-            BottleLib:Notify("JumpPower: ON")
-        end
-        
-        if input.KeyCode == BottleLib.Settings.Fly.Key then
-            ToggleFly(not isFlying, BottleLib.Settings.Fly.Speed)
-            BottleLib:Notify("Fly: " .. (isFlying and "ON" or "OFF"))
-        end
-        
-        if input.KeyCode == BottleLib.Settings.Noclip.Key then
-            ToggleNoclip(not BottleLib.Settings.Noclip.Enabled)
-            BottleLib:Notify("Noclip: " .. (BottleLib.Settings.Noclip.Enabled and "ON" or "OFF"))
-        end
-    end))
 
-    -- Constant Value Maintenance (Ensures values don't reset)
-    RunService.Heartbeat:Connect(function()
+    -- Constant Value Maintenance
+    table.insert(BottleLib.Connections, RunService.Heartbeat:Connect(function()
         local char = player.Character
         local hum = char and char:FindFirstChild("Humanoid")
         if hum then
@@ -726,7 +679,7 @@ function BottleLib:CreateWindow(WindowConfig)
                 hum.JumpPower = BottleLib.Settings.JumpPower.Value
             end
         end
-    end)
+    end))
     
     -- Anti-AFK
     table.insert(BottleLib.Connections, player.Idled:Connect(function()
@@ -991,6 +944,30 @@ function BottleLib:CreateWindow(WindowConfig)
         task.delay(1.8, function() if not DiscordBtn or not DiscordBtn.Parent then return end; DiscordBtn.Text = origText; DiscordBtn.TextColor3 = origColor; TweenService:Create(DiscordBtn, TweenInfo.new(0.2), { BackgroundColor3 = Color3.fromRGB(24,24,42) }):Play(); TweenService:Create(dbStroke, TweenInfo.new(0.2), { Color = Color3.fromRGB(50,50,90) }):Play() end)
     end)
 
+    -- 🔴 [FIX 3] RENDER LOOP FOR FPS/PING (Heartbeat Fix)
+    local frames = 0
+    local fpsConn = RunService.Heartbeat:Connect(function(dt)
+        frames = math.floor(1 / dt)
+    end)
+    table.insert(BottleLib.Connections, fpsConn)
+
+    local lastUpdate = os.clock()
+    local statsConn = RunService.Heartbeat:Connect(function()
+        local now = os.clock()
+        if now - lastUpdate >= 0.5 then -- Update every 0.5s for smoothness
+            lastUpdate = now
+            local ping = 0
+            pcall(function() ping = math.floor(player:GetNetworkPing() * 1000) end)
+            
+            local statTextFull = string.format("📈 FPS: %d  |  📶 Ping: %dms", frames, ping)
+            local statTextMini = string.format("📈 %d | 📶 %d", frames, ping)
+            
+            if TopStatsLbl and TopStatsLbl.Parent then TopStatsLbl.Text = statTextFull end
+            if MiniStatsLbl and MiniStatsLbl.Parent then MiniStatsLbl.Text = statTextMini end
+        end
+    end)
+    table.insert(BottleLib.Connections, statsConn)
+
     local tabList = {}; local currentTab = nil
 
     function WindowObj:CreateTab(TabName)
@@ -1027,6 +1004,7 @@ function BottleLib:CreateWindow(WindowConfig)
         return TabObj
     end
 
+    if WindowConfig.AutoMinimize then ToggleMinimize(true) end
     return WindowObj
 end
 
@@ -1073,32 +1051,61 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
         end)
         return ToggleObj
     end
-    
+
+    -- 🔴 [FIX 1] NEW KEYBIND BOX (Click to Bind, no typing)
     function APIObj:CreateKeybindBox(label, defaultKey, callback)
-        local frame = Instance.new("Frame", targetContainer); frame.Size = UDim2.new(1,0,0,36); frame.BackgroundColor3 = T.Element; Instance.new("UICorner", frame).CornerRadius = UDim.new(0,4)
-        local l = Instance.new("TextLabel", frame); l.Size = UDim2.new(0.5,0,1,0); l.Position = UDim2.new(0.02,0,0,0); l.BackgroundTransparency = 1; l.Text = label; l.TextColor3 = T.SubText; l.Font = Enum.Font.GothamMedium; l.TextSize = 10; l.TextXAlignment = Enum.TextXAlignment.Left
-        local b = Instance.new("TextBox", frame); b.Size = UDim2.new(0.3,0,0.65,0); b.Position = UDim2.new(0.68,0,0.175,0); b.BackgroundColor3 = T.ElemDark; b.TextColor3 = T.Accent; b.Font = Enum.Font.GothamBold; b.Text = (defaultKey and defaultKey ~= "") and tostring(defaultKey) or "NONE"; b.ClearTextOnFocus = false; Instance.new("UICorner", b).CornerRadius = UDim.new(0,4)
-        b.Focused:Connect(function() 
-            if not checkPerm() then b:ReleaseFocus() else b.Text = "..." end
-        end)
-        b.FocusLost:Connect(function() 
-            local t = string.upper(b.Text)
-            if t == "" or t == " " or t == "..." then 
-                b.Text = "NONE"
-                callback(nil)
-                return
-            end
-            local ok, keyEnum = pcall(function() return Enum.KeyCode[t] end)
-            if ok and keyEnum then
-                b.Text = keyEnum.Name
-                callback(keyEnum)
-            else
-                b.Text = "NONE"
-                callback(nil)
-            end
+        local frame = Instance.new("Frame", targetContainer)
+        frame.Size = UDim2.new(1,0,0,36)
+        frame.BackgroundColor3 = T.Element
+        Instance.new("UICorner", frame).CornerRadius = UDim.new(0,4)
+        
+        local l = Instance.new("TextLabel", frame)
+        l.Size = UDim2.new(0.5,0,1,0)
+        l.Position = UDim2.new(0.02,0,0,0)
+        l.BackgroundTransparency = 1
+        l.Text = label
+        l.TextColor3 = T.SubText
+        l.Font = Enum.Font.GothamMedium
+        l.TextSize = 10
+        l.TextXAlignment = Enum.TextXAlignment.Left
+        
+        local b = Instance.new("TextButton", frame)
+        b.Size = UDim2.new(0.3,0,0.65,0)
+        b.Position = UDim2.new(0.68,0,0.175,0)
+        b.BackgroundColor3 = T.ElemDark
+        b.TextColor3 = T.Accent
+        b.Font = Enum.Font.GothamBold
+        b.Text = (defaultKey and typeof(defaultKey) == "EnumItem") and defaultKey.Name or "NONE"
+        b.AutoButtonColor = false
+        Instance.new("UICorner", b).CornerRadius = UDim.new(0,4)
+        
+        local binding = false
+        local conn = nil
+        
+        b.MouseButton1Click:Connect(function()
+            if not checkPerm() then return end
+            binding = true
+            b.Text = "..."
+            if conn then conn:Disconnect() end
+            
+            conn = UserInputService.InputBegan:Connect(function(input)
+                if binding and input.UserInputType == Enum.UserInputType.Keyboard then
+                    binding = false
+                    if conn then conn:Disconnect(); conn = nil end
+                    
+                    if input.KeyCode == Enum.KeyCode.Escape or input.KeyCode == Enum.KeyCode.Backspace then
+                        b.Text = "NONE"
+                        callback(nil)
+                    else
+                        b.Text = input.KeyCode.Name
+                        callback(input.KeyCode)
+                    end
+                end
+            end)
         end)
     end
-    
+
+    -- 🔴 [FIX 1] NEW TOGGLE KEYBIND (Click to Bind)
     function APIObj:CreateToggleKeybind(label, initToggle, defaultKey, callback)
         local frame = Instance.new("Frame", targetContainer)
         frame.Size = UDim2.new(1,0,0,34)
@@ -1120,18 +1127,20 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
         dot.BackgroundColor3 = initToggle and T.Accent or Color3.fromRGB(60,60,60)
         Instance.new("UICorner", dot).CornerRadius = UDim.new(1,0)
         
-        local b = Instance.new("TextBox", frame)
+        local b = Instance.new("TextButton", frame)
         b.Size = UDim2.new(0.3,0,0.65,0)
         b.Position = UDim2.new(0.68,0,0.175,0)
         b.BackgroundColor3 = T.ElemDark
         b.TextColor3 = T.Accent
         b.Font = Enum.Font.GothamBold
-        b.Text = (defaultKey and defaultKey ~= "") and tostring(defaultKey.Name or defaultKey) or "NONE"
-        b.ClearTextOnFocus = false
+        b.Text = (defaultKey and typeof(defaultKey) == "EnumItem") and defaultKey.Name or "NONE"
+        b.AutoButtonColor = false
         Instance.new("UICorner", b).CornerRadius = UDim.new(0,4)
         
         local state = initToggle
         local currentKey = defaultKey
+        local binding = false
+        local conn = nil
         
         local function FireCallback()
             callback(state, currentKey)
@@ -1144,33 +1153,39 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
             FireCallback()
         end)
         
-        b.Focused:Connect(function() 
-            if not checkPerm() then b:ReleaseFocus() else b.Text = "..." end
-        end)
-        b.FocusLost:Connect(function() 
-            local t = string.upper(b.Text)
-            if t == "" or t == " " or t == "..." then 
-                b.Text = "NONE"
-                currentKey = nil
-            else
-                local ok, keyEnum = pcall(function() return Enum.KeyCode[t] end)
-                if ok and keyEnum then
-                    b.Text = keyEnum.Name
-                    currentKey = keyEnum
-                else
-                    b.Text = "NONE"
-                    currentKey = nil
+        b.MouseButton1Click:Connect(function()
+            if not checkPerm() then return end
+            binding = true
+            b.Text = "..."
+            if conn then conn:Disconnect() end
+            
+            conn = UserInputService.InputBegan:Connect(function(input)
+                if binding and input.UserInputType == Enum.UserInputType.Keyboard then
+                    binding = false
+                    if conn then conn:Disconnect(); conn = nil end
+                    
+                    if input.KeyCode == Enum.KeyCode.Escape or input.KeyCode == Enum.KeyCode.Backspace then
+                        b.Text = "NONE"
+                        currentKey = nil
+                    else
+                        b.Text = input.KeyCode.Name
+                        currentKey = input.KeyCode
+                    end
+                    FireCallback()
                 end
-            end
-            FireCallback()
+            end)
         end)
         
         local RetObj = {}
         function RetObj:SetState(newState)
             state = newState
             TweenService:Create(dot, TweenInfo.new(0.18), {BackgroundColor3 = state and T.Accent or Color3.fromRGB(60,60,60)}):Play()
-            FireCallback()
         end
+        
+        -- ลงทะเบียนเข้า Global ToggleObjects 
+        local pureLabel = label:gsub(" ", "")
+        BottleLib.ToggleObjects[pureLabel] = RetObj
+        
         return RetObj
     end
 
@@ -1195,7 +1210,7 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
         end)
         trackHit.MouseButton1Up:Connect(function(x, y) dragging = false end)
     end
-    
+
     function APIObj:CreateDropdown(placeholder, optionsList, callback)
         local frame = Instance.new("Frame", targetContainer); frame.Size = UDim2.new(1,0,0,34); frame.BackgroundColor3 = T.Element; Instance.new("UICorner", frame).CornerRadius = UDim.new(0,4)
         local Input = Instance.new("TextBox", frame); Input.Size = UDim2.new(1,-20,1,0); Input.Position = UDim2.new(0,10,0,0); Input.BackgroundTransparency = 1; Input.Text = ""; Input.PlaceholderText = "🔍 "..placeholder; Input.TextColor3 = T.Text; Input.PlaceholderColor3 = T.SubText; Input.Font = Enum.Font.GothamSemibold; Input.TextSize = 11; Input.TextXAlignment = Enum.TextXAlignment.Left
