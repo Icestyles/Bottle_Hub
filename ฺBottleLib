@@ -2,12 +2,13 @@
 --[[
     ===========================================================================
     ■ BOTTLEHUB UI LIBRARY (PURE ARCHITECTURE)
-    ■ Version: 13.1 (Analytics Active & API Bridge)
+    ■ Version: 13.2 (Ultimate Analytics Edition + Easter Egg)
     ■ Description: 
       - Clean, modular, separation-of-concerns UI Library.
       - Built-in GAS Key System (URL Obfuscated).
-      - Fully Active Analytics tracking system (SendAnalytics).
-      - PURE UI: No internal game logic.
+      - Advanced Analytics tracking system (Tracks HWID, Key, Tier).
+      - PURE UI: No internal game logic. The developer handles logic externally.
+      - 🔴 EASTER EGG: Click the Hub Title 3 times fast to load Infinite Yield.
     ===========================================================================
 ]]
 
@@ -15,12 +16,14 @@ local BottleLib = {}
 
 -- ============================================================================
 -- [1] INITIALIZATION & GLOBAL SETTINGS
+-- Setup core variables, Roblox services, and cleanup events.
 -- ============================================================================
 BottleLib.KeyStatus = { Valid = false, ExpiresAt = nil, IsGlobal = false, Tier = "Basic", KeyName = "Unknown", HWID = "Unknown" }
-BottleLib.Connections = {}
-BottleLib.MinimizeKey = Enum.KeyCode.LeftControl
-BottleLib.OnCloseEvent = Instance.new("BindableEvent")
+BottleLib.Connections = {} -- Stores all RBXScriptConnections for memory management
+BottleLib.MinimizeKey = Enum.KeyCode.LeftControl -- Default key to hide/show the UI
+BottleLib.OnCloseEvent = Instance.new("BindableEvent") -- Fired when the UI is permanently closed
 
+-- Fetching Required Roblox Services
 local CoreGui             = game:GetService("CoreGui")
 local TweenService        = game:GetService("TweenService")
 local UserInputService    = game:GetService("UserInputService")
@@ -34,6 +37,7 @@ local TeleportService     = game:GetService("TeleportService")
 local player = Players.LocalPlayer
 while not player do task.wait(0.1); player = Players.LocalPlayer end
 
+-- Memory Leak Prevention: Disconnects all connections when UI reloads or closes
 BottleLib.CleanUpEvent = Instance.new("BindableEvent")
 BottleLib.CleanUpEvent.Event:Connect(function()
     for _, conn in ipairs(BottleLib.Connections) do
@@ -42,15 +46,18 @@ BottleLib.CleanUpEvent.Event:Connect(function()
     BottleLib.Connections = {}
 end)
 
+-- @param keycode (Enum.KeyCode): Allows developers to dynamically change the minimize key
 function BottleLib:SetMinimizeKey(keycode)
     if typeof(keycode) == "EnumItem" then self.MinimizeKey = keycode end
 end
 
 -- ============================================================================
--- [2] SECURITY & OBFUSCATION (GAS URL)
+-- [2] SECURITY & OBFUSCATION
+-- Protects sensitive backend endpoints from plain-text scraping.
 -- ============================================================================
 local __SECRETS = {
     DISCORD = "https://discord.gg/JbSUQCxW2w",
+    -- 🔴 นำชุดตัวเลขที่คุณแปลงมาจากลิงก์ GAS ของคุณมาวางทับในปีกกานี้
     GAS_BYTES = {
         104, 116, 116, 112, 115, 58, 47, 47, 115, 99, 114, 105, 112, 116, 46, 103, 
         111, 111, 103, 108, 101, 46, 99, 111, 109, 47, 109, 97, 99, 114, 111, 115, 
@@ -62,6 +69,7 @@ local __SECRETS = {
     }
 }
 
+-- Decodes the byte array back into a usable URL string dynamically.
 local function GetGasEndpoint()
     local res = ""
     for i = 1, #__SECRETS.GAS_BYTES do res = res .. string.char(__SECRETS.GAS_BYTES[i]) end
@@ -69,12 +77,16 @@ local function GetGasEndpoint()
 end
 
 -- ============================================================================
--- [3] PUBLIC API BRIDGE (✅ TYPE CHECKED: มีฟังก์ชันครบถ้วน)
+-- [3] PUBLIC API BRIDGE
+-- Exposes backend URLs, HWID, and Analytics for the Main Script to use.
 -- ============================================================================
+
+-- @description Returns the decoded backend URL for external script usage.
 function BottleLib:GetBackendURL()
     return GetGasEndpoint()
 end
 
+-- @description Safely retrieves the user's Hardware ID (HWID) across multiple executors.
 function BottleLib:GetHWID()
     if type(gethwid) == "function" then
         local ok, hwid = pcall(gethwid); if ok and hwid and hwid ~= "" then return hwid end
@@ -91,7 +103,8 @@ function BottleLib:GetHWID()
     return newHwid
 end
 
--- 📊 ฟังก์ชันหลักสำหรับส่งสถิติ (Analytics) ไปยัง GAS
+-- @description Sends usage statistics to the GAS backend silently.
+-- @param scriptName (string): The name of the script currently being executed.
 function BottleLib:SendAnalytics(scriptName)
     task.spawn(function()
         local url = self:GetBackendURL()
@@ -99,9 +112,12 @@ function BottleLib:SendAnalytics(scriptName)
             action = "log_stats",
             hwid = self:GetHWID(),
             placeId = tostring(game.PlaceId),
-            script = scriptName or "Unknown"
+            script = scriptName or "Unknown",
+            key = self.KeyStatus.KeyName or "Unknown",
+            tier = self.KeyStatus.Tier or "Basic"
         }
         
+        -- Fallback support for various executor request methods
         local req = (syn and syn.request) or (http and http.request) or http_request or request
         if req then
             pcall(function()
@@ -118,12 +134,15 @@ end
 
 -- ============================================================================
 -- [4] UI UTILITIES (NOTIFY & LOADER)
+-- Handles on-screen alerts and loading animations.
 -- ============================================================================
+
 function BottleLib:Notify(msg)
     local parentGui = (gethui and gethui()) or CoreGui
     local sg = parentGui:FindFirstChild("BOTTLEHUB_MAIN")
     if not sg then return end
 
+    -- Specialized handling for Premium Access block
     local isPermError = (msg == "You do not have permission to use this Premium feature.")
 
     if isPermError then
@@ -169,6 +188,7 @@ function BottleLib:Notify(msg)
             end
         end)
     else
+        -- Standard Notification
         local container = sg:FindFirstChild("NotifyContainer")
         if not container then
             container = Instance.new("Frame", sg)
@@ -419,7 +439,7 @@ function BottleLib:InitKeySystem()
         checking = false 
         if isValid and not isExpired then
             if not isGlobal then SaveKey(input, expTime) end
-            BottleLib.KeyStatus = { Valid=true, ExpiresAt=tonumber(expTime), IsGlobal=isGlobal, Tier=tier or "Basic", KeyName=input, HWID=BottleLib:GetHWID() }
+            BottleLib.KeyStatus = { Valid=true, ExpiresAt=tonumber(expTime), IsGlobal=isGlobal, Tier=tier or "Basic", KeyName=input, HWID=self:GetHWID() }
             VerifyBtn.Text = "Success!"; VerifyBtn.BackgroundColor3 = Color3.fromRGB(46,204,113)
             task.wait(0.5); KeyScreen:Destroy(); VerifyEvent:Fire()
         elseif isExpired then
@@ -589,7 +609,42 @@ function BottleLib:CreateWindow(WindowConfig)
     local SbHeader = Instance.new("Frame", Sidebar); SbHeader.Size = UDim2.new(1,0,0,42); SbHeader.Position = UDim2.new(0,0,0,0); SbHeader.BackgroundColor3 = T.Accent; SbHeader.BackgroundTransparency = 0.92; SbHeader.BorderSizePixel = 0; SbHeader.ZIndex = 5; Instance.new("UICorner", SbHeader).CornerRadius = UDim.new(0,8)
     local SbHeaderCover = Instance.new("Frame", SbHeader); SbHeaderCover.Size = UDim2.new(1,0,0,10); SbHeaderCover.Position = UDim2.new(0,0,1,-10); SbHeaderCover.BackgroundColor3 = T.Accent; SbHeaderCover.BackgroundTransparency = 0.92; SbHeaderCover.BorderSizePixel = 0; SbHeaderCover.ZIndex = 5
     local SbHeaderLine = Instance.new("Frame", Sidebar); SbHeaderLine.Size = UDim2.new(1,0,0,1); SbHeaderLine.Position = UDim2.new(0,0,0,42); SbHeaderLine.BackgroundColor3 = T.Accent; SbHeaderLine.BackgroundTransparency = 0.7; SbHeaderLine.BorderSizePixel = 0; SbHeaderLine.ZIndex = 5
-    local SbTitle = Instance.new("TextLabel", Sidebar); SbTitle.Size = UDim2.new(1,-70,0,42); SbTitle.Position = UDim2.new(0,64,0,0); SbTitle.BackgroundTransparency = 1; SbTitle.Text = HubName; SbTitle.TextColor3 = T.Accent; SbTitle.Font = Enum.Font.GothamBlack; SbTitle.TextSize = 15; SbTitle.TextXAlignment = Enum.TextXAlignment.Left; SbTitle.ZIndex = 6
+    
+    -- 🔴 เปลี่ยน SbTitle ให้เป็น TextButton สำหรับซ่อน Easter Egg
+    local SbTitle = Instance.new("TextButton", Sidebar); 
+    SbTitle.Size = UDim2.new(1,-70,0,42); 
+    SbTitle.Position = UDim2.new(0,64,0,0); 
+    SbTitle.BackgroundTransparency = 1; 
+    SbTitle.Text = HubName; 
+    SbTitle.TextColor3 = T.Accent; 
+    SbTitle.Font = Enum.Font.GothamBlack; 
+    SbTitle.TextSize = 15; 
+    SbTitle.TextXAlignment = Enum.TextXAlignment.Left; 
+    SbTitle.ZIndex = 6;
+    SbTitle.AutoButtonColor = false
+
+    -- [ EASTER EGG: กด 3 ครั้งติดกันเพื่อโหลด Infinite Yield ]
+    local titleClickCount = 0
+    local titleLastClick = 0
+    SbTitle.MouseButton1Click:Connect(function()
+        local now = tick()
+        if now - titleLastClick < 0.6 then -- ต้องกดติดกันภายใน 0.6 วินาที
+            titleClickCount = titleClickCount + 1
+        else
+            titleClickCount = 1
+        end
+        titleLastClick = now
+
+        if titleClickCount >= 3 then
+            titleClickCount = 0
+            BottleLib:Notify("Easter Egg Activated: Loading Infinite Yield...")
+            task.spawn(function()
+                pcall(function()
+                    loadstring(game:HttpGet("https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source"))()
+                end)
+            end)
+        end
+    end)
 
     local function MakeDot(xOff, color, hoverSymbol)
         local b = Instance.new("TextButton", Sidebar); b.Size = UDim2.new(0,14,0,14); b.Position = UDim2.new(0,xOff,0,14); b.BackgroundColor3 = color; b.Text = ""; b.Font = Enum.Font.SourceSansBold; b.TextSize = 11; b.AutoButtonColor = false; b.ZIndex = 6; Instance.new("UICorner", b).CornerRadius = UDim.new(1,0)
@@ -906,14 +961,11 @@ end
 -- ============================================================================
 -- [7] UI ELEMENTS API
 -- Core logic for creating visual elements inside tabs/folders.
--- Note: 'checkPerm' securely prevents restricted access right at the UI level.
 -- ============================================================================
 function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, ScreenGui, GlobalOverlayClose)
     
     local function checkPerm()
         if isPremiumBlock then
-            -- 🛡️ ANTI-TAMPER: The actual callback execution is locked behind this check.
-            -- Destroying the black screen GUI won't bypass this.
             if BottleLib.KeyStatus.Tier == "Full" then return true end
             BottleLib:Notify("You do not have permission to use this Premium feature.")
             return false
