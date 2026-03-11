@@ -2,13 +2,12 @@
 --[[
     ===========================================================================
     ■ BOTTLEHUB UI LIBRARY (PURE ARCHITECTURE)
-    ■ Version: 13.2 (Ultimate Analytics Edition + Easter Egg)
+    ■ Version: 13.3 (Config Exploit Patch)
     ■ Description: 
       - Clean, modular, separation-of-concerns UI Library.
       - Built-in GAS Key System (URL Obfuscated).
       - Advanced Analytics tracking system (Tracks HWID, Key, Tier).
-      - PURE UI: No internal game logic. The developer handles logic externally.
-      - 🔴 EASTER EGG: Click the Hub Title 3 times fast to load Infinite Yield.
+      - 🛡️ PATCHED: Prevent Config Auto-Load from bypassing Premium Tier.
     ===========================================================================
 ]]
 
@@ -16,14 +15,12 @@ local BottleLib = {}
 
 -- ============================================================================
 -- [1] INITIALIZATION & GLOBAL SETTINGS
--- Setup core variables, Roblox services, and cleanup events.
 -- ============================================================================
 BottleLib.KeyStatus = { Valid = false, ExpiresAt = nil, IsGlobal = false, Tier = "Basic", KeyName = "Unknown", HWID = "Unknown" }
-BottleLib.Connections = {} -- Stores all RBXScriptConnections for memory management
-BottleLib.MinimizeKey = Enum.KeyCode.LeftControl -- Default key to hide/show the UI
-BottleLib.OnCloseEvent = Instance.new("BindableEvent") -- Fired when the UI is permanently closed
+BottleLib.Connections = {} 
+BottleLib.MinimizeKey = Enum.KeyCode.LeftControl 
+BottleLib.OnCloseEvent = Instance.new("BindableEvent") 
 
--- Fetching Required Roblox Services
 local CoreGui             = game:GetService("CoreGui")
 local TweenService        = game:GetService("TweenService")
 local UserInputService    = game:GetService("UserInputService")
@@ -37,7 +34,6 @@ local TeleportService     = game:GetService("TeleportService")
 local player = Players.LocalPlayer
 while not player do task.wait(0.1); player = Players.LocalPlayer end
 
--- Memory Leak Prevention: Disconnects all connections when UI reloads or closes
 BottleLib.CleanUpEvent = Instance.new("BindableEvent")
 BottleLib.CleanUpEvent.Event:Connect(function()
     for _, conn in ipairs(BottleLib.Connections) do
@@ -46,18 +42,16 @@ BottleLib.CleanUpEvent.Event:Connect(function()
     BottleLib.Connections = {}
 end)
 
--- @param keycode (Enum.KeyCode): Allows developers to dynamically change the minimize key
 function BottleLib:SetMinimizeKey(keycode)
     if typeof(keycode) == "EnumItem" then self.MinimizeKey = keycode end
 end
 
 -- ============================================================================
 -- [2] SECURITY & OBFUSCATION
--- Protects sensitive backend endpoints from plain-text scraping.
 -- ============================================================================
 local __SECRETS = {
     DISCORD = "https://discord.gg/JbSUQCxW2w",
-    -- 🔴 นำชุดตัวเลขที่คุณแปลงมาจากลิงก์ GAS ของคุณมาวางทับในปีกกานี้
+    -- 🔴 ใส่ตัวเลข GAS_BYTES ของคุณที่นี่
     GAS_BYTES = {
         104, 116, 116, 112, 115, 58, 47, 47, 115, 99, 114, 105, 112, 116, 46, 103, 
         111, 111, 103, 108, 101, 46, 99, 111, 109, 47, 109, 97, 99, 114, 111, 115, 
@@ -69,7 +63,6 @@ local __SECRETS = {
     }
 }
 
--- Decodes the byte array back into a usable URL string dynamically.
 local function GetGasEndpoint()
     local res = ""
     for i = 1, #__SECRETS.GAS_BYTES do res = res .. string.char(__SECRETS.GAS_BYTES[i]) end
@@ -78,15 +71,11 @@ end
 
 -- ============================================================================
 -- [3] PUBLIC API BRIDGE
--- Exposes backend URLs, HWID, and Analytics for the Main Script to use.
 -- ============================================================================
-
--- @description Returns the decoded backend URL for external script usage.
 function BottleLib:GetBackendURL()
     return GetGasEndpoint()
 end
 
--- @description Safely retrieves the user's Hardware ID (HWID) across multiple executors.
 function BottleLib:GetHWID()
     if type(gethwid) == "function" then
         local ok, hwid = pcall(gethwid); if ok and hwid and hwid ~= "" then return hwid end
@@ -103,23 +92,17 @@ function BottleLib:GetHWID()
     return newHwid
 end
 
--- @description Sends usage statistics to the GAS backend silently.
--- @param scriptName (string): The name of the script currently being executed.
--- 📊 ฟังก์ชันหลักสำหรับส่งสถิติ (Analytics) ไปยัง GAS
 function BottleLib:SendAnalytics(scriptName)
     task.spawn(function()
         local url = self:GetBackendURL()
-        
-        -- 🟢 ดึงชื่อเกมจาก MarketplaceService 
         local ok, info = pcall(function() return MarketplaceService:GetProductInfo(game.PlaceId) end)
         local gameName = ok and info.Name or game.Name
-        -- นำชื่อเกมมาประกอบกับ ID เผื่อไว้ (เช่น "Blox Fruits (2753915549)")
         local formattedPlace = gameName .. " (" .. tostring(game.PlaceId) .. ")"
         
         local payload = {
             action = "log_stats",
             hwid = self:GetHWID(),
-            placeId = formattedPlace, -- 🟢 ส่งชื่อเกมไปแทน
+            placeId = formattedPlace,
             script = scriptName or "Unknown",
             key = self.KeyStatus.KeyName or "Unknown",
             tier = self.KeyStatus.Tier or "Basic"
@@ -141,15 +124,12 @@ end
 
 -- ============================================================================
 -- [4] UI UTILITIES (NOTIFY & LOADER)
--- Handles on-screen alerts and loading animations.
 -- ============================================================================
-
 function BottleLib:Notify(msg)
     local parentGui = (gethui and gethui()) or CoreGui
     local sg = parentGui:FindFirstChild("BOTTLEHUB_MAIN")
     if not sg then return end
 
-    -- Specialized handling for Premium Access block
     local isPermError = (msg == "You do not have permission to use this Premium feature.")
 
     if isPermError then
@@ -195,7 +175,6 @@ function BottleLib:Notify(msg)
             end
         end)
     else
-        -- Standard Notification
         local container = sg:FindFirstChild("NotifyContainer")
         if not container then
             container = Instance.new("Frame", sg)
@@ -239,7 +218,6 @@ function BottleLib:Notify(msg)
 end
 
 local _loaderGui, _loaderSpinConn, _loaderDotsConn = nil, nil, nil
-
 function BottleLib:ShowLoader(message)
     message = message or "Loading"
     if _loaderGui and _loaderGui.Parent then _loaderGui:Destroy() end
@@ -511,7 +489,6 @@ function BottleLib:CreateWindow(WindowConfig)
     ContentContainer.BackgroundTransparency = 0.75
     Instance.new("UICorner", ContentContainer).CornerRadius = UDim.new(0,6)
 
-    -- FPS/PING MONITOR
     local TopStatsLbl = Instance.new("TextLabel", MainFrame)
     TopStatsLbl.Size = UDim2.new(0, 150, 0, 20)
     TopStatsLbl.Position = UDim2.new(1, -20, 0, 10)
@@ -617,7 +594,6 @@ function BottleLib:CreateWindow(WindowConfig)
     local SbHeaderCover = Instance.new("Frame", SbHeader); SbHeaderCover.Size = UDim2.new(1,0,0,10); SbHeaderCover.Position = UDim2.new(0,0,1,-10); SbHeaderCover.BackgroundColor3 = T.Accent; SbHeaderCover.BackgroundTransparency = 0.92; SbHeaderCover.BorderSizePixel = 0; SbHeaderCover.ZIndex = 5
     local SbHeaderLine = Instance.new("Frame", Sidebar); SbHeaderLine.Size = UDim2.new(1,0,0,1); SbHeaderLine.Position = UDim2.new(0,0,0,42); SbHeaderLine.BackgroundColor3 = T.Accent; SbHeaderLine.BackgroundTransparency = 0.7; SbHeaderLine.BorderSizePixel = 0; SbHeaderLine.ZIndex = 5
     
-    -- 🔴 เปลี่ยน SbTitle ให้เป็น TextButton สำหรับซ่อน Easter Egg
     local SbTitle = Instance.new("TextButton", Sidebar); 
     SbTitle.Size = UDim2.new(1,-70,0,42); 
     SbTitle.Position = UDim2.new(0,64,0,0); 
@@ -630,12 +606,11 @@ function BottleLib:CreateWindow(WindowConfig)
     SbTitle.ZIndex = 6;
     SbTitle.AutoButtonColor = false
 
-    -- [ EASTER EGG: กด 3 ครั้งติดกันเพื่อโหลด Infinite Yield ]
     local titleClickCount = 0
     local titleLastClick = 0
     SbTitle.MouseButton1Click:Connect(function()
         local now = tick()
-        if now - titleLastClick < 0.6 then -- ต้องกดติดกันภายใน 0.6 วินาที
+        if now - titleLastClick < 0.6 then
             titleClickCount = titleClickCount + 1
         else
             titleClickCount = 1
@@ -980,6 +955,12 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
         return true
     end
 
+    -- 🛡️ SILENT PERMISSION CHECK FOR CONFIG AUTOLOADERS
+    local function hasPerm()
+        if isPremiumBlock and BottleLib.KeyStatus.Tier ~= "Full" then return false end
+        return true
+    end
+
     function APIObj:CreateSection(text)
         local l = Instance.new("TextLabel", targetContainer)
         l.Size = UDim2.new(1,0,0,22); l.BackgroundTransparency = 1; l.Text = text; l.TextColor3 = T.Accent; l.Font = Enum.Font.GothamBlack; l.TextSize = 11; l.TextXAlignment = Enum.TextXAlignment.Left
@@ -999,12 +980,23 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
         local btn = Instance.new("TextButton", targetContainer)
         btn.Size = UDim2.new(1,0,0,34); btn.BackgroundColor3 = T.Element; btn.Text = "    "..label; btn.TextColor3 = T.Text; btn.Font = Enum.Font.GothamSemibold; btn.TextSize = 12; btn.TextXAlignment = Enum.TextXAlignment.Left; btn.AutoButtonColor = false
         Instance.new("UICorner", btn).CornerRadius = UDim.new(0,4)
-        local dot = Instance.new("Frame", btn); dot.Size = UDim2.new(0,10,0,10); dot.Position = UDim2.new(1,-22,0.5,-5); dot.BackgroundColor3 = init and T.Accent or Color3.fromRGB(60,60,60); Instance.new("UICorner", dot).CornerRadius = UDim.new(1,0)
-        local state = init; local ToggleObj = {}
+        local dot = Instance.new("Frame", btn); dot.Size = UDim2.new(0,10,0,10); dot.Position = UDim2.new(1,-22,0.5,-5); Instance.new("UICorner", dot).CornerRadius = UDim.new(1,0)
         
+        local state = false
+        if init and hasPerm() then state = true end
+        dot.BackgroundColor3 = state and T.Accent or Color3.fromRGB(60,60,60)
+        
+        local ToggleObj = {}
         function ToggleObj:Set(newState)
-            state = newState; TweenService:Create(dot, TweenInfo.new(0.18), {BackgroundColor3 = state and T.Accent or Color3.fromRGB(60,60,60)}):Play(); callback(state)
+            -- 🛡️ PATCH: Prevent config systems from bypassing tier
+            if newState and not hasPerm() then 
+                newState = false 
+            end
+            state = newState
+            TweenService:Create(dot, TweenInfo.new(0.18), {BackgroundColor3 = state and T.Accent or Color3.fromRGB(60,60,60)}):Play()
+            pcall(callback, state)
         end
+        
         btn.MouseButton1Click:Connect(function()
             if not checkPerm() then return end
             ToggleObj:Set(not state)
@@ -1059,14 +1051,17 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
         btn.Size = UDim2.new(0.65,0,1,0); btn.BackgroundTransparency = 1; btn.Text = "    "..label; btn.TextColor3 = T.Text; btn.Font = Enum.Font.GothamSemibold; btn.TextSize = 12; btn.TextXAlignment = Enum.TextXAlignment.Left
         
         local dot = Instance.new("Frame", btn)
-        dot.Size = UDim2.new(0,10,0,10); dot.Position = UDim2.new(1,-10,0.5,-5); dot.BackgroundColor3 = initToggle and T.Accent or Color3.fromRGB(60,60,60)
+        dot.Size = UDim2.new(0,10,0,10); dot.Position = UDim2.new(1,-10,0.5,-5); 
         Instance.new("UICorner", dot).CornerRadius = UDim.new(1,0)
         
         local b = Instance.new("TextButton", frame)
         b.Size = UDim2.new(0.3,0,0.65,0); b.Position = UDim2.new(0.68,0,0.175,0); b.BackgroundColor3 = T.ElemDark; b.TextColor3 = T.Accent; b.Font = Enum.Font.GothamBold; b.Text = (defaultKey and typeof(defaultKey) == "EnumItem") and defaultKey.Name or "NONE"; b.AutoButtonColor = false
         Instance.new("UICorner", b).CornerRadius = UDim.new(0,4)
         
-        local state = initToggle
+        local state = false
+        if initToggle and hasPerm() then state = true end
+        dot.BackgroundColor3 = state and T.Accent or Color3.fromRGB(60,60,60)
+        
         local currentKey = defaultKey
         local binding = false
         local conn = nil
@@ -1103,6 +1098,8 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
         
         local RetObj = {}
         function RetObj:SetState(newState)
+            -- 🛡️ PATCH
+            if newState and not hasPerm() then newState = false end
             state = newState
             TweenService:Create(dot, TweenInfo.new(0.18), {BackgroundColor3 = state and T.Accent or Color3.fromRGB(60,60,60)}):Play()
         end
@@ -1116,7 +1113,10 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
         local fill = Instance.new("Frame", track); fill.Size = UDim2.new(math.clamp((default-min)/(max-min),0,1), 0, 1, 0); fill.BackgroundColor3 = T.Accent; fill.BorderSizePixel = 0; Instance.new("UICorner", fill).CornerRadius = UDim.new(1,0)
         local trackHit = Instance.new("TextButton", frame); trackHit.Size = UDim2.new(1,-20,0,30); trackHit.Position = UDim2.new(0,10,0,24); trackHit.BackgroundTransparency = 1; trackHit.Text = ""; trackHit.ZIndex = 3; trackHit.AutoButtonColor = false
 
-        local function update(v) local res = callback(v); lbl.Text = label .. ": " .. (res or v) end
+        local function update(v) 
+            if not hasPerm() then return end
+            local res = callback(v); lbl.Text = label .. ": " .. (res or v) 
+        end
         update(default)
 
         local dragging = false; local startX = 0; local startRatio = math.clamp((default-min)/(max-min), 0, 1); local trackWidth = 1
@@ -1165,7 +1165,7 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
             RefreshList(Input.Text); DropOverlay.Visible = true; GlobalOverlayClose.Visible = true
         end)
         Input:GetPropertyChangedSignal("Text"):Connect(function() if DropOverlay.Visible and not selectedFromList then RefreshList(Input.Text) end end)
-        Input.FocusLost:Connect(function() if selectedFromList then selectedFromList = false; return end; if Input.Text ~= "" then callback(Input.Text) end end)
+        Input.FocusLost:Connect(function() if selectedFromList then selectedFromList = false; return end; if Input.Text ~= "" then pcall(callback, Input.Text) end end)
         return DropObj
     end
 
@@ -1197,7 +1197,7 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
             if not checkPerm() then return end
             local t1 = TweenService:Create(btn, TweenInfo.new(0.1), {BackgroundColor3=T.Accent})
             local t2 = TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3=T.Element})
-            t1:Play(); t1.Completed:Connect(function() t2:Play() end); callback(btn)
+            t1:Play(); t1.Completed:Connect(function() t2:Play() end); pcall(callback, btn)
         end)
         local BtnObj = {}; function BtnObj:Set(newText) btn.Text = newText end; return BtnObj
     end
@@ -1243,7 +1243,17 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
 
         for i, opt in ipairs(options) do createPill(opt, i) end
         local SelectorObj = {}; function SelectorObj:Get() return getSelectedList() end
-        function SelectorObj:Set(items) for k in pairs(selected) do selected[k] = false end; if type(items) == "table" then for _, opt in ipairs(items) do selected[opt] = true end elseif type(items) == "string" then selected[items] = true end; for k in pairs(pillButtons) do updatePillVisual(k) end end
+        
+        function SelectorObj:Set(items) 
+            -- 🛡️ PATCH
+            if not hasPerm() then return end
+            
+            for k in pairs(selected) do selected[k] = false end; 
+            if type(items) == "table" then for _, opt in ipairs(items) do selected[opt] = true end 
+            elseif type(items) == "string" then selected[items] = true end; 
+            for k in pairs(pillButtons) do updatePillVisual(k) end 
+        end
+        
         function SelectorObj:Add(opt) if pillButtons[opt] then return end; table.insert(options, opt); createPill(opt, #options) end
         function SelectorObj:Remove(opt) if not pillButtons[opt] then return end; pillButtons[opt]:Destroy(); pillButtons[opt] = nil; selected[opt] = nil; for i, v in ipairs(options) do if v == opt then table.remove(options, i); break end end end
         return SelectorObj
