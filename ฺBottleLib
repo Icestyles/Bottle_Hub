@@ -941,7 +941,7 @@ function BottleLib:CreateWindow(WindowConfig)
 end
 
 -- ============================================================================
--- [7] UI ELEMENTS API
+-- [7] UI ELEMENTS API (V13.4 - WITH MULTI-SELECT DROPDOWN & SINGLE INPUT & SAFE REFRESH)
 -- Core logic for creating visual elements inside tabs/folders.
 -- ============================================================================
 function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, ScreenGui, GlobalOverlayClose)
@@ -955,7 +955,6 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
         return true
     end
 
-    -- 🛡️ SILENT PERMISSION CHECK FOR CONFIG AUTOLOADERS
     local function hasPerm()
         if isPremiumBlock and BottleLib.KeyStatus.Tier ~= "Full" then return false end
         return true
@@ -988,10 +987,7 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
         
         local ToggleObj = {}
         function ToggleObj:Set(newState)
-            -- 🛡️ PATCH: Prevent config systems from bypassing tier
-            if newState and not hasPerm() then 
-                newState = false 
-            end
+            if newState and not hasPerm() then newState = false end
             state = newState
             TweenService:Create(dot, TweenInfo.new(0.18), {BackgroundColor3 = state and T.Accent or Color3.fromRGB(60,60,60)}):Play()
             pcall(callback, state)
@@ -1021,21 +1017,17 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
         
         b.MouseButton1Click:Connect(function()
             if not checkPerm() then return end
-            binding = true
-            b.Text = "..."
+            binding = true; b.Text = "..."
             if conn then conn:Disconnect() end
             
             conn = UserInputService.InputBegan:Connect(function(input)
                 if binding and input.UserInputType == Enum.UserInputType.Keyboard then
                     binding = false
                     if conn then conn:Disconnect(); conn = nil end
-                    
                     if input.KeyCode == Enum.KeyCode.Escape or input.KeyCode == Enum.KeyCode.Backspace then
-                        b.Text = "NONE"
-                        callback(nil)
+                        b.Text = "NONE"; callback(nil)
                     else
-                        b.Text = input.KeyCode.Name
-                        callback(input.KeyCode)
+                        b.Text = input.KeyCode.Name; callback(input.KeyCode)
                     end
                 end
             end)
@@ -1051,8 +1043,7 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
         btn.Size = UDim2.new(0.65,0,1,0); btn.BackgroundTransparency = 1; btn.Text = "    "..label; btn.TextColor3 = T.Text; btn.Font = Enum.Font.GothamSemibold; btn.TextSize = 12; btn.TextXAlignment = Enum.TextXAlignment.Left
         
         local dot = Instance.new("Frame", btn)
-        dot.Size = UDim2.new(0,10,0,10); dot.Position = UDim2.new(1,-10,0.5,-5); 
-        Instance.new("UICorner", dot).CornerRadius = UDim.new(1,0)
+        dot.Size = UDim2.new(0,10,0,10); dot.Position = UDim2.new(1,-10,0.5,-5); Instance.new("UICorner", dot).CornerRadius = UDim.new(1,0)
         
         local b = Instance.new("TextButton", frame)
         b.Size = UDim2.new(0.3,0,0.65,0); b.Position = UDim2.new(0.68,0,0.175,0); b.BackgroundColor3 = T.ElemDark; b.TextColor3 = T.Accent; b.Font = Enum.Font.GothamBold; b.Text = (defaultKey and typeof(defaultKey) == "EnumItem") and defaultKey.Name or "NONE"; b.AutoButtonColor = false
@@ -1062,9 +1053,7 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
         if initToggle and hasPerm() then state = true end
         dot.BackgroundColor3 = state and T.Accent or Color3.fromRGB(60,60,60)
         
-        local currentKey = defaultKey
-        local binding = false
-        local conn = nil
+        local currentKey = defaultKey; local binding = false; local conn = nil
         
         btn.MouseButton1Click:Connect(function()
             if not checkPerm() then return end
@@ -1075,21 +1064,17 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
         
         b.MouseButton1Click:Connect(function()
             if not checkPerm() then return end
-            binding = true
-            b.Text = "..."
+            binding = true; b.Text = "..."
             if conn then conn:Disconnect() end
             
             conn = UserInputService.InputBegan:Connect(function(input)
                 if binding and input.UserInputType == Enum.UserInputType.Keyboard then
                     binding = false
                     if conn then conn:Disconnect(); conn = nil end
-                    
                     if input.KeyCode == Enum.KeyCode.Escape or input.KeyCode == Enum.KeyCode.Backspace then
-                        b.Text = "NONE"
-                        currentKey = nil
+                        b.Text = "NONE"; currentKey = nil
                     else
-                        b.Text = input.KeyCode.Name
-                        currentKey = input.KeyCode
+                        b.Text = input.KeyCode.Name; currentKey = input.KeyCode
                     end
                     callback(state, currentKey, false) 
                 end
@@ -1098,7 +1083,6 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
         
         local RetObj = {}
         function RetObj:SetState(newState)
-            -- 🛡️ PATCH
             if newState and not hasPerm() then newState = false end
             state = newState
             TweenService:Create(dot, TweenInfo.new(0.18), {BackgroundColor3 = state and T.Accent or Color3.fromRGB(60,60,60)}):Play()
@@ -1131,30 +1115,110 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
         trackHit.MouseButton1Up:Connect(function(x, y) dragging = false end)
     end
 
-    function APIObj:CreateDropdown(placeholder, optionsList, callback)
+    -- 🟢 [NEW] CREATE INPUT BOX (SINGLE TEXT/NUMBER BOX)
+    function APIObj:CreateInput(label, placeholder, isNumberOnly, callback)
+        local frame = Instance.new("Frame", targetContainer); frame.Size = UDim2.new(1,0,0,36); frame.BackgroundColor3 = T.Element; Instance.new("UICorner", frame).CornerRadius = UDim.new(0,4)
+        
+        local l = Instance.new("TextLabel", frame); l.Size = UDim2.new(0.4,0,1,0); l.Position = UDim2.new(0.02,0,0,0); l.BackgroundTransparency = 1; l.Text = label; l.TextColor3 = T.SubText; l.Font = Enum.Font.GothamMedium; l.TextSize = 11; l.TextXAlignment = Enum.TextXAlignment.Left
+        
+        local Input = Instance.new("TextBox", frame); Input.Size = UDim2.new(0.55,0,0.7,0); Input.Position = UDim2.new(0.42,0,0.15,0); Input.BackgroundColor3 = T.ElemDark; Input.Text = ""; Input.PlaceholderText = placeholder; Input.TextColor3 = T.Text; Input.PlaceholderColor3 = Color3.fromRGB(100,100,100); Input.Font = Enum.Font.GothamBold; Input.TextSize = 11; Input.ClearTextOnFocus = false; Instance.new("UICorner", Input).CornerRadius = UDim.new(0,4)
+        
+        Input.Focused:Connect(function() if not checkPerm() then Input:ReleaseFocus() end end)
+        Input.FocusLost:Connect(function()
+            local text = Input.Text
+            if isNumberOnly then
+                local num = tonumber(text)
+                if num then pcall(callback, num) else Input.Text = "" end
+            else
+                pcall(callback, text)
+            end
+        end)
+        
+        local InputObj = {}
+        function InputObj:Set(val) Input.Text = tostring(val) end
+        return InputObj
+    end
+
+    -- 🟡 [UPDATED] MULTI-SELECT DROPDOWN & MEMORY SAFE REFRESH
+    function APIObj:CreateDropdown(placeholder, optionsList, multiSelect, callback)
         local frame = Instance.new("Frame", targetContainer); frame.Size = UDim2.new(1,0,0,34); frame.BackgroundColor3 = T.Element; Instance.new("UICorner", frame).CornerRadius = UDim.new(0,4)
         local Input = Instance.new("TextBox", frame); Input.Size = UDim2.new(1,-20,1,0); Input.Position = UDim2.new(0,10,0,0); Input.BackgroundTransparency = 1; Input.Text = ""; Input.PlaceholderText = "🔍 "..placeholder; Input.TextColor3 = T.Text; Input.PlaceholderColor3 = T.SubText; Input.Font = Enum.Font.GothamSemibold; Input.TextSize = 11; Input.TextXAlignment = Enum.TextXAlignment.Left
+        
         local DropOverlay = Instance.new("Frame", ScreenGui); DropOverlay.Size = UDim2.new(0,220,0,160); DropOverlay.BackgroundColor3 = Color3.fromRGB(14,14,14); DropOverlay.Visible = false; DropOverlay.ZIndex = 80; Instance.new("UICorner", DropOverlay).CornerRadius = UDim.new(0,6); Instance.new("UIStroke", DropOverlay).Color = T.Accent
         local DScroll = Instance.new("ScrollingFrame", DropOverlay); DScroll.Size = UDim2.new(1,-4,1,-4); DScroll.Position = UDim2.new(0,2,0,2); DScroll.BackgroundTransparency = 1; DScroll.ScrollBarThickness = 3; DScroll.ScrollBarImageColor3 = T.Accent; DScroll.BorderSizePixel = 0; DScroll.ZIndex = 81; Instance.new("UIListLayout", DScroll).SortOrder = Enum.SortOrder.LayoutOrder
 
         local selectedFromList = false
+        local selectedItems = {} 
+        
+        local function getSelectedArray()
+            local arr = {}; for k,v in pairs(selectedItems) do if v then table.insert(arr, k) end end; return arr
+        end
+
         local function RefreshList(filterText)
+            -- Garbage Collection
             for _, c in ipairs(DScroll:GetChildren()) do if c:IsA("TextButton") then c:Destroy() end end
             local count = 0
             local ft = string.lower(filterText or "")
+            
             for _, item in ipairs(optionsList) do
                 if ft == "" or string.find(string.lower(item), ft, 1, true) then
                     count = count + 1
                     local b = Instance.new("TextButton", DScroll); b.Size = UDim2.new(1,0,0,30); b.BackgroundColor3 = Color3.fromRGB(22,22,22); b.Text = "  "..item; b.TextColor3 = T.Text; b.Font = Enum.Font.GothamMedium; b.TextSize = 11; b.TextXAlignment = Enum.TextXAlignment.Left; b.ZIndex = 82
+                    
+                    if multiSelect and selectedItems[item] then
+                        b.TextColor3 = T.Accent
+                        b.Text = "  ✅ "..item
+                    end
+
                     b.MouseButton1Click:Connect(function()
-                        selectedFromList = true; Input.Text = item; callback(item); DropOverlay.Visible = false; WindowObj.ActiveDropdown = nil; GlobalOverlayClose.Visible = false
+                        if multiSelect then
+                            selectedFromList = true
+                            selectedItems[item] = not selectedItems[item]
+                            
+                            if selectedItems[item] then
+                                b.TextColor3 = T.Accent; b.Text = "  ✅ "..item
+                            else
+                                b.TextColor3 = T.Text; b.Text = "  "..item
+                            end
+                            
+                            local sArr = getSelectedArray()
+                            if #sArr == 0 then Input.Text = ""
+                            elseif #sArr == 1 then Input.Text = sArr[1]
+                            else Input.Text = #sArr .. " Items Selected" end
+                            
+                            pcall(callback, sArr)
+                        else
+                            selectedFromList = true; Input.Text = item; pcall(callback, item)
+                            DropOverlay.Visible = false; WindowObj.ActiveDropdown = nil; GlobalOverlayClose.Visible = false
+                        end
                     end)
                 end
             end
             DScroll.CanvasSize = UDim2.new(0,0,0, count*30 + 4)
         end
 
-        local DropObj = {}; function DropObj:Refresh(newList) optionsList = newList; RefreshList(Input.Text) end
+        local DropObj = {}
+        -- 🛡️ MEMORY SAFE REFRESH
+        function DropObj:Refresh(newList) 
+            optionsList = newList
+            table.clear(selectedItems)
+            if multiSelect then Input.Text = "" end
+            RefreshList(Input.Text) 
+        end
+        
+        function DropObj:Set(items)
+            if not hasPerm() then return end
+            table.clear(selectedItems)
+            if multiSelect and type(items) == "table" then
+                for _, v in ipairs(items) do selectedItems[v] = true end
+                Input.Text = #items .. " Items Selected"
+            elseif type(items) == "string" then
+                if multiSelect then selectedItems[items] = true end
+                Input.Text = items
+            end
+            RefreshList("")
+        end
+
         Input.Focused:Connect(function()
             if not checkPerm() then Input:ReleaseFocus(); return end
             if WindowObj.ActiveDropdown and WindowObj.ActiveDropdown ~= DropOverlay then WindowObj.ActiveDropdown.Visible = false end
@@ -1165,7 +1229,10 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
             RefreshList(Input.Text); DropOverlay.Visible = true; GlobalOverlayClose.Visible = true
         end)
         Input:GetPropertyChangedSignal("Text"):Connect(function() if DropOverlay.Visible and not selectedFromList then RefreshList(Input.Text) end end)
-        Input.FocusLost:Connect(function() if selectedFromList then selectedFromList = false; return end; if Input.Text ~= "" then pcall(callback, Input.Text) end end)
+        Input.FocusLost:Connect(function() 
+            if selectedFromList then selectedFromList = false; return end
+            if not multiSelect and Input.Text ~= "" then pcall(callback, Input.Text) end 
+        end)
         return DropObj
     end
 
@@ -1186,7 +1253,7 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
             local l = Instance.new("TextLabel", frame); l.Size = UDim2.new(0.28,0,1,0); l.Position = UDim2.new(ox,4,0,0); l.BackgroundTransparency = 1; l.Text = labelStr; l.TextColor3 = T.SubText; l.Font = Enum.Font.GothamMedium; l.TextSize = 10
             local b = Instance.new("TextBox", frame); b.Size = UDim2.new(0.18,0,0.65,0); b.Position = UDim2.new(ox+0.28,0,0.175,0); b.BackgroundColor3 = T.ElemDark; b.TextColor3 = T.Accent; b.Font = Enum.Font.GothamBold; b.Text = tostring(defVal ~= nil and defVal or 0); b.ClearTextOnFocus = false; Instance.new("UICorner", b).CornerRadius = UDim.new(0,4)
             b.Focused:Connect(function() if not checkPerm() then b:ReleaseFocus() end end)
-            b.FocusLost:Connect(function() local v = tonumber(b.Text); if v then cb(v) else b.Text = tostring(defVal or 0) end end)
+            b.FocusLost:Connect(function() local v = tonumber(b.Text); if v then pcall(cb, v) else b.Text = tostring(defVal or 0) end end)
         end
         Pair(l1, default1 or 0, 0.02, callback1); Pair(l2, default2 or 0, 0.52, callback2)
     end
@@ -1202,6 +1269,7 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
         local BtnObj = {}; function BtnObj:Set(newText) btn.Text = newText end; return BtnObj
     end
 
+    -- 🟡 [UPDATED] SELECTOR WITH MEMORY SAFE REFRESH
     function APIObj:CreateSelector(label, options, multiSelect, callback)
         local frame = Instance.new("Frame", targetContainer); frame.Size = UDim2.new(1,0,0,0); frame.AutomaticSize = Enum.AutomaticSize.Y; frame.BackgroundColor3 = T.Element; frame.BorderSizePixel = 0; Instance.new("UICorner", frame).CornerRadius = UDim.new(0,4)
         local outerPad = Instance.new("UIPadding", frame); outerPad.PaddingTop = UDim.new(0,8); outerPad.PaddingBottom = UDim.new(0,8); outerPad.PaddingLeft = UDim.new(0,10); outerPad.PaddingRight = UDim.new(0,10)
@@ -1245,15 +1313,21 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
         local SelectorObj = {}; function SelectorObj:Get() return getSelectedList() end
         
         function SelectorObj:Set(items) 
-            -- 🛡️ PATCH
             if not hasPerm() then return end
-            
             for k in pairs(selected) do selected[k] = false end; 
             if type(items) == "table" then for _, opt in ipairs(items) do selected[opt] = true end 
             elseif type(items) == "string" then selected[items] = true end; 
             for k in pairs(pillButtons) do updatePillVisual(k) end 
         end
         
+        -- 🛡️ MEMORY SAFE REFRESH
+        function SelectorObj:Refresh(newList)
+            for _, btn in pairs(pillButtons) do btn:Destroy() end
+            table.clear(pillButtons); table.clear(selected)
+            options = newList
+            for i, opt in ipairs(options) do createPill(opt, i) end
+        end
+
         function SelectorObj:Add(opt) if pillButtons[opt] then return end; table.insert(options, opt); createPill(opt, #options) end
         function SelectorObj:Remove(opt) if not pillButtons[opt] then return end; pillButtons[opt]:Destroy(); pillButtons[opt] = nil; selected[opt] = nil; for i, v in ipairs(options) do if v == opt then table.remove(options, i); break end end end
         return SelectorObj
