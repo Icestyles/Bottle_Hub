@@ -2,13 +2,11 @@
 --[[
     ===========================================================================
     ■ BOTTLEHUB UI LIBRARY (PURE ARCHITECTURE)
-    ■ Version: 13.6
+    ■ Version: 13.6.1
     ■ Changelog:
-      - 🔇 FIX: VIP Evader — tostring() comparison ตัดปัญหา type mismatch
-      - 🔇 NEW: EvaderDebug flag สำหรับ diagnostic
-      - 📁 NEW: Sub-Folder (depth-aware, premium inheritance)
-      - 🎨 FIX: Header corners (UICorner + ClipsDescendants)
-      - 🎨 NEW: Header gradient, glow divider, dot separator
+      - 🎨 REVERT: Header → v13.5 clean style (no gradient/glow/shadow/dot)
+      - 🔇 FIX: VIP Evader dual-cache (string+number) — GAS-agnostic
+      - 📁 FIX: Folder accentBar moved out of UIListLayout → no more ordering bug
     ===========================================================================
 ]]
 
@@ -164,10 +162,18 @@ function BottleLib:InitVIPEvader()
             return
         end
 
-        -- ✅ v13.6: Cache เป็น string เพื่อตัดปัญหา Scientific Notation / type mismatch
+        -- ✅ v13.6.1: Dual-cache เป็นทั้ง string และ number
+        -- รองรับทั้ง GAS ที่ deploy patch แล้วและยังไม่ได้ deploy
         local vipCache = {}
         for _, id in ipairs(data) do
-            vipCache[tostring(id):match("^%s*(.-)%s*$")] = true  -- trim + tostring
+            local sid = tostring(id):match("^%s*(.-)%s*$")
+            local nid = tonumber(sid)
+            if sid and sid ~= "" and sid ~= "nan" then
+                vipCache[sid] = true                        -- string key
+            end
+            if nid then
+                vipCache[tostring(math.floor(nid+0.5))] = true  -- rounded string (ป้องกัน float drift)
+            end
         end
 
         if self.EvaderDebug then
@@ -559,69 +565,34 @@ function BottleLib:CreateWindow(WindowConfig)
     FullHeader.ZIndex=10
     -- ✅ Corner clip inherited from MainFrame.ClipsDescendants — no extra UICorner needed
 
-    -- Left zone — gradient accent background
+    -- Left zone — flat accent background
     local HdrLeft=Instance.new("Frame",FullHeader)
     HdrLeft.Size=UDim2.new(0,196,1,0)
     HdrLeft.BackgroundColor3=T.Accent
-    HdrLeft.BackgroundTransparency=0.0
+    HdrLeft.BackgroundTransparency=0.88
     HdrLeft.BorderSizePixel=0
     HdrLeft.ZIndex=10
 
-    -- Gradient on HdrLeft: opaque accent (left) → dark (right)
-    local hdrLeftGrad=Instance.new("UIGradient",HdrLeft)
-    hdrLeftGrad.Color=ColorSequence.new({
-        ColorSequenceKeypoint.new(0, T.Accent),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(
-            math.clamp(math.floor(T.Accent.R*255*0.55),0,255),
-            math.clamp(math.floor(T.Accent.G*255*0.55),0,255),
-            math.clamp(math.floor(T.Accent.B*255*0.55),0,255)
-        ))
-    })
-    hdrLeftGrad.Rotation=90  -- top bright → bottom dark
-
-    -- Right zone — premium dark
+    -- Right zone — flat dark
     local HdrRight=Instance.new("Frame",FullHeader)
     HdrRight.Size=UDim2.new(1,-197,1,0)
     HdrRight.Position=UDim2.new(0,197,0,0)
-    HdrRight.BackgroundColor3=Color3.fromRGB(13,13,13)
+    HdrRight.BackgroundColor3=Color3.fromRGB(11,11,11)
     HdrRight.BorderSizePixel=0
     HdrRight.ZIndex=10
 
-    -- Subtle gradient on HdrRight top-to-bottom
-    local hdrRightGrad=Instance.new("UIGradient",HdrRight)
-    hdrRightGrad.Color=ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(22,22,22)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(10,10,10))
-    })
-    hdrRightGrad.Rotation=90
+    -- ── Thin divider between Left/Right ───────────────────────────────────────
+    local HdrDivider=Instance.new("Frame",FullHeader)
+    HdrDivider.Size=UDim2.new(0,1,0,26); HdrDivider.Position=UDim2.new(0,195,0.5,0)
+    HdrDivider.AnchorPoint=Vector2.new(0,0.5)
+    HdrDivider.BackgroundColor3=T.Accent; HdrDivider.BackgroundTransparency=0.45
+    HdrDivider.BorderSizePixel=0; HdrDivider.ZIndex=12
 
-    -- ── Glow divider (2-layer) between Left/Right ──────────────────────────────
-    local divGlow=Instance.new("Frame",FullHeader)
-    divGlow.Size=UDim2.new(0,3,1,0); divGlow.Position=UDim2.new(0,195,0,0)
-    divGlow.BackgroundColor3=T.Accent; divGlow.BackgroundTransparency=0.5
-    divGlow.BorderSizePixel=0; divGlow.ZIndex=13
-    local divCore=Instance.new("Frame",divGlow)
-    divCore.Size=UDim2.new(0,1,0.7,0); divCore.Position=UDim2.new(0.5,0,0.15,0)
-    divCore.AnchorPoint=Vector2.new(0.5,0)
-    divCore.BackgroundColor3=Color3.fromRGB(255,255,255); divCore.BackgroundTransparency=0.2
-    divCore.BorderSizePixel=0; divCore.ZIndex=14
-
-    -- ── Bottom separator — gradient line ──────────────────────────────────────
+    -- ── Bottom separator — flat line ──────────────────────────────────────────
     local HdrBottomLine=Instance.new("Frame",FullHeader)
     HdrBottomLine.Size=UDim2.new(1,0,0,1); HdrBottomLine.Position=UDim2.new(0,0,1,-1)
-    HdrBottomLine.BackgroundColor3=T.Accent; HdrBottomLine.BackgroundTransparency=0.0
-    HdrBottomLine.BorderSizePixel=0; HdrBottomLine.ZIndex=13
-    local bottomLineGrad=Instance.new("UIGradient",HdrBottomLine)
-    bottomLineGrad.Color=ColorSequence.new({
-        ColorSequenceKeypoint.new(0, T.Accent),
-        ColorSequenceKeypoint.new(0.4, T.Accent),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(20,20,20))
-    })
-    bottomLineGrad.Transparency=NumberSequence.new({
-        NumberSequenceKeypoint.new(0, 0),
-        NumberSequenceKeypoint.new(0.5, 0.2),
-        NumberSequenceKeypoint.new(1, 1)
-    })
+    HdrBottomLine.BackgroundColor3=T.Accent; HdrBottomLine.BackgroundTransparency=0.65
+    HdrBottomLine.BorderSizePixel=0; HdrBottomLine.ZIndex=12
 
     -- ── Window dots ───────────────────────────────────────────────────────────
     local function MakeDot(xOff,color,hoverSymbol)
@@ -651,14 +622,6 @@ function BottleLib:CreateWindow(WindowConfig)
     SbTitle.Font=Enum.Font.GothamBlack; SbTitle.TextSize=15
     SbTitle.TextXAlignment=Enum.TextXAlignment.Left; SbTitle.ZIndex=14; SbTitle.AutoButtonColor=false
 
-    -- Subtle text shadow via second label
-    local SbTitleShadow=Instance.new("TextLabel",HdrLeft)
-    SbTitleShadow.Size=UDim2.new(1,-58,1,0); SbTitleShadow.Position=UDim2.new(0,57,0,1)
-    SbTitleShadow.BackgroundTransparency=1; SbTitleShadow.Text=HubName
-    SbTitleShadow.TextColor3=Color3.fromRGB(0,0,0); SbTitleShadow.TextTransparency=0.55
-    SbTitleShadow.Font=Enum.Font.GothamBlack; SbTitleShadow.TextSize=15
-    SbTitleShadow.TextXAlignment=Enum.TextXAlignment.Left; SbTitleShadow.ZIndex=13
-
     local titleClickCount=0; local titleLastClick=0
     SbTitle.MouseButton1Click:Connect(function()
         local now=tick()
@@ -673,27 +636,19 @@ function BottleLib:CreateWindow(WindowConfig)
 
     -- ── GameName (HdrRight left) ───────────────────────────────────────────────
     local GameNameLbl=Instance.new("TextLabel",HdrRight)
-    GameNameLbl.Size=UDim2.new(0.52,0,1,0); GameNameLbl.Position=UDim2.new(0,14,0,0)
+    GameNameLbl.Size=UDim2.new(0.55,0,1,0); GameNameLbl.Position=UDim2.new(0,14,0,0)
     GameNameLbl.BackgroundTransparency=1; GameNameLbl.Text=GameName
-    GameNameLbl.TextColor3=Color3.fromRGB(145,145,145)
+    GameNameLbl.TextColor3=Color3.fromRGB(130,130,130)
     GameNameLbl.Font=Enum.Font.GothamBold; GameNameLbl.TextSize=13
     GameNameLbl.TextXAlignment=Enum.TextXAlignment.Left
     GameNameLbl.TextTruncate=Enum.TextTruncate.AtEnd; GameNameLbl.ZIndex=11
-
-    -- Dot separator between GameName and Stats
-    local dotSep=Instance.new("TextLabel",HdrRight)
-    dotSep.Size=UDim2.new(0,10,1,0); dotSep.Position=UDim2.new(0.52,0,0,0)
-    dotSep.BackgroundTransparency=1; dotSep.Text="·"
-    dotSep.TextColor3=Color3.fromRGB(60,60,60)
-    dotSep.Font=Enum.Font.GothamBold; dotSep.TextSize=16
-    dotSep.TextXAlignment=Enum.TextXAlignment.Center; dotSep.ZIndex=11
 
     -- FPS/Ping stats (HdrRight right)
     local TopStatsLbl=Instance.new("TextLabel",HdrRight)
     TopStatsLbl.Size=UDim2.new(0,155,0,20); TopStatsLbl.Position=UDim2.new(1,-12,0.5,0)
     TopStatsLbl.AnchorPoint=Vector2.new(1,0.5); TopStatsLbl.BackgroundTransparency=1
-    TopStatsLbl.Text="FPS: --  ·  Ping: --ms"
-    TopStatsLbl.TextColor3=Color3.fromRGB(100,100,100)
+    TopStatsLbl.Text="📈 --  |  📶 --ms"
+    TopStatsLbl.TextColor3=T.SubText
     TopStatsLbl.Font=Enum.Font.GothamBold; TopStatsLbl.TextSize=11
     TopStatsLbl.TextXAlignment=Enum.TextXAlignment.Right; TopStatsLbl.ZIndex=11
 
@@ -982,8 +937,8 @@ function BottleLib:CreateWindow(WindowConfig)
             local fps=frames*2; frames=0
             local ping=0; local ok,p=pcall(function() return player:GetNetworkPing() end)
             if ok and type(p)=="number" then ping=math.floor(p*1000) end
-            local tf=string.format("FPS: %d  ·  Ping: %dms",fps,ping)
-            local tm=string.format("FPS: %d | Ping: %dms",fps,ping)
+            local tf=string.format("📈 FPS: %d  |  📶 Ping: %dms",fps,ping)
+            local tm=string.format("📈 FPS: %d | 📶 Ping: %dms",fps,ping)
             if TopStatsLbl and TopStatsLbl.Parent then TopStatsLbl.Text=tf end
             if MiniStatsLbl and MiniStatsLbl.Parent then MiniStatsLbl.Text=tm end
         end
@@ -1297,21 +1252,21 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
         local fStroke=Instance.new("UIStroke",folderFrame); fStroke.Color=strokeColor; fStroke.Thickness=1
         if isSubFolder then fStroke.LineJoinMode=Enum.LineJoinMode.Round end
 
-        -- Left accent bar (only on depth-0 folders)
-        if not isSubFolder then
-            local accentBar=Instance.new("Frame",folderFrame)
-            accentBar.Size=UDim2.new(0,3,1,0); accentBar.Position=UDim2.new(0,0,0,0)
-            accentBar.BackgroundColor3=T.Accent; accentBar.BackgroundTransparency=0.4
-            accentBar.BorderSizePixel=0; accentBar.ZIndex=2
-            Instance.new("UICorner",accentBar).CornerRadius=UDim.new(0,4)
-        end
-
         local fLayout=Instance.new("UIListLayout",folderFrame); fLayout.SortOrder=Enum.SortOrder.LayoutOrder; fLayout.Padding=UDim.new(0,0)
 
         local hexAccent=string.format("#%02X%02X%02X",math.floor(T.Accent.R*255),math.floor(T.Accent.G*255),math.floor(T.Accent.B*255))
 
         local headerBtn=Instance.new("TextButton",folderFrame)
         headerBtn.Size=UDim2.new(1,0,0,headerH); headerBtn.BackgroundTransparency=1
+
+        -- ✅ v13.6.1 FIX: accentBar เป็น child ของ headerBtn (ไม่อยู่ใน UIListLayout)
+        if not isSubFolder then
+            local accentBar=Instance.new("Frame",headerBtn)
+            accentBar.Size=UDim2.new(0,3,1,0); accentBar.Position=UDim2.new(0,0,0,0)
+            accentBar.BackgroundColor3=T.Accent; accentBar.BackgroundTransparency=0.4
+            accentBar.BorderSizePixel=0; accentBar.ZIndex=2
+            Instance.new("UICorner",accentBar).CornerRadius=UDim.new(0,4)
+        end
 
         local arrowOpen  = isSubFolder and " ▾ " or "  ▼  "
         local arrowClose = isSubFolder and " ▸ " or "  ▶  "
