@@ -1,12 +1,4 @@
 --!nocheck
---[[
-    ===========================================================================
-    ■ BOTTLEHUB UI LIBRARY
-    ■ Version: 13.8 (High Contrast & Logic Fix Edition)
-    ■ Architecture: PURE UI
-    ===========================================================================
-]]
-
 local BottleLib = {}
 
 BottleLib.KeyStatus = { Valid = false, ExpiresAt = nil, IsGlobal = false, Tier = "Basic", KeyName = "Unknown", HWID = "Unknown" }
@@ -38,7 +30,6 @@ end
 
 local __SECRETS = {
     DISCORD = "https://discord.gg/JbSUQCxW2w",
-    -- 🔴 ใส่ตัวเลข GAS_BYTES ของคุณที่นี่
     GAS_BYTES = {
         104, 116, 116, 112, 115, 58, 47, 47, 115, 99, 114, 105, 112, 116, 46, 103, 
         111, 111, 103, 108, 101, 46, 99, 111, 109, 47, 109, 97, 99, 114, 111, 115, 
@@ -72,7 +63,6 @@ function BottleLib:SendAnalytics(scriptName)
     end)
 end
 
--- 🟢 [REVERTED] ดึง UI แจ้งเตือน Block แบบ Pilot กลับมา
 function BottleLib:Notify(msg)
     local sg = CoreGui:FindFirstChild("BOTTLEHUB_MAIN"); if not sg then return end
     if msg == "You do not have permission to use this Premium feature." then
@@ -159,7 +149,6 @@ function BottleLib:InitKeySystem()
         return false, false, nil, false, "Basic"
     end
     
-    -- 🟢 ตรวจสอบ VIP ในระบบก่อนโชว์หน้าต่าง Key
     local function CheckCloudVIP()
         local url = string.format("%s?action=check_vip&userId=%s", GetGasEndpoint(), tostring(player.UserId))
         local res = MakeRequest(url)
@@ -167,7 +156,6 @@ function BottleLib:InitKeySystem()
         return false
     end
 
-    -- ถ้าเป็น VIP ในฐานข้อมูล ให้ทะลุเข้าไปได้เลยในฐานะ Tier "VIP"
     if CheckCloudVIP() then
         BottleLib.KeyStatus = { Valid=true, ExpiresAt=nil, IsGlobal=true, Tier="VIP", KeyName="VIP_Owner", HWID=self:GetHWID() }
         return true
@@ -215,16 +203,16 @@ function BottleLib:CreateWindow(WindowConfig)
     BottleLib.CleanUpEvent:Fire() 
     local HubName = WindowConfig.Name or "BOTTLEHUB"
     
-    -- 🟢 [REVISED CONTRAST] ปรับสีให้แยกส่วนชัดเจน
+    -- 🎨 [HIGH CONTRAST THEME]
     local T = { 
-        Main = Color3.fromRGB(6, 6, 6),           -- สีพื้นหลังกรอบนอกสุด (เข้มสุด)
-        Sidebar = Color3.fromRGB(14, 14, 14),     -- สีแถบเมนูด้านซ้าย
-        Content = Color3.fromRGB(18, 18, 18),     -- สีกล่องเนื้อหา (สว่างขึ้นมา ให้ดูแยกกัน)
+        Main = Color3.fromRGB(10, 10, 10),        -- กรอบนอกสุด 
+        Sidebar = Color3.fromRGB(14, 14, 14),     -- ซ้ายมือ
+        Content = Color3.fromRGB(24, 24, 24),     -- กล่องเนื้อหา (สว่างขึ้นอย่างชัดเจน)
         Accent = WindowConfig.Color or Color3.fromHex("#e60852"), 
         Text = Color3.fromRGB(255, 255, 255), 
         SubText = Color3.fromRGB(180, 180, 180), 
-        Element = Color3.fromRGB(28, 28, 28), 
-        ElemDark = Color3.fromRGB(12, 12, 12) 
+        Element = Color3.fromRGB(35, 35, 35),     -- ปุ่มเข้มขึ้นเพื่อให้ตัดกับพื้น Content
+        ElemDark = Color3.fromRGB(18, 18, 18) 
     }
 
     if CoreGui:FindFirstChild("BOTTLEHUB_MAIN") then CoreGui.BOTTLEHUB_MAIN:Destroy() end
@@ -234,12 +222,19 @@ function BottleLib:CreateWindow(WindowConfig)
 
     local MainFrame = Instance.new("Frame", ScreenGui); MainFrame.Name = "MainFrame"; MainFrame.Size = UDim2.new(0,680,0,520); MainFrame.Position = UDim2.new(0.5,-340,0.5,-260); MainFrame.BackgroundColor3 = T.Main; MainFrame.Active = true; Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0,8); local MFStroke = Instance.new("UIStroke", MainFrame); MFStroke.Color = T.Accent; MFStroke.Thickness = 1.5
 
-    -- TOP HEADER (เต็มจอ)
-    local TopHeader = Instance.new("Frame", MainFrame); TopHeader.Name = "TopHeader"; TopHeader.Size = UDim2.new(1, 0, 0, 42); TopHeader.Position = UDim2.new(0, 0, 0, 0); TopHeader.BackgroundColor3 = T.Accent; TopHeader.BackgroundTransparency = 0.92; TopHeader.BorderSizePixel = 0; TopHeader.ZIndex = 5; Instance.new("UICorner", TopHeader).CornerRadius = UDim.new(0, 8)
-    local HeaderCover = Instance.new("Frame", TopHeader); HeaderCover.Size = UDim2.new(1, 0, 0, 10); HeaderCover.Position = UDim2.new(0, 0, 1, -10); HeaderCover.BackgroundColor3 = T.Accent; HeaderCover.BackgroundTransparency = 0.92; HeaderCover.BorderSizePixel = 0; HeaderCover.ZIndex = 5
-    local HeaderLine = Instance.new("Frame", MainFrame); HeaderLine.Size = UDim2.new(1, 0, 0, 1); HeaderLine.Position = UDim2.new(0, 0, 0, 42); HeaderLine.BackgroundColor3 = T.Accent; HeaderLine.BackgroundTransparency = 0.7; HeaderLine.BorderSizePixel = 0; HeaderLine.ZIndex = 5
+    -- 🔴 TOP HEADER (สีแดงชัดเจน + เส้นขอบหนา)
+    local TopHeader = Instance.new("Frame", MainFrame)
+    TopHeader.Name = "TopHeader"; TopHeader.Size = UDim2.new(1, 0, 0, 42); TopHeader.Position = UDim2.new(0, 0, 0, 0)
+    TopHeader.BackgroundColor3 = T.Accent; TopHeader.BackgroundTransparency = 0.65 -- เปลี่ยนให้แดงขึ้นชัดๆ
+    TopHeader.BorderSizePixel = 0; TopHeader.ZIndex = 5
+    Instance.new("UICorner", TopHeader).CornerRadius = UDim.new(0, 8)
+    
+    local HeaderCover = Instance.new("Frame", TopHeader); HeaderCover.Size = UDim2.new(1, 0, 0, 10); HeaderCover.Position = UDim2.new(0, 0, 1, -10); HeaderCover.BackgroundColor3 = T.Accent; HeaderCover.BackgroundTransparency = 0.65; HeaderCover.BorderSizePixel = 0; HeaderCover.ZIndex = 5
+    
+    local HeaderLine = Instance.new("Frame", MainFrame); HeaderLine.Size = UDim2.new(1, 0, 0, 2) -- หนาขึ้น
+    HeaderLine.Position = UDim2.new(0, 0, 0, 42); HeaderLine.BackgroundColor3 = T.Accent; HeaderLine.BackgroundTransparency = 0; HeaderLine.BorderSizePixel = 0; HeaderLine.ZIndex = 5
 
-    local TopStatsLbl = Instance.new("TextLabel", TopHeader); TopStatsLbl.Size = UDim2.new(0, 150, 1, 0); TopStatsLbl.Position = UDim2.new(1, -15, 0, 0); TopStatsLbl.AnchorPoint = Vector2.new(1, 0); TopStatsLbl.BackgroundTransparency = 1; TopStatsLbl.Text = "📈 FPS: -- | 📶 Ping: --ms"; TopStatsLbl.TextColor3 = T.SubText; TopStatsLbl.Font = Enum.Font.GothamBold; TopStatsLbl.TextSize = 12; TopStatsLbl.TextXAlignment = Enum.TextXAlignment.Right; TopStatsLbl.ZIndex = 10
+    local TopStatsLbl = Instance.new("TextLabel", TopHeader); TopStatsLbl.Size = UDim2.new(0, 150, 1, 0); TopStatsLbl.Position = UDim2.new(1, -15, 0, 0); TopStatsLbl.AnchorPoint = Vector2.new(1, 0); TopStatsLbl.BackgroundTransparency = 1; TopStatsLbl.Text = "📈 FPS: -- | 📶 Ping: --ms"; TopStatsLbl.TextColor3 = Color3.fromRGB(230,230,230); TopStatsLbl.Font = Enum.Font.GothamBold; TopStatsLbl.TextSize = 12; TopStatsLbl.TextXAlignment = Enum.TextXAlignment.Right; TopStatsLbl.ZIndex = 10
 
     local dragging = false; local dragStart = nil; local startPos = nil
     MainFrame.InputBegan:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then local relY = input.Position.Y - MainFrame.AbsolutePosition.Y; if relY <= 42 then dragging = true; dragStart = input.Position; startPos = MainFrame.Position end end end)
@@ -256,8 +251,10 @@ function BottleLib:CreateWindow(WindowConfig)
         if not isTyping and BottleLib.MinimizeKey and input.KeyCode == BottleLib.MinimizeKey and MainFrame then ToggleMinimize(MainFrame.Visible) end
     end)
 
-    local SbTitle = Instance.new("TextButton", TopHeader); SbTitle.Size = UDim2.new(0, 200, 1, 0); SbTitle.Position = UDim2.new(0, 64, 0, 0); SbTitle.BackgroundTransparency = 1; SbTitle.Text = HubName; SbTitle.TextColor3 = T.Accent; SbTitle.Font = Enum.Font.GothamBlack; SbTitle.TextSize = 15; SbTitle.TextXAlignment = Enum.TextXAlignment.Left; SbTitle.ZIndex = 6; SbTitle.AutoButtonColor = false
-    
+    local SbTitle = Instance.new("TextButton", TopHeader); SbTitle.Size = UDim2.new(0, 200, 1, 0); SbTitle.Position = UDim2.new(0, 64, 0, 0); SbTitle.BackgroundTransparency = 1; SbTitle.Text = HubName; SbTitle.TextColor3 = Color3.fromRGB(255,255,255); SbTitle.Font = Enum.Font.GothamBlack; SbTitle.TextSize = 15; SbTitle.TextXAlignment = Enum.TextXAlignment.Left; SbTitle.ZIndex = 6; SbTitle.AutoButtonColor = false
+    local clkCount, lastClk = 0, 0
+    SbTitle.MouseButton1Click:Connect(function() local now = tick(); if now - lastClk < 0.6 then clkCount = clkCount + 1 else clkCount = 1 end; lastClk = now; if clkCount >= 3 then clkCount = 0; BottleLib:Notify("Loading Infinite Yield..."); task.spawn(function() pcall(function() loadstring(game:HttpGet("https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source"))() end) end) end end)
+
     local function MakeDot(parent, xOff, color, hoverSymbol)
         local b = Instance.new("TextButton", parent); b.Size = UDim2.new(0,14,0,14); b.Position = UDim2.new(0,xOff,0.5,-7); b.BackgroundColor3 = color; b.Text = ""; b.Font = Enum.Font.SourceSansBold; b.TextSize = 11; b.AutoButtonColor = false; b.ZIndex = 6; Instance.new("UICorner", b).CornerRadius = UDim.new(1,0)
         b.MouseEnter:Connect(function() b.Text = hoverSymbol; TweenService:Create(b, TweenInfo.new(0.1), { TextColor3 = Color3.fromRGB(255,255,255), Size = UDim2.new(0,16,0,16), Position = UDim2.new(0,xOff-1,0.5,-8) }):Play() end)
@@ -269,26 +266,19 @@ function BottleLib:CreateWindow(WindowConfig)
     RedDot.MouseButton1Click:Connect(function() BottleLib.CleanUpEvent:Fire(); BottleLib.OnCloseEvent:Fire(); task.wait(0.1); ScreenGui:Destroy() end)
     YellowDot.MouseButton1Click:Connect(function() ToggleMinimize(true) end)
 
-    -- 🟢 SIDEBAR (แท็บเมนู)
-    local Sidebar = Instance.new("Frame", MainFrame); Sidebar.Size = UDim2.new(0, 195, 1, -43); Sidebar.Position = UDim2.new(0, 0, 0, 43); Sidebar.BackgroundColor3 = T.Sidebar; Sidebar.BorderSizePixel = 0; Instance.new("UICorner", Sidebar).CornerRadius = UDim.new(0, 8)
+    -- 🟢 SIDEBAR & CONTENT BOX (สีตัดกันชัดเจน)
+    local Sidebar = Instance.new("Frame", MainFrame); Sidebar.Size = UDim2.new(0, 195, 1, -44); Sidebar.Position = UDim2.new(0, 0, 0, 44); Sidebar.BackgroundColor3 = T.Sidebar; Sidebar.BorderSizePixel = 0; Instance.new("UICorner", Sidebar).CornerRadius = UDim.new(0, 8)
     local SbCover = Instance.new("Frame", Sidebar); SbCover.Size = UDim2.new(0, 10, 1, 0); SbCover.Position = UDim2.new(1, -10, 0, 0); SbCover.BackgroundColor3 = T.Sidebar; SbCover.BorderSizePixel = 0
     local SbCoverTop = Instance.new("Frame", Sidebar); SbCoverTop.Size = UDim2.new(1, 0, 0, 10); SbCoverTop.Position = UDim2.new(0, 0, 0, 0); SbCoverTop.BackgroundColor3 = T.Sidebar; SbCoverTop.BorderSizePixel = 0
     
-    -- 🟢 [NEW] เส้นคั่นแนวตั้ง แยกระหว่าง Tab กับ Content
     local VertDivider = Instance.new("Frame", MainFrame)
-    VertDivider.Size = UDim2.new(0, 1, 1, -43); VertDivider.Position = UDim2.new(0, 195, 0, 43)
-    VertDivider.BackgroundColor3 = Color3.fromRGB(35, 35, 35); VertDivider.BorderSizePixel = 0; VertDivider.ZIndex = 3
+    VertDivider.Size = UDim2.new(0, 1, 1, -44); VertDivider.Position = UDim2.new(0, 195, 0, 44); VertDivider.BackgroundColor3 = T.Accent; VertDivider.BackgroundTransparency = 0.5; VertDivider.BorderSizePixel = 0; VertDivider.ZIndex = 3
 
-    -- 🟢 CONTENT CONTAINER (กล่องเนื้อหาที่แยกออกมาสว่างขึ้น)
     local ContentContainer = Instance.new("Frame", MainFrame)
-    ContentContainer.Size = UDim2.new(1, -215, 1, -63) 
-    ContentContainer.Position = UDim2.new(0, 205, 0, 53) 
-    ContentContainer.BackgroundColor3 = T.Content
-    ContentContainer.BorderSizePixel = 0
+    ContentContainer.Size = UDim2.new(1, -215, 1, -63); ContentContainer.Position = UDim2.new(0, 205, 0, 53) 
+    ContentContainer.BackgroundColor3 = T.Content; ContentContainer.BorderSizePixel = 0
     Instance.new("UICorner", ContentContainer).CornerRadius = UDim.new(0, 6)
-    local ContentStroke = Instance.new("UIStroke", ContentContainer) -- ใส่ขอบให้ Content Box
-    ContentStroke.Color = Color3.fromRGB(40, 40, 40)
-    ContentStroke.Thickness = 1
+    local ContentStroke = Instance.new("UIStroke", ContentContainer); ContentStroke.Color = Color3.fromRGB(50, 50, 50); ContentStroke.Thickness = 1
 
     local GlobalOverlayClose = Instance.new("TextButton", ScreenGui); GlobalOverlayClose.Size = UDim2.new(1,0,1,0); GlobalOverlayClose.BackgroundTransparency = 1; GlobalOverlayClose.Text = ""; GlobalOverlayClose.ZIndex = 79; GlobalOverlayClose.Visible = false
     GlobalOverlayClose.MouseButton1Click:Connect(function() if WindowObj.ActiveDropdown then WindowObj.ActiveDropdown.Visible = false; WindowObj.ActiveDropdown = nil end; GlobalOverlayClose.Visible = false end)
@@ -327,11 +317,7 @@ function BottleLib:CreateWindow(WindowConfig)
 end
 
 function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, ScreenGui, GlobalOverlayClose)
-    -- ตรวจสอบสิทธิ์ สำหรับ V13.8 ถ้าเป็น VIP หรือ Full ถือว่าผ่าน
-    local function hasPerm() 
-        if isPremiumBlock and (BottleLib.KeyStatus.Tier ~= "Full" and BottleLib.KeyStatus.Tier ~= "VIP") then return false end
-        return true 
-    end
+    local function hasPerm() if isPremiumBlock and (BottleLib.KeyStatus.Tier ~= "Full" and BottleLib.KeyStatus.Tier ~= "VIP") then return false end return true end
     local function checkPerm() if not hasPerm() then BottleLib:Notify("You do not have permission to use this Premium feature."); return false end return true end
 
     function APIObj:CreateSection(text)
@@ -343,7 +329,7 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
     end
 
     function APIObj:CreateSeparator()
-        local f = Instance.new("Frame", targetContainer); f.Size = UDim2.new(1,0,0,2); f.BackgroundColor3 = T.Element; f.BorderSizePixel = 0; Instance.new("UICorner", f).CornerRadius = UDim.new(1,0)
+        local f = Instance.new("Frame", targetContainer); f.Size = UDim2.new(1,0,0,2); f.BackgroundColor3 = Color3.fromRGB(40,40,40); f.BorderSizePixel = 0; Instance.new("UICorner", f).CornerRadius = UDim.new(1,0)
     end
 
     function APIObj:CreateToggle(label, init, callback)
@@ -430,6 +416,7 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
         local Input = Instance.new("TextBox", frame); Input.Size = UDim2.new(1,-20,1,0); Input.Position = UDim2.new(0,10,0,0); Input.BackgroundTransparency = 1; Input.Text = ""; Input.PlaceholderText = "🔍 "..placeholder; Input.TextColor3 = T.Text; Input.PlaceholderColor3 = T.SubText; Input.Font = Enum.Font.GothamSemibold; Input.TextSize = 11; Input.TextXAlignment = Enum.TextXAlignment.Left
         local DropOverlay = Instance.new("Frame", ScreenGui); DropOverlay.Size = UDim2.new(0,220,0,160); DropOverlay.BackgroundColor3 = Color3.fromRGB(14,14,14); DropOverlay.Visible = false; DropOverlay.ZIndex = 80; Instance.new("UICorner", DropOverlay).CornerRadius = UDim.new(0,6); Instance.new("UIStroke", DropOverlay).Color = T.Accent
         local DScroll = Instance.new("ScrollingFrame", DropOverlay); DScroll.Size = UDim2.new(1,-4,1,-4); DScroll.Position = UDim2.new(0,2,0,2); DScroll.BackgroundTransparency = 1; DScroll.ScrollBarThickness = 3; DScroll.ScrollBarImageColor3 = T.Accent; DScroll.BorderSizePixel = 0; DScroll.ZIndex = 81; Instance.new("UIListLayout", DScroll).SortOrder = Enum.SortOrder.LayoutOrder
+
         local selectedFromList, selectedItems = false, {} 
         local function getSelectedArray() local arr = {}; for k,v in pairs(selectedItems) do if v then table.insert(arr, k) end end; return arr end
 
