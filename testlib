@@ -2,11 +2,11 @@
 --[[
     ===========================================================================
     ■ BOTTLEHUB UI LIBRARY (PURE ARCHITECTURE)
-    ■ Version: 13.6.1
+    ■ Version: 13.6.2
     ■ Changelog:
-      - 🎨 REVERT: Header → v13.5 clean style (no gradient/glow/shadow/dot)
-      - 🔇 FIX: VIP Evader dual-cache (string+number) — GAS-agnostic
-      - 📁 FIX: Folder accentBar moved out of UIListLayout → no more ordering bug
+      - 🔇 FIX: VIP Evader → check_vip per player (ไม่ใช้ get_vips cache)
+      - 🎨 FIX: Header Left → Transparency 0.92 + TextColor T.Accent (v13.4 style)
+      - 📁 FIX: Sub-folder arrows ▾/▸ → ▼/▶ (Gotham compatible)
     ===========================================================================
 ]]
 
@@ -116,24 +116,37 @@ end
 -- ============================================================================
 function BottleLib:InitVIPEvader()
     if self.KeyStatus.IsVIPUser then
-        if self.EvaderDebug then self:Notify("VIP Evader: You are VIP — exempt from evade.") end
+        if self.EvaderDebug then self:Notify("VIP Evader: You are VIP — exempt.") end
         return
+    end
+
+    local req = (syn and syn.request) or (http and http.request) or http_request or request
+    if not req then
+        if self.EvaderDebug then self:Notify("VIP Evader DEBUG: No HTTP function.") end
+        return
+    end
+
+    -- ✅ v13.6.2: ใช้ check_vip per player โดยตรง (proven ทำงานได้)
+    -- ไม่ใช้ get_vips cache อีกต่อไป
+    local function isVip(userId)
+        local url = string.format("%s?action=check_vip&userId=%s", GetGasEndpoint(), tostring(userId))
+        local ok, res = pcall(function() return req({ Url=url, Method="GET" }) end)
+        if not ok or not res or not res.Body then return false end
+        local ok2, data = pcall(function() return HttpService:JSONDecode(res.Body) end)
+        return ok2 and type(data) == "table" and data.vip == true
     end
 
     local function doHop()
         task.spawn(function()
-            local req = (syn and syn.request) or (http and http.request) or http_request or request
-            if req then
-                local url = "https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100"
-                local ok, res = pcall(function() return req({ Url=url, Method="GET" }) end)
-                if ok and res and res.Body then
-                    local ok2, decoded = pcall(function() return HttpService:JSONDecode(res.Body) end)
-                    if ok2 and decoded and decoded.data then
-                        for _, v in ipairs(decoded.data) do
-                            if v.id ~= game.JobId and v.playing < v.maxPlayers then
-                                pcall(function() TeleportService:TeleportToPlaceInstance(game.PlaceId, v.id, player) end)
-                                return
-                            end
+            local url = "https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100"
+            local ok, res = pcall(function() return req({ Url=url, Method="GET" }) end)
+            if ok and res and res.Body then
+                local ok2, decoded = pcall(function() return HttpService:JSONDecode(res.Body) end)
+                if ok2 and decoded and decoded.data then
+                    for _, v in ipairs(decoded.data) do
+                        if v.id ~= game.JobId and v.playing < v.maxPlayers then
+                            pcall(function() TeleportService:TeleportToPlaceInstance(game.PlaceId, v.id, player) end)
+                            return
                         end
                     end
                 end
@@ -143,64 +156,28 @@ function BottleLib:InitVIPEvader()
     end
 
     task.spawn(function()
-        local url = GetGasEndpoint() .. "?action=get_vips"
-        local req = (syn and syn.request) or (http and http.request) or http_request or request
-        if not req then
-            if self.EvaderDebug then self:Notify("VIP Evader DEBUG: No HTTP function found.") end
-            return
-        end
-
-        local ok, res = pcall(function() return req({ Url=url, Method="GET" }) end)
-        if not ok or not res or not res.Body then
-            if self.EvaderDebug then self:Notify("VIP Evader DEBUG: Request failed.") end
-            return
-        end
-
-        local ok2, data = pcall(function() return HttpService:JSONDecode(res.Body) end)
-        if not ok2 or type(data) ~= "table" then
-            if self.EvaderDebug then self:Notify("VIP Evader DEBUG: JSON parse failed.") end
-            return
-        end
-
-        -- ✅ v13.6.1: Dual-cache เป็นทั้ง string และ number
-        -- รองรับทั้ง GAS ที่ deploy patch แล้วและยังไม่ได้ deploy
-        local vipCache = {}
-        for _, id in ipairs(data) do
-            local sid = tostring(id):match("^%s*(.-)%s*$")
-            local nid = tonumber(sid)
-            if sid and sid ~= "" and sid ~= "nan" then
-                vipCache[sid] = true                        -- string key
-            end
-            if nid then
-                vipCache[tostring(math.floor(nid+0.5))] = true  -- rounded string (ป้องกัน float drift)
-            end
-        end
-
-        if self.EvaderDebug then
-            local count = 0; for _ in pairs(vipCache) do count = count + 1 end
-            self:Notify("VIP Evader DEBUG: Cached " .. count .. " VIP IDs.")
-        end
-
-        -- ตรวจคนที่อยู่ในเซิฟแล้ว
+        -- ตรวจ players ที่อยู่ในเซิฟแล้วทันที
         for _, plr in ipairs(Players:GetPlayers()) do
             if plr ~= player then
-                local uid = tostring(plr.UserId)
-                if self.EvaderDebug then self:Notify("VIP Evader DEBUG: Checking " .. plr.Name .. " (" .. uid .. ")") end
-                if vipCache[uid] then
-                    if self.EvaderDebug then self:Notify("VIP Evader DEBUG: MATCH → Hopping!") end
+                if self.EvaderDebug then self:Notify("VIP Evader DEBUG: Checking " .. plr.Name .. " (" .. plr.UserId .. ")") end
+                if isVip(plr.UserId) then
+                    if self.EvaderDebug then self:Notify("VIP Evader DEBUG: MATCH " .. plr.Name .. " → Hopping!") end
                     doHop(); return
                 end
             end
         end
 
-        -- ฟัง VIP ที่เข้ามาใหม่
+        if self.EvaderDebug then self:Notify("VIP Evader DEBUG: No VIP in server. Watching...") end
+
+        -- ฟัง VIP ที่เข้ามาใหม่ระหว่างเล่น
         table.insert(BottleLib.Connections, Players.PlayerAdded:Connect(function(plr)
-            local uid = tostring(plr.UserId)
-            if self.EvaderDebug then self:Notify("VIP Evader DEBUG: Player joined: " .. plr.Name .. " (" .. uid .. ")") end
-            if vipCache[uid] then
-                if self.EvaderDebug then self:Notify("VIP Evader DEBUG: MATCH → Hopping!") end
-                doHop()
-            end
+            if self.EvaderDebug then self:Notify("VIP Evader DEBUG: " .. plr.Name .. " joined, checking...") end
+            task.spawn(function()
+                if isVip(plr.UserId) then
+                    if self.EvaderDebug then self:Notify("VIP Evader DEBUG: MATCH " .. plr.Name .. " → Hopping!") end
+                    doHop()
+                end
+            end)
         end))
     end)
 end
@@ -565,11 +542,11 @@ function BottleLib:CreateWindow(WindowConfig)
     FullHeader.ZIndex=10
     -- ✅ Corner clip inherited from MainFrame.ClipsDescendants — no extra UICorner needed
 
-    -- Left zone — flat accent background
+    -- Left zone — flat accent background (v13.4 style)
     local HdrLeft=Instance.new("Frame",FullHeader)
     HdrLeft.Size=UDim2.new(0,196,1,0)
     HdrLeft.BackgroundColor3=T.Accent
-    HdrLeft.BackgroundTransparency=0.88
+    HdrLeft.BackgroundTransparency=0.92
     HdrLeft.BorderSizePixel=0
     HdrLeft.ZIndex=10
 
@@ -618,7 +595,7 @@ function BottleLib:CreateWindow(WindowConfig)
     local SbTitle=Instance.new("TextButton",HdrLeft)
     SbTitle.Size=UDim2.new(1,-58,1,0); SbTitle.Position=UDim2.new(0,56,0,0)
     SbTitle.BackgroundTransparency=1; SbTitle.Text=HubName
-    SbTitle.TextColor3=Color3.fromRGB(255,255,255)
+    SbTitle.TextColor3=T.Accent
     SbTitle.Font=Enum.Font.GothamBlack; SbTitle.TextSize=15
     SbTitle.TextXAlignment=Enum.TextXAlignment.Left; SbTitle.ZIndex=14; SbTitle.AutoButtonColor=false
 
@@ -1268,8 +1245,8 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
             Instance.new("UICorner",accentBar).CornerRadius=UDim.new(0,4)
         end
 
-        local arrowOpen  = isSubFolder and " ▾ " or "  ▼  "
-        local arrowClose = isSubFolder and " ▸ " or "  ▶  "
+        local arrowOpen  = "  ▼  "
+        local arrowClose = "  ▶  "
 
         if isPremiumFolder then
             headerBtn.Text=arrowOpen.."<font color='"..hexAccent.."'>⭐ Premium Access</font>"
