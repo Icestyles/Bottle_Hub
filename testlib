@@ -2,9 +2,10 @@
 --[[
     ===========================================================================
     ■ BOTTLEHUB UI LIBRARY (PURE ARCHITECTURE)
-    ■ Version: 13.7
+    ■ Version: 13.8
     ■ Changelog:
-      - 🎨 A1 FIX: HdrRight top-right corner cover (no more square edge)
+      - 🎨 A1 FIX: HdrRight top-right corner cover
+      - 🚀 Phase 2: LoadGameScript() — HubLoader via GAS + GitHub Private
     ===========================================================================
 ]]
 
@@ -106,6 +107,67 @@ function BottleLib:SendAnalytics(scriptName)
                 req({ Url=url, Method="POST", Body=HttpService:JSONEncode(payload), Headers={["Content-Type"]="application/json"} })
             end)
         end
+    end)
+end
+
+-- ============================================================================
+-- ✅ Phase 2 — HUBLOADER
+-- เรียก BottleLib:LoadGameScript() ใน Main Script หลัง CreateWindow
+-- GAS จะ match GameId/PlaceId → ดึงจาก GitHub Private → loadstring
+-- ============================================================================
+function BottleLib:LoadGameScript(onSuccess, onFail)
+    task.spawn(function()
+        local req = (syn and syn.request) or (http and http.request) or http_request or request
+        if not req then
+            if onFail then pcall(onFail, "No HTTP function available") end
+            return
+        end
+
+        local url = string.format(
+            "%s?action=get_script&gameId=%s&placeId=%s&hwid=%s&key=%s",
+            GetGasEndpoint(),
+            tostring(game.GameId),
+            tostring(game.PlaceId),
+            self:GetHWID(),
+            self.KeyStatus.KeyName or "Unknown"
+        )
+
+        local ok, res = pcall(function() return req({ Url=url, Method="GET" }) end)
+        if not ok or not res or not res.Body then
+            if onFail then pcall(onFail, "Request failed") end
+            return
+        end
+
+        local ok2, data = pcall(function() return HttpService:JSONDecode(res.Body) end)
+        if not ok2 or type(data) ~= "table" then
+            if onFail then pcall(onFail, "Invalid response") end
+            return
+        end
+
+        if not data.success then
+            if onFail then pcall(onFail, data.message or "Unknown error") end
+            return
+        end
+
+        if not data.content or data.content == "" then
+            if onFail then pcall(onFail, "Empty script content") end
+            return
+        end
+
+        -- loadstring และรัน Main Script
+        local fn, err = loadstring(data.content)
+        if not fn then
+            if onFail then pcall(onFail, "loadstring error: " .. tostring(err)) end
+            return
+        end
+
+        local runOk, runErr = pcall(fn)
+        if not runOk then
+            if onFail then pcall(onFail, "Script runtime error: " .. tostring(runErr)) end
+            return
+        end
+
+        if onSuccess then pcall(onSuccess) end
     end)
 end
 
