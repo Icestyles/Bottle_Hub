@@ -4,8 +4,6 @@
     ■ BOTTLEHUB UI LIBRARY (PURE ARCHITECTURE)
     ■ Version: 13.8
     ■ Changelog:
-      - 🎨 A1 FIX: HdrRight top-right corner cover
-      - 🚀 Phase 2: LoadGameScript() — HubLoader via GAS + GitHub Private
     ===========================================================================
 ]]
 
@@ -17,7 +15,7 @@ local BottleLib = {}
 BottleLib.KeyStatus   = { Valid=false, ExpiresAt=nil, IsGlobal=false, Tier="Basic", KeyName="Unknown", HWID="Unknown", IsVIPUser=false }
 BottleLib.Connections = {}
 BottleLib.MinimizeKey = nil
-BottleLib.EvaderDebug = false   -- ✅ v13.6: เปิดเพื่อดู diagnostic Notify
+BottleLib.EvaderDebug = false 
 BottleLib.OnCloseEvent  = Instance.new("BindableEvent")
 
 local CoreGui             = game:GetService("CoreGui")
