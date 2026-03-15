@@ -124,12 +124,13 @@ function BottleLib:LoadGameScript(onSuccess, onFail)
         end
 
         local url = string.format(
-            "%s?action=get_script&gameId=%s&placeId=%s&hwid=%s&key=%s",
+            "%s?action=get_script&gameId=%s&placeId=%s&hwid=%s&key=%s&userId=%s",
             GetGasEndpoint(),
             tostring(game.GameId),
             tostring(game.PlaceId),
             self:GetHWID(),
-            self.KeyStatus.KeyName or "Unknown"
+            self.KeyStatus.KeyName or "Unknown",
+            tostring(player.UserId)
         )
 
         local ok, res = pcall(function() return req({ Url=url, Method="GET" }) end)
