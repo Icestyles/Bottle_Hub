@@ -2,11 +2,9 @@
 --[[
     ===========================================================================
     ■ BOTTLEHUB UI LIBRARY (PURE ARCHITECTURE)
-    ■ Version: 13.6.2
+    ■ Version: 13.7
     ■ Changelog:
-      - 🔇 FIX: VIP Evader → check_vip per player (ไม่ใช้ get_vips cache)
-      - 🎨 FIX: Header Left → Transparency 0.92 + TextColor T.Accent (v13.4 style)
-      - 📁 FIX: Sub-folder arrows ▾/▸ → ▼/▶ (Gotham compatible)
+      - 🎨 A1 FIX: HdrRight top-right corner cover (no more square edge)
     ===========================================================================
 ]]
 
@@ -557,6 +555,16 @@ function BottleLib:CreateWindow(WindowConfig)
     HdrRight.BackgroundColor3=Color3.fromRGB(11,11,11)
     HdrRight.BorderSizePixel=0
     HdrRight.ZIndex=10
+
+    -- ✅ A1 FIX: ปิดมุมขวาบนของ HdrRight ที่โผล่พ้น UICorner ของ MainFrame
+    -- MainFrame.ClipsDescendants ตัดได้เฉพาะ children ตรงๆ
+    -- HdrRight เป็น grandchild → ต้องปิดมุมด้วย Frame สีเดียวกับ background
+    local cornerCoverTR=Instance.new("Frame",FullHeader)
+    cornerCoverTR.Size=UDim2.new(0,10,0,10)
+    cornerCoverTR.Position=UDim2.new(1,-10,0,0)
+    cornerCoverTR.BackgroundColor3=Color3.fromRGB(11,11,11)
+    cornerCoverTR.BorderSizePixel=0
+    cornerCoverTR.ZIndex=11
 
     -- ── Thin divider between Left/Right ───────────────────────────────────────
     local HdrDivider=Instance.new("Frame",FullHeader)
