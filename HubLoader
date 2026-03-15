@@ -1,0 +1,60 @@
+--!nocheck
+--[[
+    BOTTLEHUB 
+    Powered by BottleLib
+]]
+
+-- ============================================================
+-- [0] ANTI-OVERLAP SYSTEM
+-- ============================================================
+if getgenv().BottleHub_IsRunning then
+    getgenv().BottleHub_KillSignal = true
+    task.wait(0.5)
+end
+getgenv().BottleHub_IsRunning = true
+getgenv().BottleHub_KillSignal = false
+
+-- ============================================================
+-- [1] FETCH CORE LIBRARY & AUTHENTICATION
+-- ============================================================
+local libUrl = "https://raw.githubusercontent.com/Icestyles/Bottle_Hub/refs/heads/main/ฺBottleLib?v=" .. tostring(os.time())
+local ok, result = pcall(function()
+    return loadstring(game:HttpGet(libUrl))()
+end)
+
+if not ok or type(result) ~= "table" then
+    local Players = game:GetService("Players")
+    if Players.LocalPlayer then
+        Players.LocalPlayer:Kick("BottleHub: Failed to load Core Library. Please check your internet or GitHub status.")
+    end
+    getgenv().BottleHub_IsRunning = false
+    return
+end
+
+local BottleLib = result
+
+if not BottleLib:InitKeySystem() then
+    getgenv().BottleHub_IsRunning = false
+    return
+end
+
+getgenv().BottleLib_Instance = BottleLib
+
+-- ============================================================
+-- [2] FETCH & EXECUTE MAIN SCRIPT FROM CLOUD
+-- ============================================================
+BottleLib:ShowLoader("Connecting to BottleHub Server...")
+task.wait(1)
+BottleLib:ShowLoader("Fetching Premium Script...")
+
+BottleLib:LoadGameScript(
+    function()
+        print("[BOTTLEHUB] Main script loaded and executed successfully from Server.")
+    end,
+    function(errorMessage)
+        BottleLib:HideLoader()
+        BottleLib:Notify("Loader Error: " .. tostring(errorMessage))
+        warn("[BOTTLEHUB Loader Error] " .. tostring(errorMessage))
+        getgenv().BottleHub_IsRunning = false
+    end
+)
