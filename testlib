@@ -4,8 +4,8 @@
     ■ BOTTLEHUB UI LIBRARY (PURE ARCHITECTURE)
     ■ Version: 13.8.2
     ■ Changelog:
-      - 📱 [NEW] Mobile Responsive Header (Bigger buttons & drag area for touch)
-      - 🔄 [FIX] Easter Egg moved to GameName to prevent accidental clicks on mobile
+      - 📱 [NEW] Mobile Responsive Header (Auto-detect touch device)
+      - 🔄 [FIX] Easter Egg moved to GameName (7 clicks) to prevent accidental closing
     ===========================================================================
 ]]
 
@@ -563,18 +563,30 @@ function BottleLib:CreateWindow(WindowConfig)
     }):Play()
 
     -- =========================================================================
-    -- ✅ v13.6: FULL-WIDTH HEADER — upgraded beauty + fixed corners
+    -- 📱 MOBILE RESPONSIVE DETECTION
+    -- =========================================================================
+    local isMobile = UserInputService.TouchEnabled and not UserInputService.MouseEnabled
+
+    local hdrH       = isMobile and 60 or 44
+    local dotSize    = isMobile and 24 or 14
+    local dotHover   = isMobile and (dotSize + 2) or 16
+    local dotY       = isMobile and 18 or 15
+    local redDotX    = isMobile and 16 or 12
+    local yellowDotX = isMobile and 50 or 32
+    local titleSize  = isMobile and 18 or 15
+    local titleX     = isMobile and 86 or 56
+
+    -- =========================================================================
+    -- FULL-WIDTH HEADER
     -- =========================================================================
     local FullHeader=Instance.new("Frame",MainFrame)
     FullHeader.Name="FullHeader"
-    FullHeader.Size=UDim2.new(1,0,0,44)
+    FullHeader.Size=UDim2.new(1,0,0,hdrH)
     FullHeader.Position=UDim2.new(0,0,0,0)
     FullHeader.BackgroundTransparency=1
     FullHeader.BorderSizePixel=0
     FullHeader.ZIndex=10
-    -- ✅ Corner clip inherited from MainFrame.ClipsDescendants — no extra UICorner needed
 
-    -- Left zone — flat accent background (v13.4 style)
     local HdrLeft=Instance.new("Frame",FullHeader)
     HdrLeft.Size=UDim2.new(0,196,1,0)
     HdrLeft.BackgroundColor3=T.Accent
@@ -582,7 +594,6 @@ function BottleLib:CreateWindow(WindowConfig)
     HdrLeft.BorderSizePixel=0
     HdrLeft.ZIndex=10
 
-    -- Right zone — flat dark
     local HdrRight=Instance.new("Frame",FullHeader)
     HdrRight.Size=UDim2.new(1,-197,1,0)
     HdrRight.Position=UDim2.new(0,197,0,0)
@@ -590,9 +601,6 @@ function BottleLib:CreateWindow(WindowConfig)
     HdrRight.BorderSizePixel=0
     HdrRight.ZIndex=10
 
-    -- ✅ A1 FIX: ปิดมุมขวาบนของ HdrRight ที่โผล่พ้น UICorner ของ MainFrame
-    -- MainFrame.ClipsDescendants ตัดได้เฉพาะ children ตรงๆ
-    -- HdrRight เป็น grandchild → ต้องปิดมุมด้วย Frame สีเดียวกับ background
     local cornerCoverTR=Instance.new("Frame",FullHeader)
     cornerCoverTR.Size=UDim2.new(0,10,0,10)
     cornerCoverTR.Position=UDim2.new(1,-10,0,0)
@@ -600,14 +608,12 @@ function BottleLib:CreateWindow(WindowConfig)
     cornerCoverTR.BorderSizePixel=0
     cornerCoverTR.ZIndex=11
 
-    -- ── Thin divider between Left/Right ───────────────────────────────────────
     local HdrDivider=Instance.new("Frame",FullHeader)
     HdrDivider.Size=UDim2.new(0,1,0,26); HdrDivider.Position=UDim2.new(0,195,0.5,0)
     HdrDivider.AnchorPoint=Vector2.new(0,0.5)
     HdrDivider.BackgroundColor3=T.Accent; HdrDivider.BackgroundTransparency=0.45
     HdrDivider.BorderSizePixel=0; HdrDivider.ZIndex=12
 
-    -- ── Bottom separator — flat line ──────────────────────────────────────────
     local HdrBottomLine=Instance.new("Frame",FullHeader)
     HdrBottomLine.Size=UDim2.new(1,0,0,1); HdrBottomLine.Position=UDim2.new(0,0,1,-1)
     HdrBottomLine.BackgroundColor3=T.Accent; HdrBottomLine.BackgroundTransparency=0.65
@@ -616,51 +622,56 @@ function BottleLib:CreateWindow(WindowConfig)
     -- ── Window dots ───────────────────────────────────────────────────────────
     local function MakeDot(xOff,color,hoverSymbol)
         local b=Instance.new("TextButton",HdrLeft)
-        b.Size=UDim2.new(0,14,0,14); b.Position=UDim2.new(0,xOff,0,15)
+        b.Size=UDim2.new(0,dotSize,0,dotSize); b.Position=UDim2.new(0,xOff,0,dotY)
         b.BackgroundColor3=color; b.Text=""; b.Font=Enum.Font.SourceSansBold
         b.TextSize=11; b.AutoButtonColor=false; b.ZIndex=15
         Instance.new("UICorner",b).CornerRadius=UDim.new(1,0)
-        b.MouseEnter:Connect(function() b.Text=hoverSymbol; TweenService:Create(b,TweenInfo.new(0.1),{TextColor3=Color3.fromRGB(255,255,255),Size=UDim2.new(0,16,0,16),Position=UDim2.new(0,xOff-1,0,14)}):Play() end)
-        b.MouseLeave:Connect(function() b.Text=""; TweenService:Create(b,TweenInfo.new(0.1),{TextColor3=Color3.fromRGB(80,20,20),Size=UDim2.new(0,14,0,14),Position=UDim2.new(0,xOff,0,15)}):Play() end)
+        b.MouseEnter:Connect(function() b.Text=hoverSymbol; TweenService:Create(b,TweenInfo.new(0.1),{TextColor3=Color3.fromRGB(255,255,255),Size=UDim2.new(0,dotHover,0,dotHover),Position=UDim2.new(0,xOff-1,0,dotY-1)}):Play() end)
+        b.MouseLeave:Connect(function() b.Text=""; TweenService:Create(b,TweenInfo.new(0.1),{TextColor3=Color3.fromRGB(80,20,20),Size=UDim2.new(0,dotSize,0,dotSize),Position=UDim2.new(0,xOff,0,dotY)}):Play() end)
         return b
     end
 
-    local RedDot    = MakeDot(12, Color3.fromRGB(255,69,58),  "×")
-    local YellowDot = MakeDot(32, Color3.fromRGB(255,159,10), "−")
+    local RedDot    = MakeDot(redDotX, Color3.fromRGB(255,69,58),  "×")
+    local YellowDot = MakeDot(yellowDotX, Color3.fromRGB(255,159,10), "−")
     RedDot.ZIndex=16; YellowDot.ZIndex=16
 
     RedDot.MouseButton1Click:Connect(function()
         BottleLib.CleanUpEvent:Fire(); BottleLib.OnCloseEvent:Fire(); ScreenGui:Destroy()
     end)
 
-    -- ── Hub name / Easter egg ─────────────────────────────────────────────────
-    local SbTitle=Instance.new("TextButton",HdrLeft)
-    SbTitle.Size=UDim2.new(1,-58,1,0); SbTitle.Position=UDim2.new(0,56,0,0)
+    -- ── Hub name ─────────────────────────────────────────────────
+    local SbTitle=Instance.new("TextLabel",HdrLeft)
+    SbTitle.Size=UDim2.new(1,-titleX,1,0); SbTitle.Position=UDim2.new(0,titleX,0,0)
     SbTitle.BackgroundTransparency=1; SbTitle.Text=HubName
     SbTitle.TextColor3=T.Accent
-    SbTitle.Font=Enum.Font.GothamBlack; SbTitle.TextSize=15
-    SbTitle.TextXAlignment=Enum.TextXAlignment.Left; SbTitle.ZIndex=14; SbTitle.AutoButtonColor=false
+    SbTitle.Font=Enum.Font.GothamBlack; SbTitle.TextSize=titleSize
+    SbTitle.TextXAlignment=Enum.TextXAlignment.Left; SbTitle.ZIndex=14
 
-    local titleClickCount=0; local titleLastClick=0
-    SbTitle.MouseButton1Click:Connect(function()
-        local now=tick()
-        if now-titleLastClick<0.6 then titleClickCount=titleClickCount+1 else titleClickCount=1 end
-        titleLastClick=now
-        if titleClickCount>=3 then
-            titleClickCount=0
-            BottleLib:Notify("Easter Egg Activated: Loading Infinite Yield...")
-            task.spawn(function() pcall(function() loadstring(game:HttpGet("https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source"))() end) end)
-        end
-    end)
-
-    -- ── GameName (HdrRight left) ───────────────────────────────────────────────
-    local GameNameLbl=Instance.new("TextLabel",HdrRight)
+    -- ── GameName & Easter Egg (Moved here) ───────────────────────────────────────────────
+    local GameNameLbl=Instance.new("TextButton",HdrRight)
+    GameNameLbl.AutoButtonColor=false
     GameNameLbl.Size=UDim2.new(0.55,0,1,0); GameNameLbl.Position=UDim2.new(0,14,0,0)
     GameNameLbl.BackgroundTransparency=1; GameNameLbl.Text=GameName
     GameNameLbl.TextColor3=Color3.fromRGB(130,130,130)
     GameNameLbl.Font=Enum.Font.GothamBold; GameNameLbl.TextSize=13
     GameNameLbl.TextXAlignment=Enum.TextXAlignment.Left
     GameNameLbl.TextTruncate=Enum.TextTruncate.AtEnd; GameNameLbl.ZIndex=11
+
+    local titleClickCount=0; local titleLastClick=0
+    GameNameLbl.MouseButton1Click:Connect(function()
+        local now=tick()
+        if now-titleLastClick < 2.0 then
+            titleClickCount = titleClickCount + 1 
+        else 
+            titleClickCount = 1 
+        end
+        titleLastClick=now
+        if titleClickCount >= 7 then
+            titleClickCount=0
+            BottleLib:Notify("Easter Egg Activated: Loading Infinite Yield...")
+            task.spawn(function() pcall(function() loadstring(game:HttpGet("https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source"))() end) end)
+        end
+    end)
 
     -- FPS/Ping stats (HdrRight right)
     local TopStatsLbl=Instance.new("TextLabel",HdrRight)
@@ -675,18 +686,18 @@ function BottleLib:CreateWindow(WindowConfig)
     -- Content Container
     -- =========================================================================
     local ContentContainer=Instance.new("Frame",MainFrame)
-    ContentContainer.Size=UDim2.new(0,441,1,-68); ContentContainer.Position=UDim2.new(0,207,0,56)
+    ContentContainer.Size=UDim2.new(0,441,1,-(hdrH+24)); ContentContainer.Position=UDim2.new(0,207,0,hdrH+12)
     ContentContainer.BackgroundColor3=T.Content; ContentContainer.BorderSizePixel=0
     ContentContainer.BackgroundTransparency=0.75
     Instance.new("UICorner",ContentContainer).CornerRadius=UDim.new(0,6)
 
-    -- Drag
+    -- Drag (Responsive hit area)
     local dragging=false; local dragStart=nil; local startPos=nil
     MainFrame.InputBegan:Connect(function(input,gp)
         if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then
             local relX=input.Position.X-MainFrame.AbsolutePosition.X
             local relY=input.Position.Y-MainFrame.AbsolutePosition.Y
-            if relY<=44 or relX<=195 then
+            if relY<=hdrH or relX<=195 then
                 dragging=true; dragStart=input.Position; startPos=MainFrame.Position
             end
         end
@@ -771,7 +782,7 @@ function BottleLib:CreateWindow(WindowConfig)
     -- SIDEBAR
     -- =========================================================================
     local Sidebar=Instance.new("Frame",MainFrame)
-    Sidebar.Size=UDim2.new(0,195,1,-44); Sidebar.Position=UDim2.new(0,0,0,44)
+    Sidebar.Size=UDim2.new(0,195,1,-hdrH); Sidebar.Position=UDim2.new(0,0,0,hdrH)
     Sidebar.BackgroundColor3=T.Sidebar; Sidebar.BorderSizePixel=0
     Instance.new("UICorner",Sidebar).CornerRadius=UDim.new(0,10)
     local SbCover=Instance.new("Frame",Sidebar)
@@ -1291,7 +1302,7 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
         local arrowClose = "  ▶  "
 
         if isPremiumFolder then
-            headerBtn.Text=arrowOpen.."<font color='"..hexAccent.."'>⭐ Premium Access</font>"
+            headerBtn.Text=arrowOpen.."<font color='"..hexAccent ensuing.."'>⭐ Premium Access</font>"
         elseif isSubFolder then
             headerBtn.Text=arrowOpen.."<font color='#888888'>"..folderName.."</font>"
         else
