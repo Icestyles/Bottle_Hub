@@ -2,10 +2,11 @@
 --[[
     ===========================================================================
     ■ BOTTLEHUB UI LIBRARY (PURE ARCHITECTURE)
-    ■ Version: 13.8.2
+    ■ Version: 13.8.2 (FIXED)
     ■ Changelog:
       - 📱 [NEW] Mobile Responsive Header (Auto-detect touch device)
-      - 🔄 [FIX] Easter Egg moved to GameName (7 clicks) to prevent accidental closing
+      - 🔄 [FIX] Easter Egg moved to GameName (3 clicks) 
+      - 🛠️ [FIX] Syntax Error on hexAccent resolved
     ===========================================================================
 ]]
 
@@ -647,7 +648,7 @@ function BottleLib:CreateWindow(WindowConfig)
     SbTitle.Font=Enum.Font.GothamBlack; SbTitle.TextSize=titleSize
     SbTitle.TextXAlignment=Enum.TextXAlignment.Left; SbTitle.ZIndex=14
 
-    -- ── GameName & Easter Egg (Moved here) ───────────────────────────────────────────────
+    -- ── GameName & Easter Egg (Moved here - 3 Clicks) ───────────────────────────────────────────────
     local GameNameLbl=Instance.new("TextButton",HdrRight)
     GameNameLbl.AutoButtonColor=false
     GameNameLbl.Size=UDim2.new(0.55,0,1,0); GameNameLbl.Position=UDim2.new(0,14,0,0)
@@ -660,13 +661,13 @@ function BottleLib:CreateWindow(WindowConfig)
     local titleClickCount=0; local titleLastClick=0
     GameNameLbl.MouseButton1Click:Connect(function()
         local now=tick()
-        if now-titleLastClick < 2.0 then
+        if now-titleLastClick < 0.6 then
             titleClickCount = titleClickCount + 1 
         else 
             titleClickCount = 1 
         end
         titleLastClick=now
-        if titleClickCount >= 7 then
+        if titleClickCount >= 3 then
             titleClickCount=0
             BottleLib:Notify("Easter Egg Activated: Loading Infinite Yield...")
             task.spawn(function() pcall(function() loadstring(game:HttpGet("https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source"))() end) end)
@@ -1259,10 +1260,7 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
     end
 
     -- =========================================================================
-    -- ✅ v13.6: FOLDER (depth-aware) + SUB-FOLDER SUPPORT
-    -- depth 0 = normal/premium folder
-    -- depth 1+ = sub-folder (darker bg, indent, smaller header, dashed stroke)
-    -- Premium inheritance: sub-folder inside premium folder inherits lock
+    -- ✅ FOLDER (depth-aware) + SUB-FOLDER SUPPORT
     -- =========================================================================
     function APIObj:CreateFolder(folderName, isPremiumFolder)
         local isSubFolder = (_depth >= 1)
@@ -1289,7 +1287,6 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
         local headerBtn=Instance.new("TextButton",folderFrame)
         headerBtn.Size=UDim2.new(1,0,0,headerH); headerBtn.BackgroundTransparency=1
 
-        -- ✅ v13.6.1 FIX: accentBar เป็น child ของ headerBtn (ไม่อยู่ใน UIListLayout)
         if not isSubFolder then
             local accentBar=Instance.new("Frame",headerBtn)
             accentBar.Size=UDim2.new(0,3,1,0); accentBar.Position=UDim2.new(0,0,0,0)
@@ -1302,7 +1299,7 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
         local arrowClose = "  ▶  "
 
         if isPremiumFolder then
-            headerBtn.Text=arrowOpen.."<font color='"..hexAccent ensuing.."'>⭐ Premium Access</font>"
+            headerBtn.Text=arrowOpen.."<font color='"..hexAccent.."'>⭐ Premium Access</font>"
         elseif isSubFolder then
             headerBtn.Text=arrowOpen.."<font color='#888888'>"..folderName.."</font>"
         else
@@ -1333,10 +1330,7 @@ function BindUIElements(APIObj, targetContainer, isPremiumBlock, T, WindowObj, S
             else headerBtn.Text=arrow..folderName end
         end)
 
-        -- Premium inheritance: sub-folder inside a premium block inherits the lock
         local childIsPremium = isPremiumFolder and not isSubFolder and isPremiumBlock == false
-        -- If this folder itself is premium → children are locked
-        -- If parent is already premium (isPremiumBlock=true) → children inherit
         local childPremiumBlock = isPremiumFolder or isPremiumBlock
 
         local FolderObj={}
