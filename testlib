@@ -2,10 +2,10 @@
 --[[
     ===========================================================================
     ■ BOTTLEHUB UI LIBRARY (PURE ARCHITECTURE)
-    ■ Version: 13.8
+    ■ Version: 13.8.2
     ■ Changelog:
-      - 🎨 A1 FIX: HdrRight top-right corner cover
-      - 🚀 Phase 2: LoadGameScript() — HubLoader via GAS + GitHub Private
+      - 📱 [NEW] Mobile Responsive Header (Bigger buttons & drag area for touch)
+      - 🔄 [FIX] Easter Egg moved to GameName to prevent accidental clicks on mobile
     ===========================================================================
 ]]
 
@@ -17,7 +17,7 @@ local BottleLib = {}
 BottleLib.KeyStatus   = { Valid=false, ExpiresAt=nil, IsGlobal=false, Tier="Basic", KeyName="Unknown", HWID="Unknown", IsVIPUser=false }
 BottleLib.Connections = {}
 BottleLib.MinimizeKey = nil
-BottleLib.EvaderDebug = false   -- ✅ v13.6: เปิดเพื่อดู diagnostic Notify
+BottleLib.EvaderDebug = false 
 BottleLib.OnCloseEvent  = Instance.new("BindableEvent")
 
 local CoreGui             = game:GetService("CoreGui")
@@ -110,11 +110,6 @@ function BottleLib:SendAnalytics(scriptName)
     end)
 end
 
--- ============================================================================
--- ✅ Phase 2 — HUBLOADER
--- เรียก BottleLib:LoadGameScript() ใน Main Script หลัง CreateWindow
--- GAS จะ match GameId/PlaceId → ดึงจาก GitHub Private → loadstring
--- ============================================================================
 function BottleLib:LoadGameScript(onSuccess, onFail)
     task.spawn(function()
         local req = (syn and syn.request) or (http and http.request) or http_request or request
@@ -155,7 +150,6 @@ function BottleLib:LoadGameScript(onSuccess, onFail)
             return
         end
 
-        -- loadstring และรัน Main Script
         local fn, err = loadstring(data.content)
         if not fn then
             if onFail then pcall(onFail, "loadstring error: " .. tostring(err)) end
@@ -172,9 +166,6 @@ function BottleLib:LoadGameScript(onSuccess, onFail)
     end)
 end
 
--- ============================================================================
--- ✅ [3.1] SILENT VIP EVADER (v13.6 — tostring fix)
--- ============================================================================
 function BottleLib:InitVIPEvader()
     if self.KeyStatus.IsVIPUser then
         if self.EvaderDebug then self:Notify("VIP Evader: You are VIP — exempt.") end
@@ -182,13 +173,8 @@ function BottleLib:InitVIPEvader()
     end
 
     local req = (syn and syn.request) or (http and http.request) or http_request or request
-    if not req then
-        if self.EvaderDebug then self:Notify("VIP Evader DEBUG: No HTTP function.") end
-        return
-    end
+    if not req then return end
 
-    -- ✅ v13.6.2: ใช้ check_vip per player โดยตรง (proven ทำงานได้)
-    -- ไม่ใช้ get_vips cache อีกต่อไป
     local function isVip(userId)
         local url = string.format("%s?action=check_vip&userId=%s", GetGasEndpoint(), tostring(userId))
         local ok, res = pcall(function() return req({ Url=url, Method="GET" }) end)
@@ -217,28 +203,13 @@ function BottleLib:InitVIPEvader()
     end
 
     task.spawn(function()
-        -- ตรวจ players ที่อยู่ในเซิฟแล้วทันที
         for _, plr in ipairs(Players:GetPlayers()) do
             if plr ~= player then
-                if self.EvaderDebug then self:Notify("VIP Evader DEBUG: Checking " .. plr.Name .. " (" .. plr.UserId .. ")") end
-                if isVip(plr.UserId) then
-                    if self.EvaderDebug then self:Notify("VIP Evader DEBUG: MATCH " .. plr.Name .. " → Hopping!") end
-                    doHop(); return
-                end
+                if isVip(plr.UserId) then doHop(); return end
             end
         end
-
-        if self.EvaderDebug then self:Notify("VIP Evader DEBUG: No VIP in server. Watching...") end
-
-        -- ฟัง VIP ที่เข้ามาใหม่ระหว่างเล่น
         table.insert(BottleLib.Connections, Players.PlayerAdded:Connect(function(plr)
-            if self.EvaderDebug then self:Notify("VIP Evader DEBUG: " .. plr.Name .. " joined, checking...") end
-            task.spawn(function()
-                if isVip(plr.UserId) then
-                    if self.EvaderDebug then self:Notify("VIP Evader DEBUG: MATCH " .. plr.Name .. " → Hopping!") end
-                    doHop()
-                end
-            end)
+            task.spawn(function() if isVip(plr.UserId) then doHop() end end)
         end))
     end)
 end
