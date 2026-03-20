@@ -389,10 +389,10 @@ function BottleLib:InitKeySystem()
         local res,err=MakeRequest(url)
         if res and res.Body then
             local ok,data=pcall(function() return HttpService:JSONDecode(res.Body) end)
-            if ok and type(data)=="table" then return data.valid==true,data.expired==true,data.message or "",data.expirationTime or nil,data.isGlobal==true,data.accessLevel or "Basic" end
-            return false,false,"Invalid JSON",nil,false,"Basic"
+            if ok and type(data)=="table" then return data.valid==true,data.expired==true,data.message or "",data.expirationTime or nil,data.isGlobal==true,data.accessLevel or "Basic",data.keyType or "" end
+            return false,false,"Invalid JSON",nil,false,"Basic",""
         end
-        return false,false,err or "Timeout",nil,false,"Basic"
+        return false,false,err or "Timeout",nil,false,"Basic",""
     end
 
     local function LoadStoredKey()
@@ -420,7 +420,7 @@ function BottleLib:InitKeySystem()
         if d.expiresAt and type(d.expiresAt)=="number" and os.time()>=d.expiresAt then
             RemoveStoredKey(); player:Kick("BottleHub: Your saved key has expired."); return false
         end
-        local isValid,isExpired,_,expTime,isGlobal,tier=VerifyKeyWithServer(d.key)
+        local isValid,isExpired,_,expTime,isGlobal,tier,keyType=VerifyKeyWithServer(d.key)
         if isValid and not isExpired then
             BottleLib.KeyStatus={Valid=true,ExpiresAt=tonumber(expTime),IsGlobal=isGlobal,Tier=tier or "Basic",KeyName=d.key,HWID=self:GetHWID(),IsVIPUser=false}
             return true
@@ -499,10 +499,11 @@ function BottleLib:InitKeySystem()
                 pcall(function() VerifyBtn.BackgroundColor3=Color3.fromRGB(r,g,b2) end); task.wait(0.05)
             end
         end)
-        local isValid,isExpired,_,expTime,isGlobal,tier=VerifyKeyWithServer(input)
+        local isValid,isExpired,_,expTime,isGlobal,tier,keyType=VerifyKeyWithServer(input)
         checking=false
         if isValid and not isExpired then
-            if not isGlobal then SaveKey(input,expTime) end
+            local isAdKey = (keyType=="Ad_4h" or keyType=="AdKey")
+            if not isGlobal and not isAdKey then SaveKey(input,expTime) end
             BottleLib.KeyStatus={Valid=true,ExpiresAt=tonumber(expTime),IsGlobal=isGlobal,Tier=tier or "Basic",KeyName=input,HWID=self:GetHWID(),IsVIPUser=false}
             VerifyBtn.Text="Success!"; VerifyBtn.BackgroundColor3=Color3.fromRGB(46,204,113)
             task.wait(0.5); KeyScreen:Destroy(); VerifyEvent:Fire()
