@@ -119,14 +119,16 @@ function BottleLib:LoadGameScript(onSuccess, onFail)
             return
         end
 
+        -- ✅ OPT-SEC: include timestamp for replay protection (60s window on GAS)
         local url = string.format(
-            "%s?action=get_script&gameId=%s&placeId=%s&hwid=%s&key=%s&userId=%s",
+            "%s?action=get_script&gameId=%s&placeId=%s&hwid=%s&key=%s&userId=%s&ts=%s",
             GetGasEndpoint(),
             tostring(game.GameId),
             tostring(game.PlaceId),
             self:GetHWID(),
             self.KeyStatus.KeyName or "Unknown",
-            tostring(player.UserId)
+            tostring(player.UserId),
+            tostring(os.time())
         )
 
         local ok, res = pcall(function() return req({ Url=url, Method="GET" }) end)
