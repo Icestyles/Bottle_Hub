@@ -1,6 +1,6 @@
 -- ============================================================================
--- BottleLib (Glassplane Edition v2.4.2 — Production Hot-Pink Master)
--- Architecture: Hardened Lifecycle | Native OLED Glass | Gotham Typography
+-- BottleLib (Glassplane Edition v2.4.3 — True Glass & Split Header Master)
+-- Architecture: Hardened Lifecycle | OLED Glass (0.15/0.75) | Pure Gotham Fonts
 -- ============================================================================
 
 local function safeService(serviceName)
@@ -49,7 +49,7 @@ local function getGuiParent()
 end
 
 -- ============================================================================
--- [1] NOTIFY SYSTEM (OLED Toast with Accent Stroke)
+-- [1] NOTIFY SYSTEM (OLED Toast with Hot-Pink Stroke)
 -- ============================================================================
 function BottleLib:Notify(msg)
     local parentGui = getGuiParent()
@@ -112,7 +112,7 @@ function BottleLib:Notify(msg)
     lbl.TextWrapped = true
     lbl.TextTransparency = 1
 
-    TweenService:Create(notif, TweenInfo.new(0.25), {BackgroundTransparency = 0.05}):Play()
+    TweenService:Create(notif, TweenInfo.new(0.25), {BackgroundTransparency = 0.08}):Play()
     TweenService:Create(stroke, TweenInfo.new(0.25), {Transparency = 0}):Play()
     TweenService:Create(icon, TweenInfo.new(0.25), {TextTransparency = 0}):Play()
     TweenService:Create(lbl, TweenInfo.new(0.25), {TextTransparency = 0}):Play()
@@ -130,7 +130,7 @@ function BottleLib:Notify(msg)
 end
 
 -- ============================================================================
--- [2] UI ELEMENTS API
+-- [2] UI ELEMENTS API (Glassmorphic Elements)
 -- ============================================================================
 local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, GlobalOverlayClose, _depth)
     _depth = _depth or 0
@@ -167,6 +167,7 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
         local f = Instance.new("Frame", targetContainer)
         f.Size = UDim2.new(1, 0, 0, 1)
         f.BackgroundColor3 = T.Stroke
+        f.BackgroundTransparency = 0.4
         f.BorderSizePixel = 0
     end
 
@@ -174,6 +175,7 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
         local btn = Instance.new("TextButton", targetContainer)
         btn.Size = UDim2.new(1, 0, 0, 32)
         btn.BackgroundColor3 = T.Element
+        btn.BackgroundTransparency = 0.35
         btn.Text = text
         btn.TextColor3 = T.Text
         btn.Font = Enum.Font.GothamSemibold
@@ -184,11 +186,12 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
         local stroke = Instance.new("UIStroke", btn)
         stroke.Color = T.Stroke
         stroke.Thickness = 1
+        stroke.Transparency = 0.4
 
         btn.MouseButton1Click:Connect(function()
             if WindowObj.IsClosing or WindowObj.IsClosed then return end
-            local t1 = TweenService:Create(btn, TweenInfo.new(0.1), {BackgroundColor3 = T.Accent})
-            local t2 = TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = T.Element})
+            local t1 = TweenService:Create(btn, TweenInfo.new(0.1), {BackgroundColor3 = T.Accent, BackgroundTransparency = 0.1})
+            local t2 = TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = T.Element, BackgroundTransparency = 0.35})
             t1:Play()
             t1.Completed:Connect(function() t2:Play() end)
             if callback then pcall(callback, btn) end
@@ -203,6 +206,7 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
         local btn = Instance.new("TextButton", targetContainer)
         btn.Size = UDim2.new(1, 0, 0, 32)
         btn.BackgroundColor3 = T.Element
+        btn.BackgroundTransparency = 0.35
         btn.Text = "    " .. label
         btn.TextColor3 = T.Text
         btn.Font = Enum.Font.GothamSemibold
@@ -214,6 +218,7 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
         local stroke = Instance.new("UIStroke", btn)
         stroke.Color = T.Stroke
         stroke.Thickness = 1
+        stroke.Transparency = 0.4
 
         local dot = Instance.new("Frame", btn)
         dot.Size = UDim2.new(0, 10, 0, 10)
@@ -267,11 +272,13 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
         local frame = Instance.new("Frame", targetContainer)
         frame.Size = UDim2.new(1, 0, 0, 34)
         frame.BackgroundColor3 = T.Element
+        frame.BackgroundTransparency = 0.35
         Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 6)
 
         local stroke = Instance.new("UIStroke", frame)
         stroke.Color = T.Stroke
         stroke.Thickness = 1
+        stroke.Transparency = 0.4
 
         local lbl = Instance.new("TextLabel", frame)
         lbl.Size = UDim2.new(0.5, -12, 1, 0)
@@ -381,11 +388,13 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
         local frame = Instance.new("Frame", targetContainer)
         frame.Size = UDim2.new(1, 0, 0, 34)
         frame.BackgroundColor3 = T.Element
+        frame.BackgroundTransparency = 0.35
         Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 6)
 
         local stroke = Instance.new("UIStroke", frame)
         stroke.Color = T.Stroke
         stroke.Thickness = 1
+        stroke.Transparency = 0.4
 
         local l = Instance.new("TextLabel", frame)
         l.Size = UDim2.new(0.4, 0, 1, 0)
@@ -401,10 +410,11 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
         Input.Size = UDim2.new(0.55, 0, 0.72, 0)
         Input.Position = UDim2.new(0.42, 0, 0.14, 0)
         Input.BackgroundColor3 = T.ElemDark
+        Input.BackgroundTransparency = 0.3
         Input.Text = ""
         Input.PlaceholderText = placeholder or ""
         Input.TextColor3 = T.Text
-        Input.PlaceholderColor3 = Color3.fromRGB(100, 100, 110)
+        Input.PlaceholderColor3 = Color3.fromRGB(110, 110, 120)
         Input.Font = Enum.Font.GothamBold
         Input.TextSize = 11
         Input.ClearTextOnFocus = false
@@ -444,11 +454,13 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
         local frame = Instance.new("Frame", targetContainer)
         frame.Size = UDim2.new(1, 0, 0, 34)
         frame.BackgroundColor3 = T.Element
+        frame.BackgroundTransparency = 0.35
         Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 6)
 
         local stroke = Instance.new("UIStroke", frame)
         stroke.Color = T.Stroke
         stroke.Thickness = 1
+        stroke.Transparency = 0.4
 
         local l = Instance.new("TextLabel", frame)
         l.Size = UDim2.new(0.5, 0, 1, 0)
@@ -464,6 +476,7 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
         b.Size = UDim2.new(0.3, 0, 0.68, 0)
         b.Position = UDim2.new(0.68, 0, 0.16, 0)
         b.BackgroundColor3 = T.ElemDark
+        b.BackgroundTransparency = 0.3
         b.TextColor3 = T.Accent
         b.Font = Enum.Font.GothamBold
         b.Text = (defaultKey and typeof(defaultKey) == "EnumItem") and defaultKey.Name or "NONE"
@@ -499,11 +512,13 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
         local frame = Instance.new("Frame", targetContainer)
         frame.Size = UDim2.new(1, 0, 0, 34)
         frame.BackgroundColor3 = T.Element
+        frame.BackgroundTransparency = 0.35
         Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 6)
 
         local stroke = Instance.new("UIStroke", frame)
         stroke.Color = T.Stroke
         stroke.Thickness = 1
+        stroke.Transparency = 0.4
 
         local btn = Instance.new("TextButton", frame)
         btn.Size = UDim2.new(0.65, 0, 1, 0)
@@ -523,6 +538,7 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
         b.Size = UDim2.new(0.3, 0, 0.68, 0)
         b.Position = UDim2.new(0.68, 0, 0.16, 0)
         b.BackgroundColor3 = T.ElemDark
+        b.BackgroundTransparency = 0.3
         b.TextColor3 = T.Accent
         b.Font = Enum.Font.GothamBold
         b.Text = (defaultKey and typeof(defaultKey) == "EnumItem") and defaultKey.Name or "NONE"
@@ -589,11 +605,13 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
         local frame = Instance.new("Frame", targetContainer)
         frame.Size = UDim2.new(1, 0, 0, 34)
         frame.BackgroundColor3 = T.Element
+        frame.BackgroundTransparency = 0.35
         Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 6)
 
         local stroke = Instance.new("UIStroke", frame)
         stroke.Color = T.Stroke
         stroke.Thickness = 1
+        stroke.Transparency = 0.4
 
         local Input = Instance.new("TextBox", frame)
         Input.Size = UDim2.new(1, -20, 1, 0)
@@ -610,6 +628,7 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
         local DropOverlay = Instance.new("Frame", ScreenGui)
         DropOverlay.Size = UDim2.new(0, 220, 0, 160)
         DropOverlay.BackgroundColor3 = Color3.fromRGB(14, 14, 14)
+        DropOverlay.BackgroundTransparency = 0.15
         DropOverlay.Visible = false
         DropOverlay.ZIndex = 80
         Instance.new("UICorner", DropOverlay).CornerRadius = UDim.new(0, 6)
@@ -649,6 +668,7 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
                     local b = Instance.new("TextButton", DScroll)
                     b.Size = UDim2.new(1, 0, 0, 28)
                     b.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+                    b.BackgroundTransparency = 0.3
                     b.Text = "  " .. item
                     b.TextColor3 = T.Text
                     b.Font = Enum.Font.GothamMedium
@@ -747,11 +767,13 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
         local frame = Instance.new("Frame", targetContainer)
         frame.Size = UDim2.new(1, 0, 0, 34)
         frame.BackgroundColor3 = T.Element
+        frame.BackgroundTransparency = 0.35
         Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 6)
 
         local stroke = Instance.new("UIStroke", frame)
         stroke.Color = T.Stroke
         stroke.Thickness = 1
+        stroke.Transparency = 0.4
 
         local function Pair(labelStr, defVal, ox, cb)
             local l = Instance.new("TextLabel", frame)
@@ -767,6 +789,7 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
             b.Size = UDim2.new(0.18, 0, 0.68, 0)
             b.Position = UDim2.new(ox + 0.22, 0, 0.16, 0)
             b.BackgroundColor3 = T.ElemDark
+            b.BackgroundTransparency = 0.3
             b.TextColor3 = T.Accent
             b.Font = Enum.Font.GothamBold
             b.Text = (defVal and defVal ~= "") and tostring(defVal) or ""
@@ -798,11 +821,13 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
         local frame = Instance.new("Frame", targetContainer)
         frame.Size = UDim2.new(1, 0, 0, 34)
         frame.BackgroundColor3 = T.Element
+        frame.BackgroundTransparency = 0.35
         Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 6)
 
         local stroke = Instance.new("UIStroke", frame)
         stroke.Color = T.Stroke
         stroke.Thickness = 1
+        stroke.Transparency = 0.4
 
         local function Pair(labelStr, defVal, ox, cb)
             local l = Instance.new("TextLabel", frame)
@@ -818,6 +843,7 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
             b.Size = UDim2.new(0.18, 0, 0.68, 0)
             b.Position = UDim2.new(ox + 0.28, 0, 0.16, 0)
             b.BackgroundColor3 = T.ElemDark
+            b.BackgroundTransparency = 0.3
             b.TextColor3 = T.Accent
             b.Font = Enum.Font.GothamBold
             b.Text = tostring(defVal ~= nil and defVal or 0)
@@ -844,11 +870,13 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
         frame.Size = UDim2.new(1, 0, 0, 0)
         frame.AutomaticSize = Enum.AutomaticSize.Y
         frame.BackgroundColor3 = T.Element
+        frame.BackgroundTransparency = 0.35
         Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 6)
 
         local stroke = Instance.new("UIStroke", frame)
         stroke.Color = T.Stroke
         stroke.Thickness = 1
+        stroke.Transparency = 0.4
 
         local outerPad = Instance.new("UIPadding", frame)
         outerPad.PaddingTop = UDim.new(0, 8)
@@ -901,11 +929,13 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
             if isSelected(opt) then
                 TweenService:Create(btn, TweenInfo.new(0.15), {
                     BackgroundColor3 = T.Accent,
+                    BackgroundTransparency = 0.1,
                     TextColor3 = Color3.fromRGB(255, 255, 255)
                 }):Play()
             else
                 TweenService:Create(btn, TweenInfo.new(0.15), {
                     BackgroundColor3 = T.ElemDark,
+                    BackgroundTransparency = 0.3,
                     TextColor3 = T.SubText
                 }):Play()
             end
@@ -917,6 +947,7 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
             btn.Size = UDim2.new(0, 0, 0, 26)
             btn.AutomaticSize = Enum.AutomaticSize.X
             btn.BackgroundColor3 = T.ElemDark
+            btn.BackgroundTransparency = 0.3
             btn.TextColor3 = T.SubText
             btn.Font = Enum.Font.GothamBold
             btn.TextSize = 11
@@ -927,6 +958,7 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
             local pStroke = Instance.new("UIStroke", btn)
             pStroke.Color = T.Stroke
             pStroke.Thickness = 1
+            pStroke.Transparency = 0.4
 
             btn.MouseButton1Click:Connect(function()
                 if WindowObj.IsClosing or WindowObj.IsClosed then return end
@@ -982,11 +1014,13 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
         local outerFrame = Instance.new("Frame", targetContainer)
         outerFrame.Size = UDim2.new(1, 0, 0, listHeight + (showSearch and 36 or 0))
         outerFrame.BackgroundColor3 = T.Element
+        outerFrame.BackgroundTransparency = 0.35
         Instance.new("UICorner", outerFrame).CornerRadius = UDim.new(0, 8)
 
         local outerStroke = Instance.new("UIStroke", outerFrame)
         outerStroke.Color = T.Stroke
         outerStroke.Thickness = 1
+        outerStroke.Transparency = 0.4
 
         local outerLayout = Instance.new("UIListLayout", outerFrame)
         outerLayout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -998,12 +1032,14 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
             searchContainer.Size = UDim2.new(1, -12, 0, 28)
             searchContainer.Position = UDim2.new(0, 6, 0, 4)
             searchContainer.BackgroundColor3 = T.ElemDark
+            searchContainer.BackgroundTransparency = 0.3
             searchContainer.LayoutOrder = 1
             Instance.new("UICorner", searchContainer).CornerRadius = UDim.new(0, 6)
 
             local sStroke = Instance.new("UIStroke", searchContainer)
             sStroke.Color = T.Stroke
             sStroke.Thickness = 1
+            sStroke.Transparency = 0.4
 
             searchBox = Instance.new("TextBox", searchContainer)
             searchBox.Size = UDim2.new(1, -12, 1, 0)
@@ -1061,11 +1097,13 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
             local row = Instance.new("Frame", scrollFrame)
             row.Size = UDim2.new(1, -4, 0, 32)
             row.BackgroundColor3 = T.ElemDark
+            row.BackgroundTransparency = 0.35
             Instance.new("UICorner", row).CornerRadius = UDim.new(0, 6)
 
             local rStroke = Instance.new("UIStroke", row)
             rStroke.Color = T.Stroke
             rStroke.Thickness = 1
+            rStroke.Transparency = 0.4
 
             local toggleBtn = Instance.new("TextButton", row)
             toggleBtn.Size = UDim2.new(0, 24, 1, 0)
@@ -1156,6 +1194,7 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
                     local actBtn = Instance.new("TextButton", rightBtns)
                     actBtn.Size = UDim2.new(0, 24, 0, 22)
                     actBtn.BackgroundColor3 = Color3.fromRGB(24, 24, 24)
+                    actBtn.BackgroundTransparency = 0.3
                     actBtn.Text = bConfig.Icon or "⚡"
                     actBtn.TextColor3 = T.Text
                     actBtn.Font = Enum.Font.GothamBold
@@ -1166,11 +1205,12 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
                     local bStroke = Instance.new("UIStroke", actBtn)
                     bStroke.Color = T.Stroke
                     bStroke.Thickness = 1
+                    bStroke.Transparency = 0.4
 
                     local cBtn = actBtn.MouseButton1Click:Connect(function()
                         if WindowObj.IsClosing or WindowObj.IsClosed then return end
-                        local t1 = TweenService:Create(actBtn, TweenInfo.new(0.1), {BackgroundColor3 = T.Accent})
-                        local t2 = TweenService:Create(actBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(24, 24, 24)})
+                        local t1 = TweenService:Create(actBtn, TweenInfo.new(0.1), {BackgroundColor3 = T.Accent, BackgroundTransparency = 0.1})
+                        local t2 = TweenService:Create(actBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(24, 24, 24), BackgroundTransparency = 0.3})
                         t1:Play()
                         t1.Completed:Connect(function() t2:Play() end)
                         if bConfig.OnClick then pcall(bConfig.OnClick, id, itemData) end
@@ -1238,11 +1278,13 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
         local frame = Instance.new("Frame", targetContainer)
         frame.Size = UDim2.new(1, 0, 0, height or 40)
         frame.BackgroundColor3 = T.Element
+        frame.BackgroundTransparency = 0.35
         Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 6)
 
         local stroke = Instance.new("UIStroke", frame)
         stroke.Color = T.Stroke
         stroke.Thickness = 1
+        stroke.Transparency = 0.4
         return frame
     end
 
@@ -1259,12 +1301,14 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
         folderFrame.Size = UDim2.new(1, 0, 0, headerH)
         folderFrame.AutomaticSize = Enum.AutomaticSize.Y
         folderFrame.BackgroundColor3 = bgColor
+        folderFrame.BackgroundTransparency = 0.35
         folderFrame.BorderSizePixel = 0
         Instance.new("UICorner", folderFrame).CornerRadius = UDim.new(0, 6)
 
         local fStroke = Instance.new("UIStroke", folderFrame)
         fStroke.Color = strokeColor
         fStroke.Thickness = 1
+        fStroke.Transparency = 0.4
 
         local fLayout = Instance.new("UIListLayout", folderFrame)
         fLayout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -1295,6 +1339,7 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
         local headerSep = Instance.new("Frame", folderFrame)
         headerSep.Size = UDim2.new(1, 0, 0, 1)
         headerSep.BackgroundColor3 = strokeColor
+        headerSep.BackgroundTransparency = 0.4
         headerSep.BorderSizePixel = 0
 
         local innerContainer = Instance.new("Frame", folderFrame)
@@ -1330,7 +1375,7 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
 end
 
 -- ============================================================================
--- [3] WINDOW BUILDER (OLED Glass Canvas & Hot-Pink Stroke)
+-- [3] WINDOW BUILDER (True OLED Glass & Split Header)
 -- ============================================================================
 function BottleLib:CreateWindow(WindowConfig)
     BottleLib.CleanUpEvent:Fire()
@@ -1384,61 +1429,82 @@ function BottleLib:CreateWindow(WindowConfig)
     GlobalOverlayClose.Visible = false
     GlobalOverlayClose.ZIndex = 70
 
-    -- MainFrame with Glassplane BackgroundTransparency and Hot-Pink Stroke
+    -- [จุดปรับปรุงที่ 3]: MainFrame True Translucent OLED Glass (BackgroundTransparency = 0.15)
     local MainFrame = Instance.new("Frame", ScreenGui)
     MainFrame.Name = generateNaturalName("Frame")
     MainFrame.Size = winSize
     MainFrame.Position = UDim2.new(0.5, -winSize.X.Offset / 2, 0.5, -winSize.Y.Offset / 2)
     MainFrame.BackgroundColor3 = T.Main
-    MainFrame.BackgroundTransparency = 0.1 -- Glassplane Translucent OLED Black
+    MainFrame.BackgroundTransparency = 0.15 -- โปร่งใสแบบกระจก OLED Dark
     MainFrame.BorderSizePixel = 0
     MainFrame.ClipsDescendants = true
     Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 10)
 
-    -- Window Outer Stroke matching Lastest lib.txt
+    -- Window Outer Stroke: Hot-Pink 1.5px matching Lastest lib.txt
     local mainStroke = Instance.new("UIStroke", MainFrame)
-    mainStroke.Color = T.Accent -- Hot-Pink (#e60852)
+    mainStroke.Color = T.Accent
     mainStroke.Thickness = 1.5
 
-    -- TOPBAR
-    local Topbar = Instance.new("Frame", MainFrame)
-    Topbar.Size = UDim2.new(1, 0, 0, topbarH)
-    Topbar.BackgroundColor3 = T.Sidebar
-    Topbar.BorderSizePixel = 0
-    Topbar.ZIndex = 10
+    -- =========================================================================
+    -- [จุดปรับปรุงที่ 1]: SPLIT HEADER THEME ACCORDING TO LASTEST LIB.TXT
+    -- =========================================================================
+    local FullHeader = Instance.new("Frame", MainFrame)
+    FullHeader.Name = "FullHeader"
+    FullHeader.Size = UDim2.new(1, 0, 0, topbarH)
+    FullHeader.BackgroundTransparency = 1
+    FullHeader.BorderSizePixel = 0
+    FullHeader.ZIndex = 10
 
-    local topbarCorner = Instance.new("UICorner", Topbar)
-    topbarCorner.CornerRadius = UDim.new(0, 10)
+    -- Header Left: Accent tinted glass (0.92 transparency) above sidebar
+    local HdrLeft = Instance.new("Frame", FullHeader)
+    HdrLeft.Size = UDim2.new(0, sidebarW + 10, 1, 0)
+    HdrLeft.BackgroundColor3 = T.Accent
+    HdrLeft.BackgroundTransparency = 0.92
+    HdrLeft.BorderSizePixel = 0
+    HdrLeft.ZIndex = 10
 
-    local topbarBottomMask = Instance.new("Frame", Topbar)
-    topbarBottomMask.Name = "BottomMask"
-    topbarBottomMask.Size = UDim2.new(1, 0, 0, 10)
-    topbarBottomMask.Position = UDim2.new(0, 0, 1, -10)
-    topbarBottomMask.BackgroundColor3 = T.Sidebar
-    topbarBottomMask.BorderSizePixel = 0
-    topbarBottomMask.ZIndex = 10
+    -- Header Right: Dark glass panel
+    local HdrRight = Instance.new("Frame", FullHeader)
+    HdrRight.Size = UDim2.new(1, -(sidebarW + 10), 1, 0)
+    HdrRight.Position = UDim2.new(0, sidebarW + 10, 0, 0)
+    HdrRight.BackgroundColor3 = Color3.fromRGB(11, 11, 11)
+    HdrRight.BackgroundTransparency = 0.2
+    HdrRight.BorderSizePixel = 0
+    HdrRight.ZIndex = 10
 
-    local topbarSep = Instance.new("Frame", Topbar)
-    topbarSep.Size = UDim2.new(1, 0, 0, 1)
-    topbarSep.Position = UDim2.new(0, 0, 1, -1)
-    topbarSep.BackgroundColor3 = T.Accent
-    topbarSep.BackgroundTransparency = 0.65
-    topbarSep.BorderSizePixel = 0
-    topbarSep.ZIndex = 11
+    -- Vertical Accent Divider between Left and Right Header
+    local HdrDivider = Instance.new("Frame", FullHeader)
+    HdrDivider.Size = UDim2.new(0, 1, 0, math.clamp(topbarH - 10, 18, 26))
+    HdrDivider.Position = UDim2.new(0, sidebarW + 10, 0.5, 0)
+    HdrDivider.AnchorPoint = Vector2.new(0, 0.5)
+    HdrDivider.BackgroundColor3 = T.Accent
+    HdrDivider.BackgroundTransparency = 0.45
+    HdrDivider.BorderSizePixel = 0
+    HdrDivider.ZIndex = 12
 
-    local TitleLbl = Instance.new("TextLabel", Topbar)
-    TitleLbl.Size = UDim2.new(0, 140, 1, 0)
-    TitleLbl.Position = UDim2.new(0, 14, 0, 0)
+    -- Horizontal Bottom Line across Header
+    local HdrBottomLine = Instance.new("Frame", FullHeader)
+    HdrBottomLine.Size = UDim2.new(1, 0, 0, 1)
+    HdrBottomLine.Position = UDim2.new(0, 0, 1, -1)
+    HdrBottomLine.BackgroundColor3 = T.Accent
+    HdrBottomLine.BackgroundTransparency = 0.65
+    HdrBottomLine.BorderSizePixel = 0
+    HdrBottomLine.ZIndex = 12
+
+    -- Title Label: GothamBlack with Hot-Pink Accent color
+    local TitleLbl = Instance.new("TextLabel", HdrLeft)
+    TitleLbl.Size = UDim2.new(1, -16, 1, 0)
+    TitleLbl.Position = UDim2.new(0, 12, 0, 0)
     TitleLbl.BackgroundTransparency = 1
     TitleLbl.Text = titleText
-    TitleLbl.TextColor3 = T.Text
-    TitleLbl.Font = Enum.Font.GothamBold
+    TitleLbl.TextColor3 = T.Accent
+    TitleLbl.Font = Enum.Font.GothamBlack
     TitleLbl.TextSize = 13
     TitleLbl.TextXAlignment = Enum.TextXAlignment.Left
     TitleLbl.TextTruncate = Enum.TextTruncate.AtEnd
     TitleLbl.ZIndex = 12
 
-    local WinControls = Instance.new("Frame", Topbar)
+    local WinControls = Instance.new("Frame", HdrRight)
     WinControls.Size = UDim2.new(0, 56, 1, 0)
     WinControls.Position = UDim2.new(1, -62, 0, 0)
     WinControls.BackgroundTransparency = 1
@@ -1453,6 +1519,7 @@ function BottleLib:CreateWindow(WindowConfig)
     local MinBtn = Instance.new("TextButton", WinControls)
     MinBtn.Size = UDim2.new(0, 24, 0, 24)
     MinBtn.BackgroundColor3 = Color3.fromRGB(24, 24, 24)
+    MinBtn.BackgroundTransparency = 0.2
     MinBtn.Text = "-"
     MinBtn.TextColor3 = Color3.fromRGB(180, 180, 190)
     MinBtn.Font = Enum.Font.GothamBold
@@ -1464,6 +1531,7 @@ function BottleLib:CreateWindow(WindowConfig)
     local CloseBtn = Instance.new("TextButton", WinControls)
     CloseBtn.Size = UDim2.new(0, 24, 0, 24)
     CloseBtn.BackgroundColor3 = Color3.fromRGB(24, 24, 24)
+    CloseBtn.BackgroundTransparency = 0.2
     CloseBtn.Text = "X"
     CloseBtn.TextColor3 = Color3.fromRGB(180, 180, 190)
     CloseBtn.Font = Enum.Font.GothamBold
@@ -1472,9 +1540,9 @@ function BottleLib:CreateWindow(WindowConfig)
     CloseBtn.ZIndex = 13
     Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 4)
 
-    local HeaderControls = Instance.new("Frame", Topbar)
-    HeaderControls.Size = UDim2.new(1, -220, 1, 0)
-    HeaderControls.Position = UDim2.new(0, 155, 0, 0)
+    local HeaderControls = Instance.new("Frame", HdrRight)
+    HeaderControls.Size = UDim2.new(1, -74, 1, 0)
+    HeaderControls.Position = UDim2.new(0, 8, 0, 0)
     HeaderControls.BackgroundTransparency = 1
     HeaderControls.ZIndex = 12
 
@@ -1484,15 +1552,19 @@ function BottleLib:CreateWindow(WindowConfig)
     hLayout.VerticalAlignment = Enum.VerticalAlignment.Center
     hLayout.Padding = UDim.new(0, 6)
 
+    -- =========================================================================
+    -- BODY & LAYOUT
+    -- =========================================================================
     local BodyFrame = Instance.new("Frame", MainFrame)
     BodyFrame.Position = UDim2.new(0, 10, 0, topbarH + 4)
     BodyFrame.Size = UDim2.new(1, -20, 1, -(topbarH + 14))
     BodyFrame.BackgroundTransparency = 1
 
-    local TabSidebar = Instance.new("ScrollingFrame", BodyFrame)
+    -- [จุดปรับปรุงที่ 2]: Tab Container เป็น Frame มาตรฐาน ไม่ต้องมี Scrollbar หรือเลื่อน Canvas
+    local TabSidebar = Instance.new("Frame", BodyFrame)
     TabSidebar.BackgroundColor3 = T.Sidebar
+    TabSidebar.BackgroundTransparency = 0.25
     TabSidebar.BorderSizePixel = 0
-    TabSidebar.ScrollBarThickness = 2
     Instance.new("UICorner", TabSidebar).CornerRadius = UDim.new(0, 8)
 
     local WindowObj = {
@@ -1525,6 +1597,7 @@ function BottleLib:CreateWindow(WindowConfig)
     local sStroke = Instance.new("UIStroke", TabSidebar)
     sStroke.Color = T.Stroke
     sStroke.Thickness = 1
+    sStroke.Transparency = 0.3
 
     local tabLayout = Instance.new("UIListLayout", TabSidebar)
     tabLayout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -1535,10 +1608,14 @@ function BottleLib:CreateWindow(WindowConfig)
     tabPad.PaddingLeft = UDim.new(0, 6)
     tabPad.PaddingRight = UDim.new(0, 6)
 
+    -- [จุดปรับปรุงที่ 3]: ContentArea กระจกรมควันโปร่งแสง 0.75 ตาม Lastest lib.txt
     local ContentArea = Instance.new("Frame", BodyFrame)
     ContentArea.Position = UDim2.new(0, sidebarW + 10, 0, 0)
     ContentArea.Size = UDim2.new(1, -(sidebarW + 10), 1, 0)
-    ContentArea.BackgroundTransparency = 1
+    ContentArea.BackgroundColor3 = T.Content
+    ContentArea.BackgroundTransparency = 0.75
+    ContentArea.BorderSizePixel = 0
+    Instance.new("UICorner", ContentArea).CornerRadius = UDim.new(0, 6)
 
     local function closeActiveDropdown()
         if WindowObj.ActiveDropdown then
@@ -1549,7 +1626,7 @@ function BottleLib:CreateWindow(WindowConfig)
     end
 
     local dragging, dragStart, startPos = false, nil, nil
-    local cDragBegin = Topbar.InputBegan:Connect(function(input)
+    local cDragBegin = FullHeader.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             closeActiveDropdown()
             dragging = true
@@ -1560,7 +1637,7 @@ function BottleLib:CreateWindow(WindowConfig)
             end)
         end
     end)
-    local cDragChange = Topbar.InputChanged:Connect(function(input)
+    local cDragChange = FullHeader.InputChanged:Connect(function(input)
         if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
             local delta = input.Position - dragStart
             MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
@@ -1598,6 +1675,7 @@ function BottleLib:CreateWindow(WindowConfig)
         bubble.Size = UDim2.new(0, 42, 0, 42)
         bubble.Position = UDim2.new(0, 20, 0.5, -21)
         bubble.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+        bubble.BackgroundTransparency = 0.2
         bubble.Text = "⚡"
         bubble.TextColor3 = T.Accent
         bubble.Font = Enum.Font.GothamBold
@@ -1658,6 +1736,7 @@ function BottleLib:CreateWindow(WindowConfig)
         badge.Size = UDim2.new(0, 0, 0, math.clamp(topbarH - 12, 22, 28))
         badge.AutomaticSize = Enum.AutomaticSize.X
         badge.BackgroundColor3 = bgColor or Color3.fromRGB(24, 24, 24)
+        badge.BackgroundTransparency = 0.2
         badge.Text = ""
         badge.AutoButtonColor = false
         badge.ZIndex = 13
@@ -1700,6 +1779,7 @@ function BottleLib:CreateWindow(WindowConfig)
         local btn = Instance.new("TextButton", HeaderControls)
         btn.Size = UDim2.new(0, 24, 0, math.clamp(topbarH - 12, 22, 28))
         btn.BackgroundColor3 = Color3.fromRGB(24, 24, 24)
+        btn.BackgroundTransparency = 0.2
         btn.Text = iconText or "★"
         btn.TextColor3 = T.Accent
         btn.Font = Enum.Font.GothamBold
@@ -1775,6 +1855,7 @@ function BottleLib:CreateWindow(WindowConfig)
         local tabBtn = Instance.new("TextButton", TabSidebar)
         tabBtn.Size = UDim2.new(1, 0, 0, 30)
         tabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+        tabBtn.BackgroundTransparency = 0.4
         tabBtn.Text = tabName
         tabBtn.TextColor3 = T.SubText
         tabBtn.Font = Enum.Font.GothamSemibold
@@ -1796,6 +1877,12 @@ function BottleLib:CreateWindow(WindowConfig)
         cLayout.SortOrder = Enum.SortOrder.LayoutOrder
         cLayout.Padding = UDim.new(0, 6)
 
+        local cPad = Instance.new("UIPadding", tabContent)
+        cPad.PaddingTop = UDim.new(0, 6)
+        cPad.PaddingBottom = UDim.new(0, 6)
+        cPad.PaddingLeft = UDim.new(0, 6)
+        cPad.PaddingRight = UDim.new(0, 6)
+
         local TabAPI = {}
         BindUIElements(TabAPI, tabContent, T, WindowObj, ScreenGui, GlobalOverlayClose, 0)
 
@@ -1805,10 +1892,12 @@ function BottleLib:CreateWindow(WindowConfig)
             for _, t in pairs(WindowObj.Tabs) do
                 t.Button.TextColor3 = T.SubText
                 t.Button.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+                t.Button.BackgroundTransparency = 0.4
                 t.Content.Visible = false
             end
             tabBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
             tabBtn.BackgroundColor3 = T.Accent
+            tabBtn.BackgroundTransparency = 0.1
             tabContent.Visible = true
             WindowObj.CurrentTab = TabAPI
 
