@@ -1,6 +1,6 @@
 -- ============================================================================
--- BottleLib (Glassplane Edition v2.3.2 — Production Master)
--- Architecture: Hardened Lifecycle | OLED Dark Theme | Dual-Masked Solid Header
+-- BottleLib (Glassplane Edition v2.3.3 — Production Master)
+-- Architecture: Hardened Lifecycle | OLED Dark | Native Canvas & Adaptive Layout
 -- ============================================================================
 
 -- [1] STEALTH SERVICE RESOLVER (Anti-Metatable Hooking & CloneRef Wrapper)
@@ -132,7 +132,7 @@ function BottleLib:Notify(msg)
 end
 
 -- ============================================================================
--- [4] UI ELEMENTS API (Zero-Signature & Precise Step Slider)
+-- [4] UI ELEMENTS API (With Inline Slider & Opt-in Search)
 -- ============================================================================
 local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, GlobalOverlayClose, _depth)
     _depth = _depth or 0
@@ -258,6 +258,7 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
         return ToggleObj
     end
 
+    -- [จุดปรับปรุงที่ 3]: Inline Compact Slider Layout (กะทัดรัด สมดุลสายตา)
     function APIObj:CreateSlider(label, min, max, default, stepOrCallback, callback)
         local step = 1
         local cb = callback
@@ -269,7 +270,7 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
         end
 
         local frame = Instance.new("Frame", targetContainer)
-        frame.Size = UDim2.new(1, 0, 0, 46)
+        frame.Size = UDim2.new(1, 0, 0, 34)
         frame.BackgroundColor3 = T.Element
         Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 6)
 
@@ -278,17 +279,18 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
         stroke.Thickness = 1
 
         local lbl = Instance.new("TextLabel", frame)
-        lbl.Size = UDim2.new(1, -10, 0, 18)
-        lbl.Position = UDim2.new(0, 8, 0, 4)
+        lbl.Size = UDim2.new(0.5, -12, 1, 0)
+        lbl.Position = UDim2.new(0, 10, 0, 0)
         lbl.BackgroundTransparency = 1
         lbl.TextColor3 = T.Text
         lbl.Font = Enum.Font.GothamBold
         lbl.TextSize = 11
         lbl.TextXAlignment = Enum.TextXAlignment.Left
+        lbl.TextTruncate = Enum.TextTruncate.AtEnd
 
         local track = Instance.new("Frame", frame)
-        track.Size = UDim2.new(1, -20, 0, 5)
-        track.Position = UDim2.new(0, 10, 0, 32)
+        track.Size = UDim2.new(0.45, 0, 0, 5)
+        track.Position = UDim2.new(0.52, 0, 0.5, -2)
         track.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
         track.BorderSizePixel = 0
         Instance.new("UICorner", track).CornerRadius = UDim.new(1, 0)
@@ -300,8 +302,8 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
         Instance.new("UICorner", fill).CornerRadius = UDim.new(1, 0)
 
         local trackHit = Instance.new("TextButton", frame)
-        trackHit.Size = UDim2.new(1, -20, 0, 26)
-        trackHit.Position = UDim2.new(0, 10, 0, 20)
+        trackHit.Size = UDim2.new(0.45, 0, 1, 0)
+        trackHit.Position = UDim2.new(0.52, 0, 0, 0)
         trackHit.BackgroundTransparency = 1
         trackHit.Text = ""
         trackHit.ZIndex = 3
@@ -982,11 +984,12 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
         return SelectorObj
     end
 
+    -- [จุดปรับปรุงที่ 2]: CreateActionList Opt-in Search (ไม่สร้าง TextBox ค้างเมื่อไม่ใช้งาน)
     function APIObj:CreateActionList(config)
         config = config or {}
         local listHeight = config.Height or 180
         local placeholder = config.Placeholder or "Search..."
-        local showSearch = (config.Search ~= false)
+        local showSearch = (config.Search == true) -- สร้างเฉพาะเมื่อสคริปต์ส่งค่า true ชัดเจน
 
         local outerFrame = Instance.new("Frame", targetContainer)
         outerFrame.Size = UDim2.new(1, 0, 0, listHeight + (showSearch and 36 or 0))
@@ -1028,7 +1031,7 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
 
         local scrollFrame = Instance.new("ScrollingFrame", outerFrame)
         scrollFrame.Size = UDim2.new(1, -8, 1, showSearch and -38 or -8)
-        scrollFrame.Position = UDim2.new(0, 4, 0, 0)
+        scrollFrame.Position = UDim2.new(0, 4, 0, showSearch and 0 or 4)
         scrollFrame.BackgroundTransparency = 1
         scrollFrame.BorderSizePixel = 0
         scrollFrame.ScrollBarThickness = 3
@@ -1339,7 +1342,7 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
 end
 
 -- ============================================================================
--- [5] WINDOW BUILDER (Universal Engine & Dual-Masked Solid Header)
+-- [5] WINDOW BUILDER (Universal Engine & Mobile Support)
 -- ============================================================================
 function BottleLib:CreateWindow(WindowConfig)
     BottleLib.CleanUpEvent:Fire()
@@ -1351,12 +1354,12 @@ function BottleLib:CreateWindow(WindowConfig)
     local topbarH   = WindowConfig.TopbarHeight or 36
     local toggleKey = WindowConfig.ToggleKey or Enum.KeyCode.RightControl
     local autoUnlock = (WindowConfig.AutoUnlockMouse ~= false)
+    local autoSidebar = (WindowConfig.SidebarAutoHeight == true)
     local showMobileToggle = WindowConfig.MobileToggle
     if showMobileToggle == nil then
         showMobileToggle = UserInputService.TouchEnabled
     end
 
-    -- Theme Palette v13.8.2 (OLED Dark & Cyber Crimson)
     local T = {
         Accent   = WindowConfig.Accent or Color3.fromHex("#e60852"),
         Main     = Color3.fromRGB(10, 10, 10),
@@ -1407,7 +1410,6 @@ function BottleLib:CreateWindow(WindowConfig)
 
     -- =========================================================================
     -- SOLID TOPBAR WITH DUAL CORNER MASKING
-    -- แก้ไขขอบเหลี่ยมทะลุกรอบมน โดยใส่ UICorner ให้ Topbar พร้อม Masking ลบมุมล่าง
     -- =========================================================================
     local Topbar = Instance.new("Frame", MainFrame)
     Topbar.Size = UDim2.new(1, 0, 0, topbarH)
@@ -1415,11 +1417,9 @@ function BottleLib:CreateWindow(WindowConfig)
     Topbar.BorderSizePixel = 0
     Topbar.ZIndex = 10
 
-    -- ใส่ความโค้งมนมุมบนให้ตรงกับ MainFrame
     local topbarCorner = Instance.new("UICorner", Topbar)
     topbarCorner.CornerRadius = UDim.new(0, 10)
 
-    -- สร้าง Frame ทับมุมล่างซ้ายและขวา เพื่อให้มุมล่างของ Topbar เป็นเหลี่ยมเชื่อมต่อกับ BodyFrame สนิท
     local topbarBottomMask = Instance.new("Frame", Topbar)
     topbarBottomMask.Name = "BottomMask"
     topbarBottomMask.Size = UDim2.new(1, 0, 0, 10)
@@ -1428,7 +1428,6 @@ function BottleLib:CreateWindow(WindowConfig)
     topbarBottomMask.BorderSizePixel = 0
     topbarBottomMask.ZIndex = 10
 
-    -- เส้นแบ่งขอบล่าง Header
     local topbarSep = Instance.new("Frame", Topbar)
     topbarSep.Size = UDim2.new(1, 0, 0, 1)
     topbarSep.Position = UDim2.new(0, 0, 1, -1)
@@ -1448,7 +1447,6 @@ function BottleLib:CreateWindow(WindowConfig)
     TitleLbl.TextTruncate = Enum.TextTruncate.AtEnd
     TitleLbl.ZIndex = 12
 
-    -- Window Controls (ASCII Safe Glyphs)
     local WinControls = Instance.new("Frame", Topbar)
     WinControls.Size = UDim2.new(0, 56, 1, 0)
     WinControls.Position = UDim2.new(1, -62, 0, 0)
@@ -1500,12 +1498,39 @@ function BottleLib:CreateWindow(WindowConfig)
     BodyFrame.Size = UDim2.new(1, -20, 1, -(topbarH + 14))
     BodyFrame.BackgroundTransparency = 1
 
+    -- [จุดปรับปรุงที่ 4]: Sidebar Auto-Height พร้อม UISizeConstraint
     local TabSidebar = Instance.new("ScrollingFrame", BodyFrame)
-    TabSidebar.Size = UDim2.new(0, sidebarW, 1, 0)
     TabSidebar.BackgroundColor3 = T.Sidebar
     TabSidebar.BorderSizePixel = 0
     TabSidebar.ScrollBarThickness = 2
     Instance.new("UICorner", TabSidebar).CornerRadius = UDim.new(0, 8)
+
+    local WindowObj = {
+        Theme = T,
+        ActiveDropdown = nil,
+        Tabs = {},
+        CurrentTab = nil,
+        CloseCallbacks = {},
+        Connections = {},
+        IsClosed = false,
+        IsClosing = false,
+        IsMinimized = false
+    }
+
+    if autoSidebar then
+        TabSidebar.Size = UDim2.new(0, sidebarW, 0, 0)
+        TabSidebar.AutomaticSize = Enum.AutomaticSize.Y
+        local sidebarConstraint = Instance.new("UISizeConstraint", TabSidebar)
+        local function updateSidebarConstraint()
+            sidebarConstraint.MaxSize = Vector2.new(sidebarW, math.max(BodyFrame.AbsoluteSize.Y, 40))
+        end
+        updateSidebarConstraint()
+        local cSidebarSize = BodyFrame:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateSidebarConstraint)
+        table.insert(WindowObj.Connections, cSidebarSize)
+    else
+        TabSidebar.Size = UDim2.new(0, sidebarW, 1, 0)
+        TabSidebar.AutomaticSize = Enum.AutomaticSize.None
+    end
 
     local sStroke = Instance.new("UIStroke", TabSidebar)
     sStroke.Color = T.Stroke
@@ -1525,18 +1550,6 @@ function BottleLib:CreateWindow(WindowConfig)
     ContentArea.Size = UDim2.new(1, -(sidebarW + 10), 1, 0)
     ContentArea.BackgroundTransparency = 1
 
-    local WindowObj = {
-        Theme = T,
-        ActiveDropdown = nil,
-        Tabs = {},
-        CurrentTab = nil,
-        CloseCallbacks = {},
-        Connections = {},
-        IsClosed = false,
-        IsClosing = false,
-        IsMinimized = false
-    }
-
     local function closeActiveDropdown()
         if WindowObj.ActiveDropdown then
             WindowObj.ActiveDropdown.Visible = false
@@ -1545,7 +1558,6 @@ function BottleLib:CreateWindow(WindowConfig)
         end
     end
 
-    -- Dragging Handler
     local dragging, dragStart, startPos = false, nil, nil
     local cDragBegin = Topbar.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -1567,7 +1579,6 @@ function BottleLib:CreateWindow(WindowConfig)
     table.insert(WindowObj.Connections, cDragBegin)
     table.insert(WindowObj.Connections, cDragChange)
 
-    -- Window Toggle Method
     function WindowObj:Toggle(forceState)
         if self.IsClosing or self.IsClosed then return end
         closeActiveDropdown()
@@ -1631,7 +1642,6 @@ function BottleLib:CreateWindow(WindowConfig)
         end)
     end
 
-    -- Minimize Handling
     MinBtn.MouseButton1Click:Connect(function()
         if WindowObj.IsClosing or WindowObj.IsClosed then return end
         closeActiveDropdown()
@@ -1782,8 +1792,11 @@ function BottleLib:CreateWindow(WindowConfig)
         tabBtn.AutoButtonColor = false
         Instance.new("UICorner", tabBtn).CornerRadius = UDim.new(0, 6)
 
+        -- [จุดปรับปรุงที่ 1]: Native AutomaticCanvasSize (แก้ไขอาการ Lazy Rendering เด็ดขาด)
         local tabContent = Instance.new("ScrollingFrame", ContentArea)
         tabContent.Size = UDim2.new(1, 0, 1, 0)
+        tabContent.CanvasSize = UDim2.new(0, 0, 0, 0)
+        tabContent.AutomaticCanvasSize = Enum.AutomaticSize.Y
         tabContent.BackgroundTransparency = 1
         tabContent.BorderSizePixel = 0
         tabContent.ScrollBarThickness = 3
@@ -1793,11 +1806,6 @@ function BottleLib:CreateWindow(WindowConfig)
         local cLayout = Instance.new("UIListLayout", tabContent)
         cLayout.SortOrder = Enum.SortOrder.LayoutOrder
         cLayout.Padding = UDim.new(0, 6)
-
-        local cContentSize = cLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-            tabContent.CanvasSize = UDim2.new(0, 0, 0, cLayout.AbsoluteContentSize.Y + 10)
-        end)
-        table.insert(WindowObj.Connections, cContentSize)
 
         local TabAPI = {}
         BindUIElements(TabAPI, tabContent, T, WindowObj, ScreenGui, GlobalOverlayClose, 0)
@@ -1814,6 +1822,12 @@ function BottleLib:CreateWindow(WindowConfig)
             tabBtn.BackgroundColor3 = T.Accent
             tabContent.Visible = true
             WindowObj.CurrentTab = TabAPI
+
+            task.defer(function()
+                if tabContent and tabContent.Parent then
+                    tabContent.CanvasPosition = Vector2.new(0, 0)
+                end
+            end)
         end
 
         tabBtn.MouseButton1Click:Connect(selectTab)
