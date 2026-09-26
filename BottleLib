@@ -658,6 +658,14 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
             ToggleObj:Set(not state, false)
         end)
 
+        if WindowObj and WindowObj.ConfigRegistry and not WindowObj._IsBuildingConfigTab then
+            WindowObj.ConfigRegistry[label] = {
+                Type = "Toggle",
+                Get = function() return ToggleObj:Get() end,
+                Set = function(val, suppress) ToggleObj:Set(val, suppress) end
+            }
+        end
+
         return ToggleObj
     end
 
@@ -783,6 +791,15 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
             update(val, suppressCallback)
         end
         function SliderObj:Get() return currentValue end
+
+        if WindowObj and WindowObj.ConfigRegistry and not WindowObj._IsBuildingConfigTab then
+            WindowObj.ConfigRegistry[label] = {
+                Type = "Slider",
+                Get = function() return SliderObj:Get() end,
+                Set = function(val, suppress) SliderObj:Set(val, suppress) end
+            }
+        end
+
         return SliderObj
     end
 
@@ -849,6 +866,15 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
         function InputObj:Get()
             return isNumberOnly and tonumber(Input.Text) or Input.Text
         end
+
+        if WindowObj and WindowObj.ConfigRegistry and not WindowObj._IsBuildingConfigTab then
+            WindowObj.ConfigRegistry[label] = {
+                Type = "Input",
+                Get = function() return InputObj:Get() end,
+                Set = function(val, suppress) InputObj:Set(val, suppress) end
+            }
+        end
+
         return InputObj
     end
 
@@ -908,6 +934,43 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
             end)
             table.insert(WindowObj.Connections, conn)
         end)
+
+        local currentKey = defaultKey
+        local KeyObj = {}
+        function KeyObj:Set(newKey, suppressCallback)
+            if typeof(newKey) == "string" then
+                if newKey == "NONE" or newKey == "" then
+                    currentKey = nil
+                    b.Text = "NONE"
+                else
+                    local ok, enumItem = pcall(function() return Enum.KeyCode[newKey] end)
+                    if ok and enumItem then
+                        currentKey = enumItem
+                        b.Text = enumItem.Name
+                    end
+                end
+            elseif typeof(newKey) == "EnumItem" then
+                currentKey = newKey
+                b.Text = newKey.Name
+            end
+            if not suppressCallback and callback and not WindowObj.IsClosing and not WindowObj.IsClosed then
+                pcall(callback, currentKey)
+            end
+        end
+
+        function KeyObj:Get()
+            return currentKey and currentKey.Name or "NONE"
+        end
+
+        if WindowObj and WindowObj.ConfigRegistry and not WindowObj._IsBuildingConfigTab then
+            WindowObj.ConfigRegistry[label] = {
+                Type = "Keybind",
+                Get = function() return KeyObj:Get() end,
+                Set = function(val, suppress) KeyObj:Set(val, suppress) end
+            }
+        end
+
+        return KeyObj
     end
 
     function APIObj:CreateToggleKeybind(label, initToggle, defaultKey, callback)
@@ -999,6 +1062,31 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
             end)
             table.insert(WindowObj.Connections, conn)
         end)
+
+        function RetObj:Set(val, suppressCallback)
+            if type(val) == "table" then
+                if val.State ~= nil then self:SetState(val.State, suppressCallback) end
+                if val.Key ~= nil then
+                    local ok, k = pcall(function() return Enum.KeyCode[val.Key] end)
+                    if ok and k then currentKey = k; b.Text = k.Name end
+                end
+            elseif type(val) == "boolean" then
+                self:SetState(val, suppressCallback)
+            end
+        end
+
+        if WindowObj and WindowObj.ConfigRegistry and not WindowObj._IsBuildingConfigTab then
+            WindowObj.ConfigRegistry[label] = {
+                Type = "ToggleKeybind",
+                Get = function()
+                    return {
+                        State = state,
+                        Key = currentKey and currentKey.Name or "NONE"
+                    }
+                end,
+                Set = function(val, suppress) RetObj:Set(val, suppress) end
+            }
+        end
 
         return RetObj
     end
@@ -1161,6 +1249,22 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
                 pcall(callback, Input.Text)
             end
         end)
+
+        function DropObj:Get()
+            if multiSelect then
+                return getSelectedArray()
+            else
+                return Input.Text
+            end
+        end
+
+        if WindowObj and WindowObj.ConfigRegistry and not WindowObj._IsBuildingConfigTab then
+            WindowObj.ConfigRegistry[placeholder] = {
+                Type = "Dropdown",
+                Get = function() return DropObj:Get() end,
+                Set = function(val, suppress) DropObj:Set(val, suppress) end
+            }
+        end
 
         return DropObj
     end
@@ -1842,6 +1946,9 @@ function BottleLib:CreateWindow(WindowConfig)
     local serverHopMode     = WindowConfig.ServerHopMode or "Nearest"
     local serverHopDuration = WindowConfig.ServerHopBlacklistDuration or 600
     local serverHopPages    = WindowConfig.ServerHopMaxPages or 3
+    local configFolder      = WindowConfig.ConfigFolder or "BottleLib"
+    local configTabTitle    = WindowConfig.ConfigTabTitle or "Configs"
+    local autoConfig        = (WindowConfig.AutoConfig ~= false)
 
     -- Theme colors matching Lastest lib.txt
     local T = {
@@ -2082,9 +2189,12 @@ function BottleLib:CreateWindow(WindowConfig)
         CloseCallbacks = {},
         Connections = {},
         TrackedResources = {},
+        ConfigRegistry = {},
         IsClosed = false,
         IsClosing = false,
-        IsMinimized = false
+        IsMinimized = false,
+        _IsBuildingConfigTab = false,
+        _HasBuiltConfigTab = false
     }
     BottleLib.ActiveWindow = WindowObj
     table.insert(WindowObj.Connections, cTitleClick)
@@ -2928,7 +3038,7 @@ function BottleLib:CreateWindow(WindowConfig)
     local cCloseOverlay = GlobalOverlayClose.MouseButton1Click:Connect(closeActiveDropdown)
     table.insert(WindowObj.Connections, cCloseOverlay)
 
-    function WindowObj:CreateTab(tabName)
+    function WindowObj:CreateTab(tabName, isConfigTab)
         local tabBtn = Instance.new("TextButton", TabContainer)
         tabBtn.Size = UDim2.new(1, 0, 0, 30)
         tabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
@@ -2938,6 +3048,7 @@ function BottleLib:CreateWindow(WindowConfig)
         tabBtn.Font = Enum.Font.GothamSemibold
         tabBtn.TextSize = 11
         tabBtn.AutoButtonColor = false
+        tabBtn.LayoutOrder = isConfigTab and 9999 or (#WindowObj.Tabs + 1)
         Instance.new("UICorner", tabBtn).CornerRadius = UDim.new(0, 6)
 
         local tabContent = Instance.new("ScrollingFrame", ContentArea)
@@ -2990,12 +3101,388 @@ function BottleLib:CreateWindow(WindowConfig)
         table.insert(WindowObj.Tabs, {
             Button = tabBtn,
             Content = tabContent,
-            API = TabAPI
+            API = TabAPI,
+            IsConfigTab = isConfigTab
         })
 
-        if #WindowObj.Tabs == 1 then selectTab() end
+        if not isConfigTab and WindowObj.CurrentTab == nil then
+            selectTab()
+        elseif #WindowObj.Tabs == 1 and not isConfigTab then
+            selectTab()
+        end
 
         return TabAPI
+    end
+
+    -- =========================================================================
+    -- CONFIGURATION ENGINE (Multi-Account UserId Isolation & Element Presets)
+    -- =========================================================================
+    BottleLib._InMemoryConfigs = BottleLib._InMemoryConfigs or {}
+
+    local function getConfigFolder(rootName)
+        local root = rootName or configFolder
+        local pId = tostring(game.PlaceId)
+        local uId = tostring(player.UserId)
+        local path = string.format("%s/Configs/%s/%s/", root, pId, uId)
+
+        pcall(function()
+            if typeof(makefolder) == "function" then
+                if typeof(isfolder) == "function" then
+                    if not isfolder(root) then makefolder(root) end
+                    if not isfolder(root .. "/Configs") then makefolder(root .. "/Configs") end
+                    if not isfolder(root .. "/Configs/" .. pId) then makefolder(root .. "/Configs/" .. pId) end
+                    if not isfolder(path) then makefolder(path) end
+                else
+                    makefolder(root)
+                    makefolder(root .. "/Configs")
+                    makefolder(root .. "/Configs/" .. pId)
+                    makefolder(path)
+                end
+            end
+        end)
+        return path
+    end
+
+    local function getMemKey(cfgName)
+        return string.format("%s_%s_%s", tostring(game.PlaceId), tostring(player.UserId), tostring(cfgName))
+    end
+
+    function WindowObj:SaveConfig(configName)
+        configName = tostring(configName or "default"):gsub("[^%w_%-]", "")
+        if configName == "" then configName = "default" end
+
+        local payload = {
+            _Version = BottleLib.Version,
+            _PlaceId = game.PlaceId,
+            _UserId = player.UserId,
+            _Timestamp = os.time(),
+            ServerHop = {
+                Mode = WindowConfig.ServerHopMode or "Nearest",
+                BlacklistDuration = WindowConfig.ServerHopBlacklistDuration or 600,
+                MaxPages = WindowConfig.ServerHopMaxPages or 3
+            },
+            Elements = {}
+        }
+
+        for name, item in pairs(self.ConfigRegistry) do
+            local ok, val = pcall(function() return item.Get() end)
+            if ok and val ~= nil then
+                payload.Elements[name] = val
+            end
+        end
+
+        local jsonStr = HttpService:JSONEncode(payload)
+        local path = getConfigFolder(configFolder) .. configName .. ".json"
+
+        local saved = false
+        if typeof(writefile) == "function" then
+            local ok = pcall(function() writefile(path, jsonStr) end)
+            if ok then saved = true end
+        end
+
+        if not saved then
+            BottleLib._InMemoryConfigs[getMemKey(configName)] = jsonStr
+            saved = true
+        end
+
+        BottleLib:Notify("Config '" .. configName .. "' saved successfully!")
+        return true
+    end
+
+    function WindowObj:LoadConfig(configName, suppressCallbacks)
+        configName = tostring(configName or "default"):gsub("[^%w_%-]", "")
+        if configName == "" then configName = "default" end
+
+        local path = getConfigFolder(configFolder) .. configName .. ".json"
+        local jsonStr = nil
+
+        if typeof(readfile) == "function" and typeof(isfile) == "function" and isfile(path) then
+            local ok, content = pcall(readfile, path)
+            if ok and typeof(content) == "string" then jsonStr = content end
+        elseif typeof(readfile) == "function" then
+            local ok, content = pcall(readfile, path)
+            if ok and typeof(content) == "string" then jsonStr = content end
+        end
+
+        if not jsonStr then
+            jsonStr = BottleLib._InMemoryConfigs[getMemKey(configName)]
+        end
+
+        if not jsonStr then
+            BottleLib:Notify("Config '" .. configName .. "' not found!")
+            return false
+        end
+
+        local okDecode, decoded = pcall(function() return HttpService:JSONDecode(jsonStr) end)
+        if not okDecode or type(decoded) ~= "table" then
+            BottleLib:Notify("Failed to decode config JSON!")
+            return false
+        end
+
+        -- 1. Restore ServerHop settings if present
+        if type(decoded.ServerHop) == "table" then
+            if decoded.ServerHop.Mode then
+                WindowConfig.ServerHopMode = decoded.ServerHop.Mode
+                if self._HopModeDropdown then pcall(function() self._HopModeDropdown:Set(decoded.ServerHop.Mode, true) end) end
+            end
+            if decoded.ServerHop.BlacklistDuration then
+                WindowConfig.ServerHopBlacklistDuration = decoded.ServerHop.BlacklistDuration
+                if self._HopDurationSlider then pcall(function() self._HopDurationSlider:Set(math.floor(decoded.ServerHop.BlacklistDuration / 60), true) end) end
+            end
+            if decoded.ServerHop.MaxPages then
+                WindowConfig.ServerHopMaxPages = decoded.ServerHop.MaxPages
+                if self._HopPagesSlider then pcall(function() self._HopPagesSlider:Set(decoded.ServerHop.MaxPages, true) end) end
+            end
+        end
+
+        -- 2. Restore Elements
+        local restoredCount = 0
+        if type(decoded.Elements) == "table" then
+            for name, val in pairs(decoded.Elements) do
+                local reg = self.ConfigRegistry[name]
+                if reg and typeof(reg.Set) == "function" then
+                    pcall(function()
+                        reg.Set(val, suppressCallbacks or false)
+                        restoredCount = restoredCount + 1
+                    end)
+                end
+            end
+        end
+
+        BottleLib:Notify(string.format("Config '%s' loaded (%d items restored)!", configName, restoredCount))
+        return true
+    end
+
+    function WindowObj:DeleteConfig(configName)
+        configName = tostring(configName or ""):gsub("[^%w_%-]", "")
+        if configName == "" then return false end
+
+        local path = getConfigFolder(configFolder) .. configName .. ".json"
+        local deleted = false
+        if typeof(delfile) == "function" then
+            pcall(function() delfile(path); deleted = true end)
+        end
+        if BottleLib._InMemoryConfigs[getMemKey(configName)] then
+            BottleLib._InMemoryConfigs[getMemKey(configName)] = nil
+            deleted = true
+        end
+
+        if deleted then
+            BottleLib:Notify("Config '" .. configName .. "' deleted.")
+        else
+            BottleLib:Notify("Config '" .. configName .. "' could not be deleted.")
+        end
+        return deleted
+    end
+
+    function WindowObj:GetConfigList()
+        local list = {}
+        local path = getConfigFolder(configFolder)
+        if typeof(listfiles) == "function" and typeof(isfolder) == "function" and isfolder(path) then
+            local ok, files = pcall(listfiles, path)
+            if ok and type(files) == "table" then
+                for _, f in ipairs(files) do
+                    local name = f:match("([^/\\]+)%.json$")
+                    if name and name ~= "_autoload" then
+                        table.insert(list, name)
+                    end
+                end
+            end
+        end
+
+        local prefix = string.format("%s_%s_", tostring(game.PlaceId), tostring(player.UserId))
+        for k, _ in pairs(BottleLib._InMemoryConfigs or {}) do
+            if k:sub(1, #prefix) == prefix then
+                local name = k:sub(#prefix + 1)
+                if name ~= "_autoload" and not table.find(list, name) then
+                    table.insert(list, name)
+                end
+            end
+        end
+
+        table.sort(list)
+        return list
+    end
+
+    function WindowObj:SetAutoLoad(configName, enabled)
+        local path = getConfigFolder(configFolder) .. "_autoload.json"
+        local payload = {
+            Enabled = enabled and true or false,
+            Config = configName or "default"
+        }
+        local str = HttpService:JSONEncode(payload)
+        if typeof(writefile) == "function" then
+            pcall(function() writefile(path, str) end)
+        end
+        BottleLib._InMemoryConfigs[getMemKey("_autoload")] = str
+    end
+
+    function WindowObj:GetAutoLoad()
+        local path = getConfigFolder(configFolder) .. "_autoload.json"
+        local content = nil
+        if typeof(readfile) == "function" and typeof(isfile) == "function" and isfile(path) then
+            local ok, res = pcall(readfile, path)
+            if ok then content = res end
+        end
+        if not content then
+            content = BottleLib._InMemoryConfigs[getMemKey("_autoload")]
+        end
+        if content then
+            local ok, dec = pcall(function() return HttpService:JSONDecode(content) end)
+            if ok and type(dec) == "table" then
+                return dec.Enabled == true, dec.Config or "default"
+            end
+        end
+        return false, "default"
+    end
+
+    function WindowObj:BuildConfigTab()
+        if self._HasBuiltConfigTab or self.IsClosed then return end
+        self._HasBuiltConfigTab = true
+        self._IsBuildingConfigTab = true
+
+        local tabTitle = configTabTitle or "Configs"
+        local ConfigTab = self:CreateTab("⚙️ " .. tabTitle, true)
+
+        -- 1. Configuration Profiles Section
+        ConfigTab:CreateSection("Configuration Profiles")
+        ConfigTab:CreateLabel("Save & Load custom element presets for this game.")
+
+        local cfgNameInput = "default"
+        ConfigTab:CreateInput("Profile Name", "default", false, function(txt)
+            cfgNameInput = txt
+        end)
+
+        local existingList = self:GetConfigList()
+        if #existingList == 0 then existingList = {"default"} end
+        local selectedConfig = existingList[1] or "default"
+
+        local configDropdown = ConfigTab:CreateDropdown("Select Profile", existingList, false, function(sel)
+            selectedConfig = sel
+        end)
+        configDropdown:Set(selectedConfig, true)
+
+        ConfigTab:CreateButton("💾 Save Current Profile", function()
+            local target = (cfgNameInput and #cfgNameInput > 0) and cfgNameInput or selectedConfig
+            if self:SaveConfig(target) then
+                local refreshed = self:GetConfigList()
+                configDropdown:Refresh(refreshed)
+                configDropdown:Set(target, true)
+                selectedConfig = target
+            end
+        end)
+
+        ConfigTab:CreateButton("📂 Load Selected Profile", function()
+            self:LoadConfig(selectedConfig)
+        end)
+
+        ConfigTab:CreateButton("🗑️ Delete Selected Profile", function()
+            if selectedConfig == "" or selectedConfig == "default" then
+                BottleLib:Notify("Cannot delete 'default' profile or empty selection.")
+                return
+            end
+            if self:DeleteConfig(selectedConfig) then
+                local refreshed = self:GetConfigList()
+                if #refreshed == 0 then refreshed = {"default"} end
+                configDropdown:Refresh(refreshed)
+                selectedConfig = refreshed[1] or "default"
+                configDropdown:Set(selectedConfig, true)
+            end
+        end)
+
+        local autoLoadEnabled, autoLoadTarget = self:GetAutoLoad()
+        ConfigTab:CreateToggle("⚡ Auto-Load Profile on Startup", autoLoadEnabled, function(state)
+            self:SetAutoLoad(selectedConfig or "default", state)
+            BottleLib:Notify("Auto-load " .. (state and "ENABLED for '" .. tostring(selectedConfig) .. "'" or "DISABLED"))
+        end)
+
+        ConfigTab:CreateButton("🔄 Refresh Profile List", function()
+            local refreshed = self:GetConfigList()
+            if #refreshed == 0 then refreshed = {"default"} end
+            configDropdown:Refresh(refreshed)
+            selectedConfig = refreshed[1] or "default"
+            configDropdown:Set(selectedConfig, true)
+            BottleLib:Notify(string.format("Found %d saved profile(s)", #refreshed))
+        end)
+
+        ConfigTab:CreateSeparator()
+
+        -- 2. ServerHop Settings Section
+        ConfigTab:CreateSection("ServerHop Settings")
+        ConfigTab:CreateLabel("Configure server finding algorithm & parameters.")
+
+        local hopMode = WindowConfig.ServerHopMode or "Nearest"
+        self._HopModeDropdown = ConfigTab:CreateDropdown("ServerHop Algorithm", {"Nearest", "LowestPlayer", "HighestPlayer", "Random"}, false, function(sel)
+            WindowConfig.ServerHopMode = sel
+            BottleLib:Notify("ServerHop Mode set to: " .. sel)
+        end)
+        self._HopModeDropdown:Set(hopMode, true)
+
+        local currentMins = math.floor((WindowConfig.ServerHopBlacklistDuration or 600) / 60)
+        self._HopDurationSlider = ConfigTab:CreateSlider("Blacklist Duration (Mins)", 1, 30, currentMins, 1, function(val)
+            WindowConfig.ServerHopBlacklistDuration = val * 60
+        end)
+
+        local currentPages = WindowConfig.ServerHopMaxPages or 3
+        self._HopPagesSlider = ConfigTab:CreateSlider("Scan Depth (Pages)", 1, 5, currentPages, 1, function(val)
+            WindowConfig.ServerHopMaxPages = val
+        end)
+
+        ConfigTab:CreateButton("🌍 Hop Server Now", function()
+            BottleLib:ServerHop({
+                Mode = WindowConfig.ServerHopMode,
+                BlacklistDuration = WindowConfig.ServerHopBlacklistDuration,
+                MaxPages = WindowConfig.ServerHopMaxPages
+            })
+        end)
+
+        ConfigTab:CreateButton("🧹 Clear Server Blacklist Cache", function()
+            BottleLib:ClearHopBlacklist()
+            BottleLib:Notify("ServerHop Blacklist cache cleared!")
+        end)
+
+        ConfigTab:CreateSeparator()
+
+        -- 3. Session & Diagnostics Section
+        ConfigTab:CreateSection("Session & Diagnostics")
+        ConfigTab:CreateLabel("• Game Place ID: " .. tostring(game.PlaceId))
+        ConfigTab:CreateLabel(string.format("• Account: %s (UID: %d)", player.Name, player.UserId))
+        ConfigTab:CreateButton("📋 Copy Config Folder Path", function()
+            local dir = getConfigFolder(configFolder)
+            pcall(function()
+                if typeof(setclipboard) == "function" then
+                    setclipboard(dir)
+                elseif typeof(toclipboard) == "function" then
+                    toclipboard(dir)
+                end
+            end)
+            BottleLib:Notify("Config folder path copied to clipboard!")
+        end)
+
+        ConfigTab:CreateButton("❌ Unload Script & Clean Resources", function()
+            WindowObj:Close()
+        end)
+
+        self._IsBuildingConfigTab = false
+
+        -- Execute Auto-Load if enabled
+        if autoLoadEnabled and autoLoadTarget then
+            task.defer(function()
+                if not self.IsClosed then
+                    self:LoadConfig(autoLoadTarget)
+                end
+            end)
+        end
+
+        return ConfigTab
+    end
+
+    if autoConfig then
+        task.defer(function()
+            if not WindowObj.IsClosed and not WindowObj._HasBuiltConfigTab then
+                WindowObj:BuildConfigTab()
+            end
+        end)
     end
 
     return WindowObj
