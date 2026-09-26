@@ -426,27 +426,31 @@ function BottleLib:ServerHop(options)
 
         -- Fetch up to maxPages of servers
         for page = 1, maxPages do
-            local sortParam = (mode == "LowestPlayer" and "Asc") or "Desc"
-            local url = string.format("https://games.roblox.com/v1/games/%s/servers/Public?sortOrder=%s&limit=100%s",
+            local url = string.format("https://games.roblox.com/v1/games/%s/servers/Public?limit=100%s",
                 tostring(placeId),
-                sortParam,
                 (cursor ~= "" and ("&cursor=" .. cursor) or "")
             )
 
-            local ok, res
+            local rawBody = nil
             if httpReq then
-                ok, res = pcall(function() return httpReq({Url = url, Method = "GET"}) end)
-            else
-                ok, res = pcall(function()
-                    return { Body = game:HttpGet(url) }
+                local okReq, resReq = pcall(function() return httpReq({Url = url, Method = "GET"}) end)
+                if okReq and type(resReq) == "table" then
+                    rawBody = resReq.Body or resReq.body
+                elseif okReq and type(resReq) == "string" then
+                    rawBody = resReq
+                end
+            end
+            if not rawBody or #rawBody == 0 then
+                pcall(function()
+                    rawBody = game:HttpGet(url)
                 end)
             end
 
-            if not ok or not res or not res.Body then
+            if not rawBody or #rawBody == 0 then
                 break
             end
 
-            local okJson, decoded = pcall(function() return HttpService:JSONDecode(res.Body) end)
+            local okJson, decoded = pcall(function() return HttpService:JSONDecode(rawBody) end)
             if not okJson or not decoded or not decoded.data then
                 break
             end
@@ -459,7 +463,7 @@ function BottleLib:ServerHop(options)
                 -- Filter conditions
                 local notCurrent = (sId ~= game.JobId)
                 local notBlacklisted = (prunedPlaceCache[sId] == nil or prunedPlaceCache[sId] <= now)
-                local notFull = (playing <= (maxP - playerMargin))
+                local notFull = (playing < maxP)
                 local notEmpty = (playing >= minPlayers)
 
                 if notCurrent and notBlacklisted and notFull and notEmpty then
@@ -469,16 +473,16 @@ function BottleLib:ServerHop(options)
 
             cursor = decoded.nextPageCursor or ""
             if cursor == "" then break end
-            task.wait(0.2) -- gentle rate-limit buffer
+            task.wait(0.15) -- gentle rate-limit buffer
         end
 
-        -- Handle case where candidate pool is empty because all are blacklisted
+        -- Handle case where candidate pool is empty because all are blacklisted or no candidates
         if #candidateServers == 0 then
-            if activeBlacklistCount > 0 then
-                BottleLib:Notify("All candidate servers blacklisted. Resetting history & retrying...")
+            if activeBlacklistCount > 0 and retries < 1 then
+                BottleLib:Notify("All servers blacklisted. Clearing blacklist and retrying...")
                 cache[placeKey] = { [game.JobId] = now + blacklistDuration }
                 saveHopCache(cache)
-                task.wait(1)
+                task.wait(0.5)
                 BottleLib._IsHopping = false
                 BottleLib:ServerHop({
                     Mode = mode,
@@ -490,7 +494,7 @@ function BottleLib:ServerHop(options)
                 })
                 return
             else
-                BottleLib:Notify("No alternative servers found. Retrying with regional matchmaker...")
+                BottleLib:Notify("No public servers found. Routing via regional matchmaker...")
                 local ok, err = pcall(function() TeleportService:Teleport(placeId, player) end)
                 if not ok then finishHop(false, "Teleport failed: " .. tostring(err)) end
                 return
@@ -2537,10 +2541,10 @@ function BottleLib:CreateWindow(WindowConfig)
 
         hopBtn.MouseButton1Click:Connect(function()
             BottleLib:ServerHop({
-                Mode = serverHopMode,
-                BlacklistDuration = serverHopDuration,
-                MaxPages = serverHopPages,
-                MaxPing = serverHopMaxPing
+                Mode = WindowConfig.ServerHopMode or serverHopMode,
+                BlacklistDuration = WindowConfig.ServerHopBlacklistDuration or serverHopDuration,
+                MaxPages = WindowConfig.ServerHopMaxPages or serverHopPages,
+                MaxPing = WindowConfig.ServerHopMaxPing or serverHopMaxPing
             })
         end)
 
@@ -3505,33 +3509,36 @@ function BottleLib:CreateWindow(WindowConfig)
         end
 
         local hopMode = WindowConfig.ServerHopMode or "Nearest"
+        WindowConfig.ServerHopMode = hopMode
+        WindowConfig.ServerHopBlacklistDuration = WindowConfig.ServerHopBlacklistDuration or 600
+        WindowConfig.ServerHopMaxPages = WindowConfig.ServerHopMaxPages or 3
+        WindowConfig.ServerHopMaxPing = WindowConfig.ServerHopMaxPing or 130
+
         self._HopModeDropdown = ConfigTab:CreateDropdown("Mode", hopModeOptions, false, function(sel)
             WindowConfig.ServerHopMode = getModeKey(sel)
             BottleLib:Notify("ServerHop Mode set to: " .. WindowConfig.ServerHopMode)
         end)
         self._HopModeDropdown:Set(getModeLabel(hopMode), true)
 
-        local currentMaxPing = WindowConfig.ServerHopMaxPing or 130
-        self._HopPingSlider = ConfigTab:CreateSlider("Max Ping", 50, 250, currentMaxPing, 5, function(val)
+        self._HopPingSlider = ConfigTab:CreateSlider("Max Ping", 50, 250, WindowConfig.ServerHopMaxPing, 5, function(val)
             WindowConfig.ServerHopMaxPing = val
         end)
 
-        local currentMins = math.floor((WindowConfig.ServerHopBlacklistDuration or 600) / 60)
+        local currentMins = math.floor(WindowConfig.ServerHopBlacklistDuration / 60)
         self._HopDurationSlider = ConfigTab:CreateSlider("Blacklist", 1, 30, currentMins, 1, function(val)
             WindowConfig.ServerHopBlacklistDuration = val * 60
         end)
 
-        local currentPages = WindowConfig.ServerHopMaxPages or 3
-        self._HopPagesSlider = ConfigTab:CreateSlider("Pages", 1, 5, currentPages, 1, function(val)
+        self._HopPagesSlider = ConfigTab:CreateSlider("Pages", 1, 5, WindowConfig.ServerHopMaxPages, 1, function(val)
             WindowConfig.ServerHopMaxPages = val
         end)
 
         ConfigTab:CreateButton("Hop Server", function()
             BottleLib:ServerHop({
-                Mode = WindowConfig.ServerHopMode,
-                BlacklistDuration = WindowConfig.ServerHopBlacklistDuration,
-                MaxPages = WindowConfig.ServerHopMaxPages,
-                MaxPing = WindowConfig.ServerHopMaxPing
+                Mode = WindowConfig.ServerHopMode or "Nearest",
+                BlacklistDuration = WindowConfig.ServerHopBlacklistDuration or 600,
+                MaxPages = WindowConfig.ServerHopMaxPages or 3,
+                MaxPing = WindowConfig.ServerHopMaxPing or 130
             })
         end)
 
