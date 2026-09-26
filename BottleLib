@@ -8,17 +8,26 @@ local function safeService(serviceName)
     return (typeof(cloneref) == "function" and cloneref(s)) or s
 end
 
-local TweenService     = safeService("TweenService")
-local UserInputService = safeService("UserInputService")
-local RunService       = safeService("RunService")
-local CoreGui          = safeService("CoreGui")
-local Players          = safeService("Players")
-local HttpService      = safeService("HttpService")
+local TweenService       = safeService("TweenService")
+local UserInputService   = safeService("UserInputService")
+local RunService         = safeService("RunService")
+local CoreGui            = safeService("CoreGui")
+local Players            = safeService("Players")
+local HttpService        = safeService("HttpService")
+local MarketplaceService = safeService("MarketplaceService")
+local TeleportService    = safeService("TeleportService")
 
 local player = Players.LocalPlayer
+while not player do
+    task.wait(0.1)
+    player = Players.LocalPlayer
+end
 
 local BottleLib = {}
 BottleLib.__index = BottleLib
+BottleLib.Version = "2.5.0-dev"
+BottleLib.Edition = "Glassplane UI (Dock & Profile)"
+BottleLib.BuildDate = "2026-09-26"
 BottleLib.CleanUpEvent = Instance.new("BindableEvent")
 BottleLib.ActiveScreenGui = nil
 BottleLib.ActiveNotifyContainer = nil
@@ -1374,6 +1383,48 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
     end
 end
 
+-- Helper: Marquee Text Label
+local function CreateMarqueeLabel(parent, text, col, fnt, sz, allowScroll, lo)
+    local container = Instance.new("Frame", parent)
+    container.LayoutOrder = lo or 0
+    container.Size = UDim2.new(1, 0, 0, sz + 4)
+    container.BackgroundTransparency = 1
+    container.ClipsDescendants = true
+    container.ZIndex = (parent.ZIndex or 5)
+
+    local l = Instance.new("TextLabel", container)
+    l.Size = UDim2.new(1, 0, 1, 0)
+    l.BackgroundTransparency = 1
+    l.Text = text or ""
+    l.TextColor3 = col or Color3.fromRGB(240, 240, 240)
+    l.Font = fnt or Enum.Font.GothamMedium
+    l.TextSize = sz or 11
+    l.TextXAlignment = Enum.TextXAlignment.Left
+    l.ZIndex = (container.ZIndex or 5) + 1
+
+    if allowScroll then
+        task.spawn(function()
+            task.wait(0.3)
+            if not l.Parent then return end
+            if l.TextBounds.X > container.AbsoluteSize.X then
+                l.Size = UDim2.new(0, l.TextBounds.X, 1, 0)
+                local dist = l.TextBounds.X - container.AbsoluteSize.X + 12
+                while container and container.Parent do
+                    task.wait(2.5)
+                    if not container or not container.Parent then break end
+                    local tw = TweenService:Create(l, TweenInfo.new(math.max(dist / 16, 1), Enum.EasingStyle.Linear), {Position = UDim2.new(0, -dist, 0, 0)})
+                    tw:Play()
+                    task.wait(math.max(dist / 16, 1) + 1)
+                    if l and l.Parent then l.Position = UDim2.new(0, 0, 0, 0) end
+                end
+            end
+        end)
+    else
+        l.TextTruncate = Enum.TextTruncate.AtEnd
+    end
+    return l, container
+end
+
 -- ============================================================================
 -- [3] WINDOW BUILDER (True OLED Glass & Split Header)
 -- ============================================================================
@@ -1381,13 +1432,16 @@ function BottleLib:CreateWindow(WindowConfig)
     BottleLib.CleanUpEvent:Fire()
 
     WindowConfig = WindowConfig or {}
-    local titleText = WindowConfig.Title or "BottleLib UI"
-    local winSize   = WindowConfig.Size or UDim2.new(0, 580, 0, 390)
-    local sidebarW  = WindowConfig.SidebarWidth or 130
-    local topbarH   = WindowConfig.TopbarHeight or 36
-    local toggleKey = WindowConfig.ToggleKey or Enum.KeyCode.RightControl
-    local autoUnlock = (WindowConfig.AutoUnlockMouse ~= false)
-    local autoSidebar = (WindowConfig.SidebarAutoHeight == true)
+    local titleText        = WindowConfig.Title or "BottleLib UI"
+    local showProfileCard  = (WindowConfig.ProfileCard ~= false)
+    local profileRoleText  = WindowConfig.ProfileRole or "Owner"
+    local discordInviteUrl = WindowConfig.Discord or "https://discord.gg/JbSUQCxW2w"
+    local sidebarW         = WindowConfig.SidebarWidth or (showProfileCard and 175 or 130)
+    local winSize          = WindowConfig.Size or UDim2.new(0, (showProfileCard and 600 or 580), 0, (showProfileCard and 410 or 390))
+    local topbarH          = WindowConfig.TopbarHeight or 36
+    local toggleKey        = WindowConfig.ToggleKey or Enum.KeyCode.RightControl
+    local autoUnlock       = (WindowConfig.AutoUnlockMouse ~= false)
+    local autoSidebar      = (WindowConfig.SidebarAutoHeight == true)
     local showMobileToggle = WindowConfig.MobileToggle
     if showMobileToggle == nil then
         showMobileToggle = UserInputService.TouchEnabled
@@ -1560,7 +1614,7 @@ function BottleLib:CreateWindow(WindowConfig)
     BodyFrame.Size = UDim2.new(1, -20, 1, -(topbarH + 14))
     BodyFrame.BackgroundTransparency = 1
 
-    -- [จุดปรับปรุงที่ 2]: Tab Container เป็น Frame มาตรฐาน ไม่ต้องมี Scrollbar หรือเลื่อน Canvas
+    -- [จุดปรับปรุงที่ 2]: Tab Container & Profile Card
     local TabSidebar = Instance.new("Frame", BodyFrame)
     TabSidebar.BackgroundColor3 = T.Sidebar
     TabSidebar.BackgroundTransparency = 0.25
@@ -1599,14 +1653,317 @@ function BottleLib:CreateWindow(WindowConfig)
     sStroke.Thickness = 1
     sStroke.Transparency = 0.3
 
-    local tabLayout = Instance.new("UIListLayout", TabSidebar)
-    tabLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    tabLayout.Padding = UDim.new(0, 4)
+    local TabContainer
+    if showProfileCard then
+        local PROFILE_H = 186
+        TabContainer = Instance.new("ScrollingFrame", TabSidebar)
+        TabContainer.Name = "TabContainer"
+        TabContainer.Size = UDim2.new(1, 0, 1, -(PROFILE_H + 6))
+        TabContainer.Position = UDim2.new(0, 0, 0, 0)
+        TabContainer.BackgroundTransparency = 1
+        TabContainer.BorderSizePixel = 0
+        TabContainer.ScrollBarThickness = 2
+        TabContainer.ScrollBarImageColor3 = T.Accent
+        TabContainer.AutomaticCanvasSize = Enum.AutomaticSize.Y
+        TabContainer.CanvasSize = UDim2.new(0, 0, 0, 0)
 
-    local tabPad = Instance.new("UIPadding", TabSidebar)
-    tabPad.PaddingTop = UDim.new(0, 6)
-    tabPad.PaddingLeft = UDim.new(0, 6)
-    tabPad.PaddingRight = UDim.new(0, 6)
+        local tabLayout = Instance.new("UIListLayout", TabContainer)
+        tabLayout.SortOrder = Enum.SortOrder.LayoutOrder
+        tabLayout.Padding = UDim.new(0, 4)
+
+        local tabPad = Instance.new("UIPadding", TabContainer)
+        tabPad.PaddingTop = UDim.new(0, 6)
+        tabPad.PaddingLeft = UDim.new(0, 6)
+        tabPad.PaddingRight = UDim.new(0, 6)
+
+        -- =====================================================================
+        -- PROFILE CARD COMPONENT (OLED Glassmorphism)
+        -- =====================================================================
+        local ProfileCard = Instance.new("Frame", TabSidebar)
+        ProfileCard.Name = "ProfileCard"
+        ProfileCard.Size = UDim2.new(1, -8, 0, PROFILE_H)
+        ProfileCard.Position = UDim2.new(0, 4, 1, -(PROFILE_H + 4))
+        ProfileCard.BackgroundColor3 = Color3.fromRGB(13, 13, 13)
+        ProfileCard.BackgroundTransparency = 0.25
+        ProfileCard.BorderSizePixel = 0
+        ProfileCard.ZIndex = 4
+        Instance.new("UICorner", ProfileCard).CornerRadius = UDim.new(0, 8)
+        local pcStroke = Instance.new("UIStroke", ProfileCard)
+        pcStroke.Color = Color3.fromRGB(38, 38, 38)
+        pcStroke.Thickness = 1
+
+        -- 1. Mini Top Banner
+        local pcBanner = Instance.new("Frame", ProfileCard)
+        pcBanner.Size = UDim2.new(1, 0, 0, 24)
+        pcBanner.BackgroundColor3 = T.Accent
+        pcBanner.BackgroundTransparency = 0.86
+        pcBanner.BorderSizePixel = 0
+        pcBanner.ZIndex = 5
+        Instance.new("UICorner", pcBanner).CornerRadius = UDim.new(0, 8)
+
+        local pcBannerFix = Instance.new("Frame", pcBanner)
+        pcBannerFix.Size = UDim2.new(1, 0, 0, 6)
+        pcBannerFix.Position = UDim2.new(0, 0, 1, -6)
+        pcBannerFix.BackgroundColor3 = T.Accent
+        pcBannerFix.BackgroundTransparency = 0.86
+        pcBannerFix.BorderSizePixel = 0
+        pcBannerFix.ZIndex = 5
+
+        local pcBannerTitle = Instance.new("TextLabel", pcBanner)
+        pcBannerTitle.Size = UDim2.new(1, -8, 1, 0)
+        pcBannerTitle.BackgroundTransparency = 1
+        pcBannerTitle.Text = titleText
+        pcBannerTitle.TextColor3 = T.Accent
+        pcBannerTitle.Font = Enum.Font.GothamBlack
+        pcBannerTitle.TextSize = 10
+        pcBannerTitle.TextXAlignment = Enum.TextXAlignment.Right
+        pcBannerTitle.TextTransparency = 0.3
+        pcBannerTitle.ZIndex = 6
+
+        local pcBannerLine = Instance.new("Frame", ProfileCard)
+        pcBannerLine.Size = UDim2.new(1, 0, 0, 1)
+        pcBannerLine.Position = UDim2.new(0, 0, 0, 24)
+        pcBannerLine.BackgroundColor3 = T.Accent
+        pcBannerLine.BackgroundTransparency = 0.6
+        pcBannerLine.BorderSizePixel = 0
+        pcBannerLine.ZIndex = 6
+
+        -- 2. Avatar & Name Block
+        local avatarRing = Instance.new("Frame", ProfileCard)
+        avatarRing.Size = UDim2.new(0, 36, 0, 36)
+        avatarRing.Position = UDim2.new(0, 8, 0, 29)
+        avatarRing.BackgroundColor3 = T.Accent
+        avatarRing.BorderSizePixel = 0
+        avatarRing.ZIndex = 7
+        Instance.new("UICorner", avatarRing).CornerRadius = UDim.new(1, 0)
+
+        local avatarInner = Instance.new("Frame", avatarRing)
+        avatarInner.Size = UDim2.new(0, 32, 0, 32)
+        avatarInner.Position = UDim2.new(0, 2, 0, 2)
+        avatarInner.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+        avatarInner.BorderSizePixel = 0
+        avatarInner.ZIndex = 8
+        Instance.new("UICorner", avatarInner).CornerRadius = UDim.new(1, 0)
+
+        local avatarImg = Instance.new("ImageLabel", avatarInner)
+        avatarImg.Size = UDim2.new(1, 0, 1, 0)
+        avatarImg.BackgroundTransparency = 1
+        avatarImg.ZIndex = 9
+        Instance.new("UICorner", avatarImg).CornerRadius = UDim.new(1, 0)
+
+        task.spawn(function()
+            local ok, img = pcall(function()
+                return Players:GetUserThumbnailAsync(player.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size150x150)
+            end)
+            if ok and avatarImg and avatarImg.Parent then
+                avatarImg.Image = img
+            end
+        end)
+
+        local nameBlock = Instance.new("Frame", ProfileCard)
+        nameBlock.Size = UDim2.new(1, -54, 0, 36)
+        nameBlock.Position = UDim2.new(0, 48, 0, 29)
+        nameBlock.BackgroundTransparency = 1
+        nameBlock.ZIndex = 7
+
+        local nbLayout = Instance.new("UIListLayout", nameBlock)
+        nbLayout.SortOrder = Enum.SortOrder.LayoutOrder
+        nbLayout.Padding = UDim.new(0, 1)
+        nbLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+
+        CreateMarqueeLabel(nameBlock, player.DisplayName, T.Text, Enum.Font.GothamBold, 11, true, 1)
+        CreateMarqueeLabel(nameBlock, "@" .. player.Name, T.SubText, Enum.Font.Gotham, 9, false, 2)
+
+        local uidRow = Instance.new("Frame", nameBlock)
+        uidRow.LayoutOrder = 3
+        uidRow.Size = UDim2.new(1, 0, 0, 11)
+        uidRow.BackgroundTransparency = 1
+        uidRow.ZIndex = 7
+
+        local uidBtn = Instance.new("TextButton", uidRow)
+        uidBtn.Size = UDim2.new(1, 0, 1, 0)
+        uidBtn.BackgroundTransparency = 1
+        uidBtn.Text = "🆔 " .. tostring(player.UserId)
+        uidBtn.TextColor3 = Color3.fromRGB(110, 110, 125)
+        uidBtn.Font = Enum.Font.GothamMedium
+        uidBtn.TextSize = 8
+        uidBtn.TextXAlignment = Enum.TextXAlignment.Left
+        uidBtn.ZIndex = 8
+
+        uidBtn.MouseButton1Click:Connect(function()
+            pcall(function() setclipboard(tostring(player.UserId)) end)
+            BottleLib:Notify("Copied User ID: " .. tostring(player.UserId))
+        end)
+
+        -- 3. Role / Access Badge (Owner)
+        local roleRow = Instance.new("Frame", ProfileCard)
+        roleRow.Size = UDim2.new(1, -16, 0, 18)
+        roleRow.Position = UDim2.new(0, 8, 0, 69)
+        roleRow.BackgroundColor3 = Color3.fromRGB(24, 18, 10)
+        roleRow.BackgroundTransparency = 0.2
+        roleRow.ZIndex = 7
+        Instance.new("UICorner", roleRow).CornerRadius = UDim.new(0, 4)
+
+        local roleStroke = Instance.new("UIStroke", roleRow)
+        roleStroke.Color = Color3.fromRGB(241, 196, 15) -- Golden
+        roleStroke.Thickness = 1
+        roleStroke.Transparency = 0.3
+
+        local roleLbl = Instance.new("TextLabel", roleRow)
+        roleLbl.Size = UDim2.new(1, 0, 1, 0)
+        roleLbl.BackgroundTransparency = 1
+        roleLbl.Text = "👑 " .. tostring(profileRoleText) .. " Access"
+        roleLbl.TextColor3 = Color3.fromRGB(255, 215, 0) -- Gold
+        roleLbl.Font = Enum.Font.GothamBold
+        roleLbl.TextSize = 9
+        roleLbl.ZIndex = 8
+
+        -- 4. Game / Place Info
+        local div1 = Instance.new("Frame", ProfileCard)
+        div1.Size = UDim2.new(1, -16, 0, 1)
+        div1.Position = UDim2.new(0, 8, 0, 91)
+        div1.BackgroundColor3 = Color3.fromRGB(32, 32, 32)
+        div1.BorderSizePixel = 0
+        div1.ZIndex = 7
+
+        local gameInfoFrame = Instance.new("Frame", ProfileCard)
+        gameInfoFrame.Size = UDim2.new(1, -16, 0, 24)
+        gameInfoFrame.Position = UDim2.new(0, 8, 0, 94)
+        gameInfoFrame.BackgroundTransparency = 1
+        gameInfoFrame.ZIndex = 7
+
+        local giLayout = Instance.new("UIListLayout", gameInfoFrame)
+        giLayout.SortOrder = Enum.SortOrder.LayoutOrder
+        giLayout.Padding = UDim.new(0, 1)
+
+        local gameLbl = CreateMarqueeLabel(gameInfoFrame, "🎮 Loading...", T.SubText, Enum.Font.Gotham, 9, true, 1)
+        local placeLbl = CreateMarqueeLabel(gameInfoFrame, "📍 Place: " .. tostring(game.PlaceId), Color3.fromRGB(110, 110, 125), Enum.Font.Gotham, 8, false, 2)
+
+        task.spawn(function()
+            local ok, info = pcall(function() return MarketplaceService:GetProductInfo(game.PlaceId) end)
+            local gName = (ok and info and info.Name) or game.Name
+            if gameLbl and gameLbl.Parent then
+                gameLbl.Text = "🎮 " .. gName
+            end
+        end)
+
+        -- 5. Quick Utilities: Rejoin & Server Hop
+        local div2 = Instance.new("Frame", ProfileCard)
+        div2.Size = UDim2.new(1, -16, 0, 1)
+        div2.Position = UDim2.new(0, 8, 0, 121)
+        div2.BackgroundColor3 = Color3.fromRGB(32, 32, 32)
+        div2.BorderSizePixel = 0
+        div2.ZIndex = 7
+
+        local qaRow = Instance.new("Frame", ProfileCard)
+        qaRow.Size = UDim2.new(1, -16, 0, 19)
+        qaRow.Position = UDim2.new(0, 8, 0, 125)
+        qaRow.BackgroundTransparency = 1
+        qaRow.ZIndex = 7
+
+        local rejoinBtn = Instance.new("TextButton", qaRow)
+        rejoinBtn.Size = UDim2.new(0.48, 0, 1, 0)
+        rejoinBtn.Position = UDim2.new(0, 0, 0, 0)
+        rejoinBtn.BackgroundColor3 = Color3.fromRGB(24, 24, 24)
+        rejoinBtn.BackgroundTransparency = 0.2
+        rejoinBtn.Text = "🔄 Rejoin"
+        rejoinBtn.TextColor3 = T.Text
+        rejoinBtn.Font = Enum.Font.GothamBold
+        rejoinBtn.TextSize = 8
+        rejoinBtn.AutoButtonColor = false
+        rejoinBtn.ZIndex = 8
+        Instance.new("UICorner", rejoinBtn).CornerRadius = UDim.new(0, 4)
+        local rjStroke = Instance.new("UIStroke", rejoinBtn)
+        rjStroke.Color = Color3.fromRGB(45, 45, 45)
+        rjStroke.Thickness = 1
+
+        rejoinBtn.MouseButton1Click:Connect(function()
+            BottleLib:Notify("Rejoining current server...")
+            pcall(function()
+                TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, player)
+            end)
+        end)
+
+        local hopBtn = Instance.new("TextButton", qaRow)
+        hopBtn.Size = UDim2.new(0.48, 0, 1, 0)
+        hopBtn.Position = UDim2.new(0.52, 0, 0, 0)
+        hopBtn.BackgroundColor3 = Color3.fromRGB(24, 24, 24)
+        hopBtn.BackgroundTransparency = 0.2
+        hopBtn.Text = "🌍 Hop"
+        hopBtn.TextColor3 = T.Text
+        hopBtn.Font = Enum.Font.GothamBold
+        hopBtn.TextSize = 8
+        hopBtn.AutoButtonColor = false
+        hopBtn.ZIndex = 8
+        Instance.new("UICorner", hopBtn).CornerRadius = UDim.new(0, 4)
+        local hopStroke = Instance.new("UIStroke", hopBtn)
+        hopStroke.Color = Color3.fromRGB(45, 45, 45)
+        hopStroke.Thickness = 1
+
+        hopBtn.MouseButton1Click:Connect(function()
+            BottleLib:Notify("Searching public servers...")
+            task.spawn(function()
+                local req = (syn and syn.request) or (http and http.request) or http_request or request
+                if req then
+                    local url = "https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100"
+                    local ok, res = pcall(function() return req({Url = url, Method = "GET"}) end)
+                    if ok and res and res.Body then
+                        local ok2, decoded = pcall(function() return HttpService:JSONDecode(res.Body) end)
+                        if ok2 and decoded and decoded.data then
+                            for _, v in ipairs(decoded.data) do
+                                if v.id ~= game.JobId and v.playing < v.maxPlayers then
+                                    BottleLib:Notify("Server found! Teleporting...")
+                                    pcall(function() TeleportService:TeleportToPlaceInstance(game.PlaceId, v.id, player) end)
+                                    return
+                                end
+                            end
+                        end
+                    end
+                end
+                pcall(function() TeleportService:Teleport(game.PlaceId, player) end)
+            end)
+        end)
+
+        -- 6. Discord Button
+        local discordBtn = Instance.new("TextButton", ProfileCard)
+        discordBtn.Size = UDim2.new(1, -16, 0, 20)
+        discordBtn.Position = UDim2.new(0, 8, 1, -26)
+        discordBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 36)
+        discordBtn.BackgroundTransparency = 0.2
+        discordBtn.Text = "📣 Join Discord"
+        discordBtn.TextColor3 = Color3.fromRGB(130, 130, 240)
+        discordBtn.Font = Enum.Font.GothamBold
+        discordBtn.TextSize = 9
+        discordBtn.AutoButtonColor = false
+        discordBtn.ZIndex = 8
+        Instance.new("UICorner", discordBtn).CornerRadius = UDim.new(0, 4)
+        local dcStroke = Instance.new("UIStroke", discordBtn)
+        dcStroke.Color = Color3.fromRGB(50, 50, 90)
+        dcStroke.Thickness = 1
+
+        discordBtn.MouseButton1Click:Connect(function()
+            pcall(function() setclipboard(discordInviteUrl) end)
+            local orig = discordBtn.Text
+            discordBtn.Text = "✅ Copied Link!"
+            discordBtn.TextColor3 = Color3.fromRGB(46, 204, 113)
+            task.delay(1.5, function()
+                if discordBtn and discordBtn.Parent then
+                    discordBtn.Text = orig
+                    discordBtn.TextColor3 = Color3.fromRGB(130, 130, 240)
+                end
+            end)
+        end)
+    else
+        TabContainer = TabSidebar
+        local tabLayout = Instance.new("UIListLayout", TabContainer)
+        tabLayout.SortOrder = Enum.SortOrder.LayoutOrder
+        tabLayout.Padding = UDim.new(0, 4)
+
+        local tabPad = Instance.new("UIPadding", TabContainer)
+        tabPad.PaddingTop = UDim.new(0, 6)
+        tabPad.PaddingLeft = UDim.new(0, 6)
+        tabPad.PaddingRight = UDim.new(0, 6)
+    end
 
     -- [จุดปรับปรุงที่ 3]: ContentArea กระจกรมควันโปร่งแสง 0.75 ตาม Lastest lib.txt
     local ContentArea = Instance.new("Frame", BodyFrame)
@@ -1646,13 +2003,175 @@ function BottleLib:CreateWindow(WindowConfig)
     table.insert(WindowObj.Connections, cDragBegin)
     table.insert(WindowObj.Connections, cDragChange)
 
+    -- =========================================================================
+    -- SMART MINI DOCK (Floating Glass Capsule: [Hub Icon] | [Header Controls] | [FPS & Ping])
+    -- =========================================================================
+    local MiniDock = Instance.new("Frame", ScreenGui)
+    MiniDock.Name = generateNaturalName("Dock")
+    MiniDock.Size = UDim2.new(0, 0, 0, 36)
+    MiniDock.AutomaticSize = Enum.AutomaticSize.X
+    MiniDock.Position = UDim2.new(0, 20, 0, 20)
+    MiniDock.BackgroundColor3 = Color3.fromRGB(12, 12, 12)
+    MiniDock.BackgroundTransparency = 0.18
+    MiniDock.BorderSizePixel = 0
+    MiniDock.Visible = false
+    MiniDock.Active = true
+    MiniDock.ZIndex = 100
+    Instance.new("UICorner", MiniDock).CornerRadius = UDim.new(0, 18)
+
+    local dockStroke = Instance.new("UIStroke", MiniDock)
+    dockStroke.Color = T.Accent
+    dockStroke.Thickness = 1.2
+    dockStroke.Transparency = 0.2
+
+    local dockLayout = Instance.new("UIListLayout", MiniDock)
+    dockLayout.FillDirection = Enum.FillDirection.Horizontal
+    dockLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+    dockLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+    dockLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    dockLayout.Padding = UDim.new(0, 6)
+
+    local dockPad = Instance.new("UIPadding", MiniDock)
+    dockPad.PaddingLeft = UDim.new(0, 4)
+    dockPad.PaddingRight = UDim.new(0, 10)
+    dockPad.PaddingTop = UDim.new(0, 3)
+    dockPad.PaddingBottom = UDim.new(0, 3)
+
+    -- [1] Hub Icon Button (Click to Expand / Restore)
+    local DockIconBtn = Instance.new("ImageButton", MiniDock)
+    DockIconBtn.LayoutOrder = 1
+    DockIconBtn.Size = UDim2.new(0, 28, 0, 28)
+    DockIconBtn.BackgroundColor3 = T.Accent
+    DockIconBtn.BackgroundTransparency = 0.15
+    DockIconBtn.Image = "rbxassetid://78690743314126"
+    DockIconBtn.AutoButtonColor = false
+    DockIconBtn.ZIndex = 101
+    Instance.new("UICorner", DockIconBtn).CornerRadius = UDim.new(1, 0)
+    local dibStroke = Instance.new("UIStroke", DockIconBtn)
+    dibStroke.Color = Color3.fromRGB(255, 255, 255)
+    dibStroke.Thickness = 1
+    dibStroke.Transparency = 0.6
+
+    DockIconBtn.MouseButton1Click:Connect(function()
+        if WindowObj.IsClosing or WindowObj.IsClosed then return end
+        MiniDock.Visible = false
+        MainFrame.Visible = true
+        WindowObj.IsMinimized = false
+    end)
+
+    -- [2] Header Controls Container in Dock
+    local DockControls = Instance.new("Frame", MiniDock)
+    DockControls.LayoutOrder = 2
+    DockControls.Size = UDim2.new(0, 0, 1, 0)
+    DockControls.AutomaticSize = Enum.AutomaticSize.X
+    DockControls.BackgroundTransparency = 1
+    DockControls.ZIndex = 101
+
+    local dcLayout = Instance.new("UIListLayout", DockControls)
+    dcLayout.FillDirection = Enum.FillDirection.Horizontal
+    dcLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+    dcLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    dcLayout.Padding = UDim.new(0, 5)
+
+    -- [3] Divider before Stats
+    local DockDivider = Instance.new("Frame", MiniDock)
+    DockDivider.LayoutOrder = 3
+    DockDivider.Size = UDim2.new(0, 1, 0, 18)
+    DockDivider.BackgroundColor3 = T.Stroke
+    DockDivider.BackgroundTransparency = 0.4
+    DockDivider.BorderSizePixel = 0
+    DockDivider.ZIndex = 101
+
+    -- [4] End: FPS & Ping Stats Pill
+    local DockStatsPill = Instance.new("Frame", MiniDock)
+    DockStatsPill.LayoutOrder = 4
+    DockStatsPill.Size = UDim2.new(0, 0, 0, 24)
+    DockStatsPill.AutomaticSize = Enum.AutomaticSize.X
+    DockStatsPill.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    DockStatsPill.BackgroundTransparency = 0.3
+    DockStatsPill.BorderSizePixel = 0
+    DockStatsPill.ZIndex = 101
+    Instance.new("UICorner", DockStatsPill).CornerRadius = UDim.new(0, 12)
+    local dsStroke = Instance.new("UIStroke", DockStatsPill)
+    dsStroke.Color = Color3.fromRGB(40, 40, 40)
+    dsStroke.Thickness = 1
+
+    local dsPad = Instance.new("UIPadding", DockStatsPill)
+    dsPad.PaddingLeft = UDim.new(0, 8)
+    dsPad.PaddingRight = UDim.new(0, 8)
+
+    local MiniStatsLbl = Instance.new("TextLabel", DockStatsPill)
+    MiniStatsLbl.Size = UDim2.new(0, 0, 1, 0)
+    MiniStatsLbl.AutomaticSize = Enum.AutomaticSize.X
+    MiniStatsLbl.BackgroundTransparency = 1
+    MiniStatsLbl.Text = "📈 -- FPS  │  📶 --ms"
+    MiniStatsLbl.TextColor3 = T.Text
+    MiniStatsLbl.Font = Enum.Font.GothamMedium
+    MiniStatsLbl.TextSize = 10
+    MiniStatsLbl.ZIndex = 102
+
+    -- MiniDock Dragging Logic
+    local mDrag, mDragStart, mStartPos = false, nil, nil
+    MiniDock.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            mDrag = true
+            mDragStart = input.Position
+            mStartPos = MiniDock.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then mDrag = false end
+            end)
+        end
+    end)
+    local cDockMove = UserInputService.InputChanged:Connect(function(input)
+        if mDrag and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - mDragStart
+            MiniDock.Position = UDim2.new(mStartPos.X.Scale, mStartPos.X.Offset + delta.X, mStartPos.Y.Scale, mStartPos.Y.Offset + delta.Y)
+        end
+    end)
+    table.insert(WindowObj.Connections, cDockMove)
+
+    -- FPS & Ping Loop
+    local fpsFrames = 0
+    local cFpsStep = RunService.RenderStepped:Connect(function() fpsFrames = fpsFrames + 1 end)
+    table.insert(WindowObj.Connections, cFpsStep)
+
+    task.spawn(function()
+        while not WindowObj.IsClosed do
+            task.wait(0.5)
+            if WindowObj.IsClosed then break end
+            local fps = fpsFrames * 2
+            fpsFrames = 0
+            local ping = 0
+            local ok, p = pcall(function() return player:GetNetworkPing() end)
+            if ok and type(p) == "number" then
+                ping = math.floor(p * 1000)
+            end
+            if MiniStatsLbl and MiniStatsLbl.Parent then
+                MiniStatsLbl.Text = string.format("📈 %d FPS  │  📶 %dms", fps, ping)
+            end
+        end
+    end)
+
     function WindowObj:Toggle(forceState)
         if self.IsClosing or self.IsClosed then return end
         closeActiveDropdown()
-        local newState = (forceState ~= nil and forceState) or not MainFrame.Visible
-        MainFrame.Visible = newState
+        local targetState
+        if forceState ~= nil then
+            targetState = forceState
+        else
+            targetState = not MainFrame.Visible
+        end
 
-        if newState and autoUnlock then
+        if targetState then
+            self.IsMinimized = false
+            MainFrame.Visible = true
+            MiniDock.Visible = false
+        else
+            MainFrame.Visible = false
+            MiniDock.Visible = false
+        end
+
+        if MainFrame.Visible and autoUnlock then
             pcall(function()
                 if UserInputService.MouseBehavior == Enum.MouseBehavior.LockCenter then
                     UserInputService.MouseBehavior = Enum.MouseBehavior.Default
@@ -1713,22 +2232,9 @@ function BottleLib:CreateWindow(WindowConfig)
     MinBtn.MouseButton1Click:Connect(function()
         if WindowObj.IsClosing or WindowObj.IsClosed then return end
         closeActiveDropdown()
-        WindowObj.IsMinimized = not WindowObj.IsMinimized
-        if WindowObj.IsMinimized then
-            BodyFrame.Visible = false
-            TweenService:Create(MainFrame, TweenInfo.new(0.2), {
-                Size = UDim2.new(winSize.X.Scale, winSize.X.Offset, 0, topbarH)
-            }):Play()
-            MinBtn.Text = "+"
-        else
-            TweenService:Create(MainFrame, TweenInfo.new(0.2), {
-                Size = winSize
-            }):Play()
-            task.delay(0.2, function()
-                if not WindowObj.IsMinimized then BodyFrame.Visible = true end
-            end)
-            MinBtn.Text = "-"
-        end
+        WindowObj.IsMinimized = true
+        MainFrame.Visible = false
+        MiniDock.Visible = true
     end)
 
     function WindowObj:AddHeaderBadge(text, bgColor, textColor)
@@ -1760,17 +2266,39 @@ function BottleLib:CreateWindow(WindowConfig)
         lbl.TextSize = 10
         lbl.ZIndex = 14
 
+        -- Companion Badge in MiniDock
+        local dockBadge = Instance.new("TextButton", DockControls)
+        dockBadge.Size = UDim2.new(0, 0, 0, 24)
+        dockBadge.AutomaticSize = Enum.AutomaticSize.X
+        dockBadge.BackgroundColor3 = bgColor or Color3.fromRGB(24, 24, 24)
+        dockBadge.BackgroundTransparency = 0.2
+        dockBadge.Text = ""
+        dockBadge.AutoButtonColor = false
+        dockBadge.ZIndex = 102
+        Instance.new("UICorner", dockBadge).CornerRadius = UDim.new(0, 6)
+        local dbStroke = Instance.new("UIStroke", dockBadge)
+        dbStroke.Color = T.Stroke
+        dbStroke.Thickness = 1
+        local dbPad = Instance.new("UIPadding", dockBadge)
+        dbPad.PaddingLeft = UDim.new(0, 8); dbPad.PaddingRight = UDim.new(0, 8)
+        local dbLbl = Instance.new("TextLabel", dockBadge)
+        dbLbl.Size = UDim2.new(0, 0, 1, 0); dbLbl.AutomaticSize = Enum.AutomaticSize.X
+        dbLbl.BackgroundTransparency = 1; dbLbl.Text = text or ""
+        dbLbl.TextColor3 = textColor or T.Text; dbLbl.Font = Enum.Font.GothamBold; dbLbl.TextSize = 10; dbLbl.ZIndex = 103
+
         local clickCb = nil
-        badge.MouseButton1Click:Connect(function()
+        local function triggerBadgeClick()
             if WindowObj.IsClosing or WindowObj.IsClosed then return end
             if clickCb then pcall(clickCb) end
-        end)
+        end
+        badge.MouseButton1Click:Connect(triggerBadgeClick)
+        dockBadge.MouseButton1Click:Connect(triggerBadgeClick)
 
         local BadgeObj = {}
-        function BadgeObj:SetText(t) lbl.Text = t end
-        function BadgeObj:SetColor(c) badge.BackgroundColor3 = c end
-        function BadgeObj:SetTextColor(c) lbl.TextColor3 = c end
-        function BadgeObj:SetVisible(v) badge.Visible = v end
+        function BadgeObj:SetText(t) lbl.Text = t; dbLbl.Text = t end
+        function BadgeObj:SetColor(c) badge.BackgroundColor3 = c; dockBadge.BackgroundColor3 = c end
+        function BadgeObj:SetTextColor(c) lbl.TextColor3 = c; dbLbl.TextColor3 = c end
+        function BadgeObj:SetVisible(v) badge.Visible = v; dockBadge.Visible = v end
         function BadgeObj:OnClick(fn) clickCb = fn end
         return BadgeObj
     end
@@ -1792,18 +2320,38 @@ function BottleLib:CreateWindow(WindowConfig)
         bStroke.Color = T.Stroke
         bStroke.Thickness = 1
 
-        btn.MouseButton1Click:Connect(function()
+        local function triggerBtnClick(targetBtn)
             if WindowObj.IsClosing or WindowObj.IsClosed then return end
-            local t1 = TweenService:Create(btn, TweenInfo.new(0.1), {BackgroundColor3 = T.Accent, TextColor3 = Color3.fromRGB(255, 255, 255)})
-            local t2 = TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(24, 24, 24), TextColor3 = T.Accent})
+            local t1 = TweenService:Create(targetBtn, TweenInfo.new(0.1), {BackgroundColor3 = T.Accent, TextColor3 = Color3.fromRGB(255, 255, 255)})
+            local t2 = TweenService:Create(targetBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(24, 24, 24), TextColor3 = T.Accent})
             t1:Play()
             t1.Completed:Connect(function() t2:Play() end)
             if callback then pcall(callback) end
-        end)
+        end
+
+        btn.MouseButton1Click:Connect(function() triggerBtnClick(btn) end)
+
+        -- Companion Button in MiniDock
+        local dockBtn = Instance.new("TextButton", DockControls)
+        dockBtn.Size = UDim2.new(0, 24, 0, 24)
+        dockBtn.BackgroundColor3 = Color3.fromRGB(24, 24, 24)
+        dockBtn.BackgroundTransparency = 0.2
+        dockBtn.Text = iconText or "★"
+        dockBtn.TextColor3 = T.Accent
+        dockBtn.Font = Enum.Font.GothamBold
+        dockBtn.TextSize = 11
+        dockBtn.AutoButtonColor = false
+        dockBtn.ZIndex = 102
+        Instance.new("UICorner", dockBtn).CornerRadius = UDim.new(0, 4)
+        local dbStroke = Instance.new("UIStroke", dockBtn)
+        dbStroke.Color = T.Stroke
+        dbStroke.Thickness = 1
+
+        dockBtn.MouseButton1Click:Connect(function() triggerBtnClick(dockBtn) end)
 
         local BtnObj = {}
-        function BtnObj:SetText(t) btn.Text = t end
-        function BtnObj:SetVisible(v) btn.Visible = v end
+        function BtnObj:SetText(t) btn.Text = t; dockBtn.Text = t end
+        function BtnObj:SetVisible(v) btn.Visible = v; dockBtn.Visible = v end
         return BtnObj
     end
 
@@ -1832,6 +2380,10 @@ function BottleLib:CreateWindow(WindowConfig)
         end
         table.clear(self.CloseCallbacks)
 
+        if MiniDock and MiniDock.Parent then
+            MiniDock:Destroy()
+        end
+
         if ScreenGui and ScreenGui.Parent then
             ScreenGui:Destroy()
         end
@@ -1852,7 +2404,7 @@ function BottleLib:CreateWindow(WindowConfig)
     table.insert(WindowObj.Connections, cCloseOverlay)
 
     function WindowObj:CreateTab(tabName)
-        local tabBtn = Instance.new("TextButton", TabSidebar)
+        local tabBtn = Instance.new("TextButton", TabContainer)
         tabBtn.Size = UDim2.new(1, 0, 0, 30)
         tabBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
         tabBtn.BackgroundTransparency = 0.4
