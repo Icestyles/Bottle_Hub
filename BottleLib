@@ -1713,10 +1713,10 @@ function BottleLib:CreateWindow(WindowConfig)
 
     local TabContainer
     if showProfileCard then
-        local PROFILE_H = 194
+        local PROFILE_H = 204
         TabContainer = Instance.new("ScrollingFrame", TabSidebar)
         TabContainer.Name = "TabContainer"
-        TabContainer.Size = UDim2.new(1, 0, 1, -(PROFILE_H + 10))
+        TabContainer.Size = UDim2.new(1, 0, 1, -(PROFILE_H + 8))
         TabContainer.Position = UDim2.new(0, 0, 0, 0)
         TabContainer.BackgroundTransparency = 1
         TabContainer.BorderSizePixel = 0
@@ -1750,7 +1750,7 @@ function BottleLib:CreateWindow(WindowConfig)
         pcStroke.Color = Color3.fromRGB(36, 36, 40)
         pcStroke.Thickness = 1
 
-        -- 1. Mini Top Banner (Dark OLED Glass matching card & topbar, Title aligned LEFT)
+        -- 1. Mini Top Banner (Dark OLED Glass matching card & topbar, Title: "BottleHub" aligned LEFT)
         local pcBanner = Instance.new("Frame", ProfileCard)
         pcBanner.Size = UDim2.new(1, 0, 0, 24)
         pcBanner.BackgroundColor3 = Color3.fromRGB(18, 18, 20)
@@ -1771,10 +1771,10 @@ function BottleLib:CreateWindow(WindowConfig)
         pcBannerTitle.Size = UDim2.new(1, -16, 1, 0)
         pcBannerTitle.Position = UDim2.new(0, 10, 0, 0)
         pcBannerTitle.BackgroundTransparency = 1
-        pcBannerTitle.Text = titleText
-        pcBannerTitle.TextColor3 = Color3.fromRGB(220, 220, 225)
+        pcBannerTitle.Text = "BottleHub"
+        pcBannerTitle.TextColor3 = Color3.fromRGB(245, 245, 250)
         pcBannerTitle.Font = Enum.Font.GothamBold
-        pcBannerTitle.TextSize = 10
+        pcBannerTitle.TextSize = 11
         pcBannerTitle.TextXAlignment = Enum.TextXAlignment.Left
         pcBannerTitle.TextTruncate = Enum.TextTruncate.AtEnd
         pcBannerTitle.ZIndex = 6
@@ -1789,7 +1789,7 @@ function BottleLib:CreateWindow(WindowConfig)
 
         -- 2. Avatar & Name Block (Position y: 30)
         local avatarRing = Instance.new("Frame", ProfileCard)
-        avatarRing.Size = UDim2.new(0, 34, 0, 34)
+        avatarRing.Size = UDim2.new(0, 36, 0, 36)
         avatarRing.Position = UDim2.new(0, 10, 0, 30)
         avatarRing.BackgroundColor3 = T.Accent
         avatarRing.BorderSizePixel = 0
@@ -1797,7 +1797,7 @@ function BottleLib:CreateWindow(WindowConfig)
         Instance.new("UICorner", avatarRing).CornerRadius = UDim.new(1, 0)
 
         local avatarInner = Instance.new("Frame", avatarRing)
-        avatarInner.Size = UDim2.new(0, 30, 0, 30)
+        avatarInner.Size = UDim2.new(0, 32, 0, 32)
         avatarInner.Position = UDim2.new(0, 2, 0, 2)
         avatarInner.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
         avatarInner.BorderSizePixel = 0
@@ -1820,22 +1820,22 @@ function BottleLib:CreateWindow(WindowConfig)
         end)
 
         local nameBlock = Instance.new("Frame", ProfileCard)
-        nameBlock.Size = UDim2.new(1, -58, 0, 34)
-        nameBlock.Position = UDim2.new(0, 50, 0, 30)
+        nameBlock.Size = UDim2.new(1, -62, 0, 42)
+        nameBlock.Position = UDim2.new(0, 52, 0, 28)
         nameBlock.BackgroundTransparency = 1
         nameBlock.ZIndex = 7
 
         local nbLayout = Instance.new("UIListLayout", nameBlock)
         nbLayout.SortOrder = Enum.SortOrder.LayoutOrder
-        nbLayout.Padding = UDim.new(0, 1)
-        nbLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+        nbLayout.Padding = UDim.new(0, 0)
+        nbLayout.VerticalAlignment = Enum.VerticalAlignment.Top
 
-        CreateMarqueeLabel(nameBlock, player.DisplayName, T.Text, Enum.Font.GothamBold, 11, true, 1)
-        CreateMarqueeLabel(nameBlock, "@" .. player.Name, T.SubText, Enum.Font.Gotham, 9, false, 2)
+        CreateMarqueeLabel(nameBlock, player.DisplayName, Color3.fromRGB(255, 255, 255), Enum.Font.GothamBold, 12, true, 1)
+        CreateMarqueeLabel(nameBlock, "@" .. player.Name, Color3.fromRGB(180, 185, 195), Enum.Font.GothamMedium, 10, false, 2)
 
         local uidRow = Instance.new("Frame", nameBlock)
         uidRow.LayoutOrder = 3
-        uidRow.Size = UDim2.new(1, 0, 0, 11)
+        uidRow.Size = UDim2.new(1, 0, 0, 13)
         uidRow.BackgroundTransparency = 1
         uidRow.ZIndex = 7
 
@@ -1843,9 +1843,9 @@ function BottleLib:CreateWindow(WindowConfig)
         uidBtn.Size = UDim2.new(1, 0, 1, 0)
         uidBtn.BackgroundTransparency = 1
         uidBtn.Text = "🆔 " .. tostring(player.UserId)
-        uidBtn.TextColor3 = Color3.fromRGB(110, 110, 125)
+        uidBtn.TextColor3 = Color3.fromRGB(160, 165, 180)
         uidBtn.Font = Enum.Font.GothamMedium
-        uidBtn.TextSize = 8
+        uidBtn.TextSize = 9
         uidBtn.TextXAlignment = Enum.TextXAlignment.Left
         uidBtn.ZIndex = 8
 
@@ -1854,40 +1854,42 @@ function BottleLib:CreateWindow(WindowConfig)
             BottleLib:Notify("Copied User ID: " .. tostring(player.UserId))
         end)
 
-        -- 3. Status : Owner Row (Position y: 70)
+        -- 3. Status : Owner Row (Position y: 74, Left-Aligned)
         local roleRow = Instance.new("Frame", ProfileCard)
-        roleRow.Size = UDim2.new(1, -20, 0, 18)
-        roleRow.Position = UDim2.new(0, 10, 0, 70)
-        roleRow.BackgroundColor3 = Color3.fromRGB(22, 22, 24)
+        roleRow.Size = UDim2.new(1, -20, 0, 20)
+        roleRow.Position = UDim2.new(0, 10, 0, 74)
+        roleRow.BackgroundColor3 = Color3.fromRGB(24, 22, 16)
         roleRow.BackgroundTransparency = 0.3
         roleRow.ZIndex = 7
         Instance.new("UICorner", roleRow).CornerRadius = UDim.new(0, 4)
 
         local roleStroke = Instance.new("UIStroke", roleRow)
-        roleStroke.Color = Color3.fromRGB(42, 42, 48)
+        roleStroke.Color = Color3.fromRGB(65, 52, 20)
         roleStroke.Thickness = 1
 
         local roleLbl = Instance.new("TextLabel", roleRow)
-        roleLbl.Size = UDim2.new(1, 0, 1, 0)
+        roleLbl.Size = UDim2.new(1, -12, 1, 0)
+        roleLbl.Position = UDim2.new(0, 10, 0, 0)
         roleLbl.BackgroundTransparency = 1
-        roleLbl.Text = "Status : " .. tostring(profileRoleText)
+        roleLbl.Text = "Status : Owner"
         roleLbl.TextColor3 = Color3.fromRGB(255, 215, 0)
         roleLbl.Font = Enum.Font.GothamBold
-        roleLbl.TextSize = 9
+        roleLbl.TextSize = 10
+        roleLbl.TextXAlignment = Enum.TextXAlignment.Left
         roleLbl.ZIndex = 8
 
-        -- 4. Divider 1 (Position y: 94)
+        -- 4. Divider 1 (Position y: 100)
         local div1 = Instance.new("Frame", ProfileCard)
         div1.Size = UDim2.new(1, -20, 0, 1)
-        div1.Position = UDim2.new(0, 10, 0, 94)
-        div1.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+        div1.Position = UDim2.new(0, 10, 0, 100)
+        div1.BackgroundColor3 = Color3.fromRGB(36, 36, 42)
         div1.BorderSizePixel = 0
         div1.ZIndex = 7
 
-        -- 5. Game / Place Info (Position y: 100)
+        -- 5. Game / Place Info (Position y: 106)
         local gameInfoFrame = Instance.new("Frame", ProfileCard)
-        gameInfoFrame.Size = UDim2.new(1, -20, 0, 24)
-        gameInfoFrame.Position = UDim2.new(0, 10, 0, 100)
+        gameInfoFrame.Size = UDim2.new(1, -20, 0, 26)
+        gameInfoFrame.Position = UDim2.new(0, 10, 0, 106)
         gameInfoFrame.BackgroundTransparency = 1
         gameInfoFrame.ZIndex = 7
 
@@ -1895,8 +1897,8 @@ function BottleLib:CreateWindow(WindowConfig)
         giLayout.SortOrder = Enum.SortOrder.LayoutOrder
         giLayout.Padding = UDim.new(0, 1)
 
-        local gameLbl = CreateMarqueeLabel(gameInfoFrame, "🎮 Loading...", T.SubText, Enum.Font.Gotham, 9, true, 1)
-        local placeLbl = CreateMarqueeLabel(gameInfoFrame, "📍 Place: " .. tostring(game.PlaceId), Color3.fromRGB(110, 110, 125), Enum.Font.Gotham, 8, false, 2)
+        local gameLbl = CreateMarqueeLabel(gameInfoFrame, "🎮 Loading...", Color3.fromRGB(240, 240, 248), Enum.Font.GothamSemibold, 10, true, 1)
+        local placeLbl = CreateMarqueeLabel(gameInfoFrame, "📍 Place: " .. tostring(game.PlaceId), Color3.fromRGB(170, 175, 190), Enum.Font.GothamMedium, 9, false, 2)
 
         task.spawn(function()
             local ok, info = pcall(function() return MarketplaceService:GetProductInfo(game.PlaceId) end)
@@ -1906,35 +1908,35 @@ function BottleLib:CreateWindow(WindowConfig)
             end
         end)
 
-        -- 6. Divider 2 (Position y: 129)
+        -- 6. Divider 2 (Position y: 138)
         local div2 = Instance.new("Frame", ProfileCard)
         div2.Size = UDim2.new(1, -20, 0, 1)
-        div2.Position = UDim2.new(0, 10, 0, 129)
-        div2.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+        div2.Position = UDim2.new(0, 10, 0, 138)
+        div2.BackgroundColor3 = Color3.fromRGB(36, 36, 42)
         div2.BorderSizePixel = 0
         div2.ZIndex = 7
 
-        -- 7. Quick Utilities: Rejoin & Server Hop (Position y: 135)
+        -- 7. Quick Utilities: Rejoin & Server Hop (Position y: 144)
         local qaRow = Instance.new("Frame", ProfileCard)
-        qaRow.Size = UDim2.new(1, -20, 0, 20)
-        qaRow.Position = UDim2.new(0, 10, 0, 135)
+        qaRow.Size = UDim2.new(1, -20, 0, 22)
+        qaRow.Position = UDim2.new(0, 10, 0, 144)
         qaRow.BackgroundTransparency = 1
         qaRow.ZIndex = 7
 
         local rejoinBtn = Instance.new("TextButton", qaRow)
         rejoinBtn.Size = UDim2.new(0.48, 0, 1, 0)
         rejoinBtn.Position = UDim2.new(0, 0, 0, 0)
-        rejoinBtn.BackgroundColor3 = Color3.fromRGB(24, 24, 26)
+        rejoinBtn.BackgroundColor3 = Color3.fromRGB(26, 26, 30)
         rejoinBtn.BackgroundTransparency = 0.2
         rejoinBtn.Text = "🔄 Rejoin"
-        rejoinBtn.TextColor3 = T.Text
+        rejoinBtn.TextColor3 = Color3.fromRGB(245, 245, 250)
         rejoinBtn.Font = Enum.Font.GothamBold
-        rejoinBtn.TextSize = 8
+        rejoinBtn.TextSize = 10
         rejoinBtn.AutoButtonColor = false
         rejoinBtn.ZIndex = 8
         Instance.new("UICorner", rejoinBtn).CornerRadius = UDim.new(0, 4)
         local rjStroke = Instance.new("UIStroke", rejoinBtn)
-        rjStroke.Color = Color3.fromRGB(45, 45, 50)
+        rjStroke.Color = Color3.fromRGB(48, 48, 54)
         rjStroke.Thickness = 1
 
         rejoinBtn.MouseButton1Click:Connect(function()
@@ -1947,17 +1949,17 @@ function BottleLib:CreateWindow(WindowConfig)
         local hopBtn = Instance.new("TextButton", qaRow)
         hopBtn.Size = UDim2.new(0.48, 0, 1, 0)
         hopBtn.Position = UDim2.new(0.52, 0, 0, 0)
-        hopBtn.BackgroundColor3 = Color3.fromRGB(24, 24, 26)
+        hopBtn.BackgroundColor3 = Color3.fromRGB(26, 26, 30)
         hopBtn.BackgroundTransparency = 0.2
         hopBtn.Text = "🌍 Hop"
-        hopBtn.TextColor3 = T.Text
+        hopBtn.TextColor3 = Color3.fromRGB(245, 245, 250)
         hopBtn.Font = Enum.Font.GothamBold
-        hopBtn.TextSize = 8
+        hopBtn.TextSize = 10
         hopBtn.AutoButtonColor = false
         hopBtn.ZIndex = 8
         Instance.new("UICorner", hopBtn).CornerRadius = UDim.new(0, 4)
         local hopStroke = Instance.new("UIStroke", hopBtn)
-        hopStroke.Color = Color3.fromRGB(45, 45, 50)
+        hopStroke.Color = Color3.fromRGB(48, 48, 54)
         hopStroke.Thickness = 1
 
         hopBtn.MouseButton1Click:Connect(function()
@@ -1984,21 +1986,21 @@ function BottleLib:CreateWindow(WindowConfig)
             end)
         end)
 
-        -- 8. Discord Button (Position y: 162)
+        -- 8. Discord Button (Position y: 172)
         local discordBtn = Instance.new("TextButton", ProfileCard)
-        discordBtn.Size = UDim2.new(1, -20, 0, 22)
-        discordBtn.Position = UDim2.new(0, 10, 0, 162)
-        discordBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 36)
+        discordBtn.Size = UDim2.new(1, -20, 0, 24)
+        discordBtn.Position = UDim2.new(0, 10, 0, 172)
+        discordBtn.BackgroundColor3 = Color3.fromRGB(22, 24, 40)
         discordBtn.BackgroundTransparency = 0.2
         discordBtn.Text = "📣 Join Discord"
-        discordBtn.TextColor3 = Color3.fromRGB(130, 130, 240)
+        discordBtn.TextColor3 = Color3.fromRGB(145, 165, 255)
         discordBtn.Font = Enum.Font.GothamBold
-        discordBtn.TextSize = 9
+        discordBtn.TextSize = 10
         discordBtn.AutoButtonColor = false
         discordBtn.ZIndex = 8
         Instance.new("UICorner", discordBtn).CornerRadius = UDim.new(0, 4)
         local dcStroke = Instance.new("UIStroke", discordBtn)
-        dcStroke.Color = Color3.fromRGB(50, 50, 90)
+        dcStroke.Color = Color3.fromRGB(60, 68, 110)
         dcStroke.Thickness = 1
 
         discordBtn.MouseButton1Click:Connect(function()
@@ -2009,7 +2011,7 @@ function BottleLib:CreateWindow(WindowConfig)
             task.delay(1.5, function()
                 if discordBtn and discordBtn.Parent then
                     discordBtn.Text = orig
-                    discordBtn.TextColor3 = Color3.fromRGB(130, 130, 240)
+                    discordBtn.TextColor3 = Color3.fromRGB(145, 165, 255)
                 end
             end)
         end)
