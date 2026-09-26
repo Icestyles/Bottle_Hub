@@ -3385,7 +3385,15 @@ function BottleLib:CreateWindow(WindowConfig)
         if type(decoded.ServerHop) == "table" then
             if decoded.ServerHop.Mode then
                 WindowConfig.ServerHopMode = decoded.ServerHop.Mode
-                if self._HopModeDropdown then pcall(function() self._HopModeDropdown:Set(decoded.ServerHop.Mode, true) end) end
+                if self._HopModeDropdown then
+                    local m = tostring(decoded.ServerHop.Mode or ""):lower()
+                    local lbl = "Nearest"
+                    if string.find(m, "lowest") then lbl = "Lowest"
+                    elseif string.find(m, "highest") then lbl = "Highest"
+                    elseif string.find(m, "random") then lbl = "Random"
+                    end
+                    pcall(function() self._HopModeDropdown:Set(lbl, true) end)
+                end
             end
             if decoded.ServerHop.BlacklistDuration then
                 WindowConfig.ServerHopBlacklistDuration = decoded.ServerHop.BlacklistDuration
@@ -3510,9 +3518,8 @@ function BottleLib:CreateWindow(WindowConfig)
         local tabTitle = configTabTitle or "Configs"
         local ConfigTab = self:CreateTab("⚙️ " .. tabTitle, true)
 
-        -- 1. Configuration Profiles Section
-        ConfigTab:CreateSection("Configuration Profiles")
-        ConfigTab:CreateLabel("Save & Load custom element presets for this game.")
+        -- 1. Profiles Section
+        ConfigTab:CreateSection("Profiles")
 
         local cfgNameInput = "default"
         ConfigTab:CreateInput("Profile Name", "default", false, function(txt)
@@ -3528,7 +3535,7 @@ function BottleLib:CreateWindow(WindowConfig)
         end)
         configDropdown:Set(selectedConfig, true)
 
-        ConfigTab:CreateButton("💾 Save Current Profile", function()
+        ConfigTab:CreateButton("Save Profile", function()
             local target = (cfgNameInput and #cfgNameInput > 0) and cfgNameInput or selectedConfig
             if self:SaveConfig(target) then
                 local refreshed = self:GetConfigList()
@@ -3538,11 +3545,11 @@ function BottleLib:CreateWindow(WindowConfig)
             end
         end)
 
-        ConfigTab:CreateButton("📂 Load Selected Profile", function()
+        ConfigTab:CreateButton("Load Profile", function()
             self:LoadConfig(selectedConfig)
         end)
 
-        ConfigTab:CreateButton("🗑️ Delete Selected Profile", function()
+        ConfigTab:CreateButton("Delete Profile", function()
             if selectedConfig == "" or selectedConfig == "default" then
                 BottleLib:Notify("Cannot delete 'default' profile or empty selection.")
                 return
@@ -3557,12 +3564,12 @@ function BottleLib:CreateWindow(WindowConfig)
         end)
 
         local autoLoadEnabled, autoLoadTarget = self:GetAutoLoad()
-        ConfigTab:CreateToggle("⚡ Auto-Load Profile on Startup", autoLoadEnabled, function(state)
+        ConfigTab:CreateToggle("Auto Load", autoLoadEnabled, function(state)
             self:SetAutoLoad(selectedConfig or "default", state)
             BottleLib:Notify("Auto-load " .. (state and "ENABLED for '" .. tostring(selectedConfig) .. "'" or "DISABLED"))
         end)
 
-        ConfigTab:CreateButton("🔄 Refresh Profile List", function()
+        ConfigTab:CreateButton("Refresh List", function()
             local refreshed = self:GetConfigList()
             if #refreshed == 0 then refreshed = {"default"} end
             configDropdown:Refresh(refreshed)
@@ -3573,48 +3580,48 @@ function BottleLib:CreateWindow(WindowConfig)
 
         ConfigTab:CreateSeparator()
 
-        -- 2. ServerHop Settings Section
-        ConfigTab:CreateSection("ServerHop Settings")
-        ConfigTab:CreateLabel("Configure server finding algorithm & parameters.")
+        -- 2. Server Hop Section
+        ConfigTab:CreateSection("Server Hop")
 
-        local hopModeOptions = {"Nearest (Low Ping Asia)", "LowestPlayer (Global)", "HighestPlayer (Global)", "Random"}
+        local hopModeOptions = {"Nearest", "Lowest", "Highest", "Random"}
         local function getModeLabel(m)
             m = tostring(m or ""):lower()
-            if string.find(m, "lowest") then return "LowestPlayer (Global)"
-            elseif string.find(m, "highest") then return "HighestPlayer (Global)"
+            if string.find(m, "lowest") then return "Lowest"
+            elseif string.find(m, "highest") then return "Highest"
             elseif string.find(m, "random") then return "Random"
-            else return "Nearest (Low Ping Asia)" end
+            else return "Nearest" end
         end
         local function getModeKey(label)
-            if string.find(label:lower(), "lowest") then return "LowestPlayer"
-            elseif string.find(label:lower(), "highest") then return "HighestPlayer"
-            elseif string.find(label:lower(), "random") then return "Random"
+            label = tostring(label or ""):lower()
+            if string.find(label, "lowest") then return "LowestPlayer"
+            elseif string.find(label, "highest") then return "HighestPlayer"
+            elseif string.find(label, "random") then return "Random"
             else return "Nearest" end
         end
 
         local hopMode = WindowConfig.ServerHopMode or "Nearest"
-        self._HopModeDropdown = ConfigTab:CreateDropdown("ServerHop Algorithm", hopModeOptions, false, function(sel)
+        self._HopModeDropdown = ConfigTab:CreateDropdown("Mode", hopModeOptions, false, function(sel)
             WindowConfig.ServerHopMode = getModeKey(sel)
             BottleLib:Notify("ServerHop Mode set to: " .. WindowConfig.ServerHopMode)
         end)
         self._HopModeDropdown:Set(getModeLabel(hopMode), true)
 
         local currentMaxPing = WindowConfig.ServerHopMaxPing or 130
-        self._HopPingSlider = ConfigTab:CreateSlider("Max Regional Ping (ms)", 50, 250, currentMaxPing, 5, function(val)
+        self._HopPingSlider = ConfigTab:CreateSlider("Max Ping", 50, 250, currentMaxPing, 5, function(val)
             WindowConfig.ServerHopMaxPing = val
         end)
 
         local currentMins = math.floor((WindowConfig.ServerHopBlacklistDuration or 600) / 60)
-        self._HopDurationSlider = ConfigTab:CreateSlider("Blacklist Duration (Mins)", 1, 30, currentMins, 1, function(val)
+        self._HopDurationSlider = ConfigTab:CreateSlider("Blacklist", 1, 30, currentMins, 1, function(val)
             WindowConfig.ServerHopBlacklistDuration = val * 60
         end)
 
         local currentPages = WindowConfig.ServerHopMaxPages or 3
-        self._HopPagesSlider = ConfigTab:CreateSlider("Scan Depth (Pages)", 1, 5, currentPages, 1, function(val)
+        self._HopPagesSlider = ConfigTab:CreateSlider("Pages", 1, 5, currentPages, 1, function(val)
             WindowConfig.ServerHopMaxPages = val
         end)
 
-        ConfigTab:CreateButton("🌍 Hop Server Now", function()
+        ConfigTab:CreateButton("Hop Server", function()
             BottleLib:ServerHop({
                 Mode = WindowConfig.ServerHopMode,
                 BlacklistDuration = WindowConfig.ServerHopBlacklistDuration,
@@ -3623,18 +3630,18 @@ function BottleLib:CreateWindow(WindowConfig)
             })
         end)
 
-        ConfigTab:CreateButton("🧹 Clear Server Blacklist Cache", function()
+        ConfigTab:CreateButton("Clear Blacklist", function()
             BottleLib:ClearHopBlacklist()
             BottleLib:Notify("ServerHop Blacklist cache cleared!")
         end)
 
         ConfigTab:CreateSeparator()
 
-        -- 3. Session & Diagnostics Section
-        ConfigTab:CreateSection("Session & Diagnostics")
-        ConfigTab:CreateLabel("• Game Place ID: " .. tostring(game.PlaceId))
-        ConfigTab:CreateLabel(string.format("• Account: %s (UID: %d)", player.Name, player.UserId))
-        ConfigTab:CreateButton("📋 Copy Config Folder Path", function()
+        -- 3. Diagnostics Section
+        ConfigTab:CreateSection("Diagnostics")
+        ConfigTab:CreateLabel("Place ID: " .. tostring(game.PlaceId))
+        ConfigTab:CreateLabel(string.format("User: %s (%d)", player.Name, player.UserId))
+        ConfigTab:CreateButton("Copy Config Path", function()
             local dir = getConfigFolder(configFolder)
             pcall(function()
                 if typeof(setclipboard) == "function" then
@@ -3646,7 +3653,7 @@ function BottleLib:CreateWindow(WindowConfig)
             BottleLib:Notify("Config folder path copied to clipboard!")
         end)
 
-        ConfigTab:CreateButton("❌ Unload Script & Clean Resources", function()
+        ConfigTab:CreateButton("Unload Script", function()
             WindowObj:Close()
         end)
 
