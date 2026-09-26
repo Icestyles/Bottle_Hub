@@ -281,6 +281,15 @@ local HOP_CACHE_FILE = "BottleLib_HopCache.json"
 BottleLib._HopCacheInMemory = {}
 BottleLib._IsHopping = false
 
+local function saveHopCache(cache)
+    BottleLib._HopCacheInMemory = cache
+    if typeof(writefile) == "function" then
+        pcall(function()
+            writefile(HOP_CACHE_FILE, HttpService:JSONEncode(cache))
+        end)
+    end
+end
+
 local function loadHopCache()
     local cache = {}
     if typeof(readfile) == "function" and typeof(isfile) == "function" then
@@ -304,15 +313,6 @@ local function loadHopCache()
         saveHopCache(cache)
     end
     return cache
-end
-
-local function saveHopCache(cache)
-    BottleLib._HopCacheInMemory = cache
-    if typeof(writefile) == "function" then
-        pcall(function()
-            writefile(HOP_CACHE_FILE, HttpService:JSONEncode(cache))
-        end)
-    end
 end
 
 function BottleLib:GetHopBlacklist(placeId)
