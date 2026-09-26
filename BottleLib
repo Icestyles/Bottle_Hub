@@ -31,6 +31,8 @@ BottleLib.BuildDate = "2026-09-26"
 BottleLib.CleanUpEvent = Instance.new("BindableEvent")
 BottleLib.ActiveScreenGui = nil
 BottleLib.ActiveNotifyContainer = nil
+BottleLib.ActiveWindow = nil
+BottleLib.TrackedResources = {}
 
 local semanticPrefixes   = {"Client", "Local", "System", "HUD", "Custom", "Core", "View", "Interface"}
 local semanticCategories = {"Menu", "Overlay", "Display", "Action", "Status", "Module", "Widget", "Layout"}
@@ -55,6 +57,140 @@ local function getGuiParent()
         return (typeof(gethui) == "function" and gethui()) or CoreGui
     end)
     return (ok and res) or player:WaitForChild("PlayerGui")
+end
+
+-- ============================================================================
+-- AUTO-GARBAGE COLLECTOR & RESOURCE TRACKER (Drawings, Connections, Threads)
+-- ============================================================================
+local function cleanResource(item)
+    if not item then return end
+
+    pcall(function()
+        -- 1. Drawing Instant Hide:
+        -- Universal across all executors (Delta, Wave, Codex, Arceus X, Fluxus, Synapse).
+        -- Setting Visible = false immediately wipes it from the screen without waiting for GC.
+        pcall(function()
+            item.Visible = false
+        end)
+        pcall(function()
+            item.Transparency = 0
+        end)
+
+        -- 2. Drawing / Instance / Custom Object Removal:
+        local isCleaned = false
+        pcall(function()
+            item:Remove()
+            isCleaned = true
+        end)
+
+        if not isCleaned then
+            pcall(function()
+                item:Destroy()
+                isCleaned = true
+            end)
+        end
+
+        pcall(function()
+            if typeof(Drawing) == "table" and typeof(Drawing.remove) == "function" then
+                Drawing.remove(item)
+            end
+        end)
+
+        -- 3. RBXScriptConnection:
+        pcall(function()
+            item:Disconnect()
+        end)
+
+        -- 4. Thread / Coroutine cancellation:
+        if type(item) == "thread" then
+            pcall(function()
+                if typeof(task) == "table" and typeof(task.cancel) == "function" then
+                    task.cancel(item)
+                else
+                    coroutine.close(item)
+                end
+            end)
+        end
+
+        -- 5. Function Callback:
+        if type(item) == "function" then
+            pcall(item)
+        end
+
+        -- 6. Table / Array of resources:
+        if type(item) == "table" and not isCleaned then
+            for _, subItem in pairs(item) do
+                cleanResource(subItem)
+            end
+        end
+    end)
+end
+
+-- Connect global library cleanup to clean library-level tracked resources
+BottleLib.CleanUpEvent.Event:Connect(function()
+    for i = #BottleLib.TrackedResources, 1, -1 do
+        local res = BottleLib.TrackedResources[i]
+        if res then
+            pcall(function()
+                cleanResource(res)
+            end)
+        end
+    end
+    table.clear(BottleLib.TrackedResources)
+end)
+
+function BottleLib:Track(item)
+    if not item then return item end
+    for _, existing in ipairs(BottleLib.TrackedResources) do
+        if existing == item then
+            return item
+        end
+    end
+    table.insert(BottleLib.TrackedResources, item)
+    return item
+end
+BottleLib.AddCleanup = BottleLib.Track
+
+function BottleLib:Untrack(item)
+    for i = #BottleLib.TrackedResources, 1, -1 do
+        if BottleLib.TrackedResources[i] == item then
+            table.remove(BottleLib.TrackedResources, i)
+            break
+        end
+    end
+    return item
+end
+BottleLib.RemoveCleanup = BottleLib.Untrack
+
+function BottleLib:CreateDrawing(drawingType, properties, targetWindow)
+    if typeof(Drawing) ~= "table" and typeof(Drawing) ~= "userdata" and typeof(Drawing) == "nil" then
+        warn("[BottleLib] Drawing API is not supported in this executor environment.")
+        return nil
+    end
+    local ok, drawObj = pcall(function()
+        return Drawing.new(drawingType)
+    end)
+    if not ok or not drawObj then
+        warn("[BottleLib] Failed to create Drawing of type: " .. tostring(drawingType))
+        return nil
+    end
+
+    if type(properties) == "table" then
+        for prop, val in pairs(properties) do
+            pcall(function() drawObj[prop] = val end)
+        end
+    end
+
+    -- Automatically track for auto-cleanup when Window or Lib closes
+    if targetWindow and typeof(targetWindow.Track) == "function" then
+        targetWindow:Track(drawObj)
+    elseif BottleLib.ActiveWindow and typeof(BottleLib.ActiveWindow.Track) == "function" then
+        BottleLib.ActiveWindow:Track(drawObj)
+    else
+        BottleLib:Track(drawObj)
+    end
+
+    return drawObj
 end
 
 -- ============================================================================
@@ -1945,10 +2081,12 @@ function BottleLib:CreateWindow(WindowConfig)
         CurrentTab = nil,
         CloseCallbacks = {},
         Connections = {},
+        TrackedResources = {},
         IsClosed = false,
         IsClosing = false,
         IsMinimized = false
     }
+    BottleLib.ActiveWindow = WindowObj
     table.insert(WindowObj.Connections, cTitleClick)
 
     if autoSidebar then
@@ -2695,6 +2833,29 @@ function BottleLib:CreateWindow(WindowConfig)
         return BtnObj
     end
 
+    function WindowObj:Track(item)
+        if not item then return item end
+        for _, existing in ipairs(self.TrackedResources) do
+            if existing == item then
+                return item
+            end
+        end
+        table.insert(self.TrackedResources, item)
+        return item
+    end
+    WindowObj.AddCleanup = WindowObj.Track
+
+    function WindowObj:Untrack(item)
+        for i = #self.TrackedResources, 1, -1 do
+            if self.TrackedResources[i] == item then
+                table.remove(self.TrackedResources, i)
+                break
+            end
+        end
+        return item
+    end
+    WindowObj.RemoveCleanup = WindowObj.Untrack
+
     function WindowObj:OnClose(callback)
         if typeof(callback) == "function" then
             table.insert(self.CloseCallbacks, callback)
@@ -2708,6 +2869,7 @@ function BottleLib:CreateWindow(WindowConfig)
 
         closeActiveDropdown()
 
+        -- 1. Disconnect all internal UI connections
         for _, conn in ipairs(self.Connections) do
             if conn and conn.Disconnect then
                 pcall(function() conn:Disconnect() end)
@@ -2715,20 +2877,43 @@ function BottleLib:CreateWindow(WindowConfig)
         end
         table.clear(self.Connections)
 
+        -- 2. Clean up all tracked external resources (Drawings, Connections, Threads, Instances, Callbacks)
+        for i = #self.TrackedResources, 1, -1 do
+            local res = self.TrackedResources[i]
+            if res then
+                pcall(function()
+                    cleanResource(res)
+                end)
+            end
+        end
+        table.clear(self.TrackedResources)
+
+        -- 3. Run all user OnClose callbacks
         for _, cb in ipairs(self.CloseCallbacks) do
             pcall(cb)
         end
         table.clear(self.CloseCallbacks)
 
+        -- 4. Destroy MiniDock
         if MiniDock and MiniDock.Parent then
             MiniDock:Destroy()
         end
 
+        -- 5. Destroy ScreenGui
         if ScreenGui and ScreenGui.Parent then
             ScreenGui:Destroy()
         end
+
+        if BottleLib.ActiveWindow == self then
+            BottleLib.ActiveWindow = nil
+        end
         BottleLib.ActiveScreenGui = nil
         BottleLib.ActiveNotifyContainer = nil
+
+        -- 6. Trigger global library cleanup
+        pcall(function()
+            BottleLib.CleanUpEvent:Fire()
+        end)
     end
 
     CloseBtn.MouseButton1Click:Connect(function()
