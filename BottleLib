@@ -630,38 +630,65 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
         local state = init and true or false
         dot.BackgroundColor3 = state and T.Accent or Color3.fromRGB(50, 50, 55)
 
-        local isUpdating = false
-        local ToggleObj = {}
+        local ToggleObj = {
+            Value = state,
+            Type = "Toggle"
+        }
 
-        function ToggleObj:Set(newState, suppressCallback)
-            if isUpdating then return end
-            if state == newState then return end
-
-            isUpdating = true
-            state = newState
-
-            TweenService:Create(dot, TweenInfo.new(0.18), {
-                BackgroundColor3 = state and T.Accent or Color3.fromRGB(50, 50, 55)
-            }):Play()
-
-            if not suppressCallback and not WindowObj.IsClosing and not WindowObj.IsClosed then
-                if callback then pcall(callback, state) end
+        local function updateVisual(newState, animate)
+            local targetColor = newState and T.Accent or Color3.fromRGB(50, 50, 55)
+            if animate then
+                TweenService:Create(dot, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                    BackgroundColor3 = targetColor
+                }):Play()
+            else
+                dot.BackgroundColor3 = targetColor
             end
-
-            isUpdating = false
         end
 
-        function ToggleObj:Get() return state end
+        -- ⚡ Upgraded :Set() method (State Guard, ignoreCallback & Non-blocking callback)
+        function ToggleObj:Set(newState, ignoreCallback)
+            -- 1. State Guard (Redundancy check)
+            if self.Value == newState then return end
+
+            self.Value = newState
+            state = newState
+
+            -- 2. Visual Animation
+            updateVisual(newState, true)
+
+            -- 3. Non-blocking callback execution via task.spawn
+            local shouldIgnore = (ignoreCallback == true)
+            if not shouldIgnore and not WindowObj.IsClosing and not WindowObj.IsClosed then
+                if callback then
+                    task.spawn(function()
+                        pcall(callback, newState)
+                    end)
+                end
+            end
+        end
+
+        function ToggleObj:GetValue()
+            return self.Value
+        end
+
+        function ToggleObj:Get()
+            return self.Value
+        end
+
+        function ToggleObj:Toggle(ignoreCallback)
+            self:Set(not self.Value, ignoreCallback)
+        end
 
         btn.MouseButton1Click:Connect(function()
             if WindowObj.IsClosing or WindowObj.IsClosed then return end
-            ToggleObj:Set(not state, false)
+            ToggleObj:Set(not ToggleObj.Value, false)
         end)
 
         if WindowObj and WindowObj.ConfigRegistry and not WindowObj._IsBuildingConfigTab then
             WindowObj.ConfigRegistry[label] = {
                 Type = "Toggle",
-                Get = function() return ToggleObj:Get() end,
+                Get = function() return ToggleObj:GetValue() end,
                 Set = function(val, suppress) ToggleObj:Set(val, suppress) end
             }
         end
@@ -1016,29 +1043,42 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
         local currentKey = defaultKey
         local binding = false
         local conn = nil
-        local isUpdating = false
 
-        local RetObj = {}
+        local RetObj = {
+            Value = state,
+            Type = "ToggleKeybind"
+        }
 
-        function RetObj:SetState(newState, suppressCallback)
-            if isUpdating then return end
-            if state == newState then return end
-            isUpdating = true
+        function RetObj:SetState(newState, ignoreCallback)
+            -- 1. State Guard (Redundancy check)
+            if self.Value == newState then return end
+
+            self.Value = newState
             state = newState
-            TweenService:Create(dot, TweenInfo.new(0.18), {
+
+            -- 2. Visual Animation
+            TweenService:Create(dot, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
                 BackgroundColor3 = state and T.Accent or Color3.fromRGB(50, 50, 55)
             }):Play()
-            if not suppressCallback and not WindowObj.IsClosing and not WindowObj.IsClosed then
-                if callback then pcall(callback, state, currentKey, true) end
+
+            -- 3. Non-blocking callback execution via task.spawn
+            local shouldIgnore = (ignoreCallback == true)
+            if not shouldIgnore and not WindowObj.IsClosing and not WindowObj.IsClosed then
+                if callback then
+                    task.spawn(function()
+                        pcall(callback, state, currentKey, true)
+                    end)
+                end
             end
-            isUpdating = false
         end
 
-        function RetObj:Get() return state, currentKey end
+        function RetObj:GetValue() return self.Value, currentKey end
+        function RetObj:Get() return self.Value, currentKey end
+        function RetObj:Toggle(ignoreCallback) self:SetState(not self.Value, ignoreCallback) end
 
         btn.MouseButton1Click:Connect(function()
             if WindowObj.IsClosing or WindowObj.IsClosed then return end
-            RetObj:SetState(not state, false)
+            RetObj:SetState(not RetObj.Value, false)
         end)
 
         b.MouseButton1Click:Connect(function()
@@ -1057,21 +1097,25 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
                         b.Text = input.KeyCode.Name
                         currentKey = input.KeyCode
                     end
-                    if callback and not WindowObj.IsClosing then callback(state, currentKey, false) end
+                    if callback and not WindowObj.IsClosing and not WindowObj.IsClosed then
+                        task.spawn(function()
+                            pcall(callback, state, currentKey, false)
+                        end)
+                    end
                 end
             end)
             table.insert(WindowObj.Connections, conn)
         end)
 
-        function RetObj:Set(val, suppressCallback)
+        function RetObj:Set(val, ignoreCallback)
             if type(val) == "table" then
-                if val.State ~= nil then self:SetState(val.State, suppressCallback) end
+                if val.State ~= nil then self:SetState(val.State, ignoreCallback) end
                 if val.Key ~= nil then
                     local ok, k = pcall(function() return Enum.KeyCode[val.Key] end)
                     if ok and k then currentKey = k; b.Text = k.Name end
                 end
             elseif type(val) == "boolean" then
-                self:SetState(val, suppressCallback)
+                self:SetState(val, ignoreCallback)
             end
         end
 
@@ -1080,7 +1124,7 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
                 Type = "ToggleKeybind",
                 Get = function()
                     return {
-                        State = state,
+                        State = RetObj.Value,
                         Key = currentKey and currentKey.Name or "NONE"
                     }
                 end,
