@@ -3635,28 +3635,6 @@ function BottleLib:CreateWindow(WindowConfig)
             BottleLib:Notify("ServerHop Blacklist cache cleared!")
         end)
 
-        ConfigTab:CreateSeparator()
-
-        -- 3. Diagnostics Section
-        ConfigTab:CreateSection("Diagnostics")
-        ConfigTab:CreateLabel("Place ID: " .. tostring(game.PlaceId))
-        ConfigTab:CreateLabel(string.format("User: %s (%d)", player.Name, player.UserId))
-        ConfigTab:CreateButton("Copy Config Path", function()
-            local dir = getConfigFolder(configFolder)
-            pcall(function()
-                if typeof(setclipboard) == "function" then
-                    setclipboard(dir)
-                elseif typeof(toclipboard) == "function" then
-                    toclipboard(dir)
-                end
-            end)
-            BottleLib:Notify("Config folder path copied to clipboard!")
-        end)
-
-        ConfigTab:CreateButton("Unload Script", function()
-            WindowObj:Close()
-        end)
-
         self._IsBuildingConfigTab = false
 
         -- Execute Auto-Load if enabled
