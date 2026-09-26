@@ -333,6 +333,104 @@ function BottleLib:ClearHopBlacklist(placeId)
     BottleLib:Notify("Server hop blacklist cleared.")
 end
 
+function BottleLib:CheckHopArrival(windowObj, windowConfig)
+    if BottleLib._HasCheckedArrival then return end
+    BottleLib._HasCheckedArrival = true
+
+    task.spawn(function()
+        task.wait(1.5) -- Allow network connection & ping telemetry to stabilize
+        local cache = loadHopCache()
+        local pending = cache["_PendingHop"]
+        if not pending or typeof(pending) ~= "table" then return end
+
+        local now = os.time()
+        -- Invalidate if older than 120 seconds
+        if not pending.Timestamp or (now - pending.Timestamp) > 120 then
+            cache["_PendingHop"] = nil
+            saveHopCache(cache)
+            return
+        end
+
+        local currentJob = game.JobId or ""
+        local prevJob = pending.PreviousJobId or ""
+        local maxPing = tonumber(pending.MaxPing or (windowConfig and windowConfig.ServerHopMaxPing) or 130)
+        local retries = tonumber(pending.Retries or 0)
+        local rawMode = pending.TargetMode or "Nearest"
+        local isNearest = (rawMode == "Nearest" or string.find(rawMode:lower(), "nearest") ~= nil)
+
+        -- 1. Anti-Same-Server Guard: Did Roblox matchmaker place us back into the exact same server instance?
+        if #currentJob > 0 and currentJob == prevJob then
+            cache["_PendingHop"] = nil
+            saveHopCache(cache)
+
+            if retries < 3 then
+                BottleLib:Notify(string.format("⚠️ Reconnected to same server. Rerolling nearest regional server (attempt %d/3)...", retries + 1))
+                task.wait(1.5)
+                BottleLib:ServerHop({
+                    Mode = rawMode,
+                    MaxPing = maxPing,
+                    Retries = retries + 1
+                })
+            else
+                BottleLib:Notify("ℹ️ No alternative regional servers available right now.")
+            end
+            return
+        end
+
+        -- 2. Latency Guard & Auto-Bouncer: For "Nearest" mode, verify ping is in Singapore/Tokyo range
+        if isNearest then
+            local currentPing = 0
+            pcall(function()
+                currentPing = math.floor(player:GetNetworkPing() * 1000)
+            end)
+            if currentPing <= 0 then
+                pcall(function()
+                    local stats = game:GetService("Stats")
+                    local net = stats and stats:FindFirstChild("Network")
+                    local sItem = net and net:FindFirstChild("ServerStatsItem")
+                    local dPing = sItem and sItem:FindFirstChild("Data Ping")
+                    if dPing then currentPing = math.floor(dPing:GetValue()) end
+                end)
+            end
+
+            if currentPing > maxPing and retries < 3 then
+                -- Player landed in a far-away data center (US/EU with 250ms+)
+                BottleLib:Notify(string.format("⚠️ High ping detected (%dms > %dms). Bouncing to Singapore/Tokyo (attempt %d/3)...", currentPing, maxPing, retries + 1))
+                
+                -- Blacklist this high-ping server
+                local placeKey = tostring(game.PlaceId)
+                local placeCache = cache[placeKey] or {}
+                if #currentJob > 0 then
+                    placeCache[currentJob] = now + ((windowConfig and windowConfig.ServerHopBlacklistDuration) or 600)
+                end
+                cache[placeKey] = placeCache
+                cache["_PendingHop"] = nil
+                saveHopCache(cache)
+
+                task.wait(1.5)
+                BottleLib:ServerHop({
+                    Mode = "Nearest",
+                    MaxPing = maxPing,
+                    Retries = retries + 1
+                })
+                return
+            else
+                if currentPing > 0 then
+                    BottleLib:Notify(string.format("🟢 Regional Server connected! Ping: %dms (Region: Asia/Nearest)", currentPing))
+                else
+                    BottleLib:Notify("🟢 Connected to nearest server successfully!")
+                end
+            end
+        else
+            BottleLib:Notify(string.format("🟢 Server hop completed (Mode: %s)!", rawMode))
+        end
+
+        -- Cleanup pending flag after successful arrival
+        cache["_PendingHop"] = nil
+        saveHopCache(cache)
+    end)
+end
+
 function BottleLib:ServerHop(options)
     if BottleLib._IsHopping then
         BottleLib:Notify("Server hop already in progress...")
@@ -340,13 +438,18 @@ function BottleLib:ServerHop(options)
     end
 
     options = options or {}
-    local mode              = options.Mode or options.Priority or "Nearest" -- "Nearest" | "LowestPlayer" | "Random" | "HighestPlayer"
+    local rawMode           = options.Mode or options.Priority or "Nearest"
     local blacklistDuration = options.BlacklistDuration or 600 -- 10 mins (in seconds)
     local maxPages          = math.clamp(options.MaxPages or 3, 1, 10)
     local minPlayers        = options.MinPlayers or 1
     local playerMargin      = options.PlayerMargin or 1
+    local maxPing           = tonumber(options.MaxPing) or 130
     local placeId           = options.PlaceId or game.PlaceId
     local placeKey          = tostring(placeId)
+    local retries           = tonumber(options.Retries) or 0
+
+    local isNearestMode = (rawMode == "Nearest" or string.find(rawMode:lower(), "nearest") ~= nil or string.find(rawMode:lower(), "low ping") ~= nil)
+    local mode = isNearestMode and "Nearest" or (string.find(rawMode:lower(), "lowest") and "LowestPlayer" or (string.find(rawMode:lower(), "highest") and "HighestPlayer" or "Random"))
 
     BottleLib._IsHopping = true
     task.spawn(function()
@@ -374,8 +477,38 @@ function BottleLib:ServerHop(options)
             prunedPlaceCache[game.JobId] = now + blacklistDuration
         end
         cache[placeKey] = prunedPlaceCache
+
+        -- Store _PendingHop for arrival verification
+        cache["_PendingHop"] = {
+            PreviousJobId = game.JobId or "",
+            PlaceId = placeId,
+            TargetMode = mode,
+            MaxPing = maxPing,
+            Timestamp = now,
+            Retries = retries
+        }
         saveHopCache(cache)
 
+        -- ====================================================================
+        -- ENGINE 1: Native Regional Matchmaker (For "Nearest" - Low Ping Asia)
+        -- ====================================================================
+        if isNearestMode then
+            BottleLib:Notify("Routing to nearest regional server (Singapore / Tokyo low ping)...")
+            task.wait(0.5)
+
+            local okTeleport, err = pcall(function()
+                TeleportService:Teleport(placeId, player)
+            end)
+
+            if not okTeleport then
+                finishHop(false, "Regional teleport failed: " .. tostring(err))
+            end
+            return
+        end
+
+        -- ====================================================================
+        -- ENGINE 2: Global Instance Pool (For "LowestPlayer", "HighestPlayer", "Random")
+        -- ====================================================================
         if activeBlacklistCount > 0 then
             BottleLib:Notify(string.format("Scanning servers (excluding %d in blacklist)...", activeBlacklistCount))
         else
@@ -437,7 +570,7 @@ function BottleLib:ServerHop(options)
         -- Handle case where candidate pool is empty because all are blacklisted
         if #candidateServers == 0 then
             if activeBlacklistCount > 0 then
-                BottleLib:Notify("All servers blacklisted. Resetting history & retrying...")
+                BottleLib:Notify("All candidate servers blacklisted. Resetting history & retrying...")
                 cache[placeKey] = { [game.JobId] = now + blacklistDuration }
                 saveHopCache(cache)
                 task.wait(1)
@@ -446,13 +579,15 @@ function BottleLib:ServerHop(options)
                     Mode = mode,
                     BlacklistDuration = blacklistDuration,
                     MaxPages = maxPages,
-                    MinPlayers = minPlayers
+                    MinPlayers = minPlayers,
+                    MaxPing = maxPing,
+                    Retries = retries + 1
                 })
                 return
             else
-                BottleLib:Notify("No alternative servers found. Retrying with default matchmaker...")
-                pcall(function() TeleportService:Teleport(placeId, player) end)
-                finishHop(false)
+                BottleLib:Notify("No alternative servers found. Retrying with regional matchmaker...")
+                local ok, err = pcall(function() TeleportService:Teleport(placeId, player) end)
+                if not ok then finishHop(false, "Teleport failed: " .. tostring(err)) end
                 return
             end
         end
@@ -469,28 +604,8 @@ function BottleLib:ServerHop(options)
                 return (a.playing or 0) > (b.playing or 0)
             end)
             chosenServer = candidateServers[1]
-        elseif mode == "Random" then
+        else -- "Random"
             chosenServer = candidateServers[math.random(1, #candidateServers)]
-        else -- "Nearest" / "Balanced" (Default Option A)
-            -- Balanced criteria: Filter servers having 25% - 85% capacity with free slots
-            local balanced = {}
-            for _, s in ipairs(candidateServers) do
-                local p = s.playing or 0
-                local m = s.maxPlayers or 1
-                local ratio = p / m
-                if ratio >= 0.25 and ratio <= 0.85 then
-                    table.insert(balanced, s)
-                end
-            end
-
-            local pool = (#balanced > 0 and balanced) or candidateServers
-            table.sort(pool, function(a, b)
-                local diffA = math.abs((a.playing or 0) - ((a.maxPlayers or 20) * 0.6))
-                local diffB = math.abs((b.playing or 0) - ((b.maxPlayers or 20) * 0.6))
-                return diffA < diffB
-            end)
-            local topSlice = math.min(#pool, 3)
-            chosenServer = pool[math.random(1, topSlice)]
         end
 
         if not chosenServer then
@@ -1990,6 +2105,7 @@ function BottleLib:CreateWindow(WindowConfig)
     local serverHopMode     = WindowConfig.ServerHopMode or "Nearest"
     local serverHopDuration = WindowConfig.ServerHopBlacklistDuration or 600
     local serverHopPages    = WindowConfig.ServerHopMaxPages or 3
+    local serverHopMaxPing  = WindowConfig.ServerHopMaxPing or 130
     local configFolder      = WindowConfig.ConfigFolder or "BottleLib"
     local configTabTitle    = WindowConfig.ConfigTabTitle or "Configs"
     local autoConfig        = (WindowConfig.AutoConfig ~= false)
@@ -2518,7 +2634,8 @@ function BottleLib:CreateWindow(WindowConfig)
             BottleLib:ServerHop({
                 Mode = serverHopMode,
                 BlacklistDuration = serverHopDuration,
-                MaxPages = serverHopPages
+                MaxPages = serverHopPages,
+                MaxPing = serverHopMaxPing
             })
         end)
 
@@ -3203,7 +3320,8 @@ function BottleLib:CreateWindow(WindowConfig)
             ServerHop = {
                 Mode = WindowConfig.ServerHopMode or "Nearest",
                 BlacklistDuration = WindowConfig.ServerHopBlacklistDuration or 600,
-                MaxPages = WindowConfig.ServerHopMaxPages or 3
+                MaxPages = WindowConfig.ServerHopMaxPages or 3,
+                MaxPing = WindowConfig.ServerHopMaxPing or 130
             },
             Elements = {}
         }
@@ -3276,6 +3394,10 @@ function BottleLib:CreateWindow(WindowConfig)
             if decoded.ServerHop.MaxPages then
                 WindowConfig.ServerHopMaxPages = decoded.ServerHop.MaxPages
                 if self._HopPagesSlider then pcall(function() self._HopPagesSlider:Set(decoded.ServerHop.MaxPages, true) end) end
+            end
+            if decoded.ServerHop.MaxPing then
+                WindowConfig.ServerHopMaxPing = decoded.ServerHop.MaxPing
+                if self._HopPingSlider then pcall(function() self._HopPingSlider:Set(decoded.ServerHop.MaxPing, true) end) end
             end
         end
 
@@ -3455,12 +3577,32 @@ function BottleLib:CreateWindow(WindowConfig)
         ConfigTab:CreateSection("ServerHop Settings")
         ConfigTab:CreateLabel("Configure server finding algorithm & parameters.")
 
+        local hopModeOptions = {"Nearest (Low Ping Asia)", "LowestPlayer (Global)", "HighestPlayer (Global)", "Random"}
+        local function getModeLabel(m)
+            m = tostring(m or ""):lower()
+            if string.find(m, "lowest") then return "LowestPlayer (Global)"
+            elseif string.find(m, "highest") then return "HighestPlayer (Global)"
+            elseif string.find(m, "random") then return "Random"
+            else return "Nearest (Low Ping Asia)" end
+        end
+        local function getModeKey(label)
+            if string.find(label:lower(), "lowest") then return "LowestPlayer"
+            elseif string.find(label:lower(), "highest") then return "HighestPlayer"
+            elseif string.find(label:lower(), "random") then return "Random"
+            else return "Nearest" end
+        end
+
         local hopMode = WindowConfig.ServerHopMode or "Nearest"
-        self._HopModeDropdown = ConfigTab:CreateDropdown("ServerHop Algorithm", {"Nearest", "LowestPlayer", "HighestPlayer", "Random"}, false, function(sel)
-            WindowConfig.ServerHopMode = sel
-            BottleLib:Notify("ServerHop Mode set to: " .. sel)
+        self._HopModeDropdown = ConfigTab:CreateDropdown("ServerHop Algorithm", hopModeOptions, false, function(sel)
+            WindowConfig.ServerHopMode = getModeKey(sel)
+            BottleLib:Notify("ServerHop Mode set to: " .. WindowConfig.ServerHopMode)
         end)
-        self._HopModeDropdown:Set(hopMode, true)
+        self._HopModeDropdown:Set(getModeLabel(hopMode), true)
+
+        local currentMaxPing = WindowConfig.ServerHopMaxPing or 130
+        self._HopPingSlider = ConfigTab:CreateSlider("Max Regional Ping (ms)", 50, 250, currentMaxPing, 5, function(val)
+            WindowConfig.ServerHopMaxPing = val
+        end)
 
         local currentMins = math.floor((WindowConfig.ServerHopBlacklistDuration or 600) / 60)
         self._HopDurationSlider = ConfigTab:CreateSlider("Blacklist Duration (Mins)", 1, 30, currentMins, 1, function(val)
@@ -3476,7 +3618,8 @@ function BottleLib:CreateWindow(WindowConfig)
             BottleLib:ServerHop({
                 Mode = WindowConfig.ServerHopMode,
                 BlacklistDuration = WindowConfig.ServerHopBlacklistDuration,
-                MaxPages = WindowConfig.ServerHopMaxPages
+                MaxPages = WindowConfig.ServerHopMaxPages,
+                MaxPing = WindowConfig.ServerHopMaxPing
             })
         end)
 
@@ -3528,6 +3671,9 @@ function BottleLib:CreateWindow(WindowConfig)
             end
         end)
     end
+
+    -- Check for arrival from previous ServerHop (Region verification & Ping Guard)
+    BottleLib:CheckHopArrival(WindowObj, WindowConfig)
 
     return WindowObj
 end
