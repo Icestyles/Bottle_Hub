@@ -139,6 +139,263 @@ function BottleLib:Notify(msg)
 end
 
 -- ============================================================================
+-- [1.5] SMART SERVER HOP SYSTEM (Nearest Priority & 10-Min Blacklist Persistence)
+-- ============================================================================
+local HOP_CACHE_FILE = "BottleLib_HopCache.json"
+BottleLib._HopCacheInMemory = {}
+BottleLib._IsHopping = false
+
+local function loadHopCache()
+    local cache = {}
+    if typeof(readfile) == "function" and typeof(isfile) == "function" then
+        local ok, content = pcall(function()
+            if isfile(HOP_CACHE_FILE) then
+                return readfile(HOP_CACHE_FILE)
+            end
+        end)
+        if ok and typeof(content) == "string" and #content > 0 then
+            local ok2, data = pcall(function() return HttpService:JSONDecode(content) end)
+            if ok2 and typeof(data) == "table" then
+                cache = data
+            end
+        end
+    end
+    if not next(cache) and next(BottleLib._HopCacheInMemory) then
+        cache = BottleLib._HopCacheInMemory
+    end
+    return cache
+end
+
+local function saveHopCache(cache)
+    BottleLib._HopCacheInMemory = cache
+    if typeof(writefile) == "function" then
+        pcall(function()
+            writefile(HOP_CACHE_FILE, HttpService:JSONEncode(cache))
+        end)
+    end
+end
+
+function BottleLib:GetHopBlacklist(placeId)
+    placeId = tostring(placeId or game.PlaceId)
+    local cache = loadHopCache()
+    local placeCache = cache[placeId] or {}
+    local activeBlacklist = {}
+    local now = os.time()
+    for jid, expireTime in pairs(placeCache) do
+        if typeof(expireTime) == "number" and expireTime > now then
+            activeBlacklist[jid] = expireTime
+        end
+    end
+    return activeBlacklist
+end
+
+function BottleLib:ClearHopBlacklist(placeId)
+    placeId = tostring(placeId or game.PlaceId)
+    local cache = loadHopCache()
+    cache[placeId] = {}
+    saveHopCache(cache)
+    BottleLib:Notify("Server hop blacklist cleared.")
+end
+
+function BottleLib:ServerHop(options)
+    if BottleLib._IsHopping then
+        BottleLib:Notify("Server hop already in progress...")
+        return
+    end
+
+    options = options or {}
+    local mode              = options.Mode or options.Priority or "Nearest" -- "Nearest" | "LowestPlayer" | "Random" | "HighestPlayer"
+    local blacklistDuration = options.BlacklistDuration or 600 -- 10 mins (in seconds)
+    local maxPages          = math.clamp(options.MaxPages or 3, 1, 10)
+    local minPlayers        = options.MinPlayers or 1
+    local playerMargin      = options.PlayerMargin or 1
+    local placeId           = options.PlaceId or game.PlaceId
+    local placeKey          = tostring(placeId)
+
+    BottleLib._IsHopping = true
+    task.spawn(function()
+        local function finishHop(success, msg)
+            BottleLib._IsHopping = false
+            if msg then BottleLib:Notify(msg) end
+        end
+
+        local cache = loadHopCache()
+        local placeCache = cache[placeKey] or {}
+        local now = os.time()
+
+        -- Prune expired entries
+        local prunedPlaceCache = {}
+        local activeBlacklistCount = 0
+        for jid, exp in pairs(placeCache) do
+            if typeof(exp) == "number" and exp > now then
+                prunedPlaceCache[jid] = exp
+                activeBlacklistCount = activeBlacklistCount + 1
+            end
+        end
+
+        -- Always ensure current server is blacklisted
+        if game.JobId and #game.JobId > 0 then
+            prunedPlaceCache[game.JobId] = now + blacklistDuration
+        end
+        cache[placeKey] = prunedPlaceCache
+        saveHopCache(cache)
+
+        if activeBlacklistCount > 0 then
+            BottleLib:Notify(string.format("Scanning servers (excluding %d in blacklist)...", activeBlacklistCount))
+        else
+            BottleLib:Notify("Scanning servers for optimal connection...")
+        end
+
+        local httpReq = (syn and syn.request) or (http and http.request) or http_request or request
+        local cursor = ""
+        local candidateServers = {}
+
+        -- Fetch up to maxPages of servers
+        for page = 1, maxPages do
+            local sortParam = (mode == "LowestPlayer" and "Asc") or "Desc"
+            local url = string.format("https://games.roblox.com/v1/games/%s/servers/Public?sortOrder=%s&limit=100%s",
+                tostring(placeId),
+                sortParam,
+                (cursor ~= "" and ("&cursor=" .. cursor) or "")
+            )
+
+            local ok, res
+            if httpReq then
+                ok, res = pcall(function() return httpReq({Url = url, Method = "GET"}) end)
+            else
+                ok, res = pcall(function()
+                    return { Body = game:HttpGet(url) }
+                end)
+            end
+
+            if not ok or not res or not res.Body then
+                break
+            end
+
+            local okJson, decoded = pcall(function() return HttpService:JSONDecode(res.Body) end)
+            if not okJson or not decoded or not decoded.data then
+                break
+            end
+
+            for _, s in ipairs(decoded.data) do
+                local sId = s.id
+                local playing = tonumber(s.playing) or 0
+                local maxP = tonumber(s.maxPlayers) or 0
+
+                -- Filter conditions
+                local notCurrent = (sId ~= game.JobId)
+                local notBlacklisted = (prunedPlaceCache[sId] == nil or prunedPlaceCache[sId] <= now)
+                local notFull = (playing <= (maxP - playerMargin))
+                local notEmpty = (playing >= minPlayers)
+
+                if notCurrent and notBlacklisted and notFull and notEmpty then
+                    table.insert(candidateServers, s)
+                end
+            end
+
+            cursor = decoded.nextPageCursor or ""
+            if cursor == "" then break end
+            task.wait(0.2) -- gentle rate-limit buffer
+        end
+
+        -- Handle case where candidate pool is empty because all are blacklisted
+        if #candidateServers == 0 then
+            if activeBlacklistCount > 0 then
+                BottleLib:Notify("All servers blacklisted. Resetting history & retrying...")
+                cache[placeKey] = { [game.JobId] = now + blacklistDuration }
+                saveHopCache(cache)
+                task.wait(1)
+                BottleLib._IsHopping = false
+                BottleLib:ServerHop({
+                    Mode = mode,
+                    BlacklistDuration = blacklistDuration,
+                    MaxPages = maxPages,
+                    MinPlayers = minPlayers
+                })
+                return
+            else
+                BottleLib:Notify("No alternative servers found. Retrying with default matchmaker...")
+                pcall(function() TeleportService:Teleport(placeId, player) end)
+                finishHop(false)
+                return
+            end
+        end
+
+        -- Selection Strategy based on Mode
+        local chosenServer = nil
+        if mode == "LowestPlayer" then
+            table.sort(candidateServers, function(a, b)
+                return (a.playing or 0) < (b.playing or 0)
+            end)
+            chosenServer = candidateServers[1]
+        elseif mode == "HighestPlayer" then
+            table.sort(candidateServers, function(a, b)
+                return (a.playing or 0) > (b.playing or 0)
+            end)
+            chosenServer = candidateServers[1]
+        elseif mode == "Random" then
+            chosenServer = candidateServers[math.random(1, #candidateServers)]
+        else -- "Nearest" / "Balanced" (Default Option A)
+            -- Balanced criteria: Filter servers having 25% - 85% capacity with free slots
+            local balanced = {}
+            for _, s in ipairs(candidateServers) do
+                local p = s.playing or 0
+                local m = s.maxPlayers or 1
+                local ratio = p / m
+                if ratio >= 0.25 and ratio <= 0.85 then
+                    table.insert(balanced, s)
+                end
+            end
+
+            local pool = (#balanced > 0 and balanced) or candidateServers
+            table.sort(pool, function(a, b)
+                local diffA = math.abs((a.playing or 0) - ((a.maxPlayers or 20) * 0.6))
+                local diffB = math.abs((b.playing or 0) - ((b.maxPlayers or 20) * 0.6))
+                return diffA < diffB
+            end)
+            local topSlice = math.min(#pool, 3)
+            chosenServer = pool[math.random(1, topSlice)]
+        end
+
+        if not chosenServer then
+            finishHop(false, "Failed to pick server.")
+            return
+        end
+
+        -- Record chosen server in blacklist before teleporting
+        prunedPlaceCache[chosenServer.id] = now + blacklistDuration
+        cache[placeKey] = prunedPlaceCache
+        saveHopCache(cache)
+
+        BottleLib:Notify(string.format("Joining server [%d/%d players] (Mode: %s)...", 
+            chosenServer.playing or 0, 
+            chosenServer.maxPlayers or 0, 
+            mode
+        ))
+
+        task.wait(0.5)
+        local okTeleport, err = pcall(function()
+            TeleportService:TeleportToPlaceInstance(placeId, chosenServer.id, player)
+        end)
+
+        if not okTeleport then
+            finishHop(false, "Teleport failed: " .. tostring(err))
+        end
+    end)
+end
+
+-- Teleport Failure Protection: automatically blacklist and retry if target server rejects
+pcall(function()
+    TeleportService.TeleportInitFailed:Connect(function(failedPlayer, result, errorMessage)
+        if failedPlayer == player then
+            BottleLib:Notify("Teleport rejected (" .. tostring(result.Name) .. "). Retrying hop...")
+            task.wait(2)
+            BottleLib:ServerHop()
+        end
+    end)
+end)
+
+-- ============================================================================
 -- [2] UI ELEMENTS API (Glassmorphic Elements)
 -- ============================================================================
 local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, GlobalOverlayClose, _depth)
@@ -1446,6 +1703,9 @@ function BottleLib:CreateWindow(WindowConfig)
     if showMobileToggle == nil then
         showMobileToggle = UserInputService.TouchEnabled
     end
+    local serverHopMode     = WindowConfig.ServerHopMode or "Nearest"
+    local serverHopDuration = WindowConfig.ServerHopBlacklistDuration or 600
+    local serverHopPages    = WindowConfig.ServerHopMaxPages or 3
 
     -- Theme colors matching Lastest lib.txt
     local T = {
@@ -1963,27 +2223,11 @@ function BottleLib:CreateWindow(WindowConfig)
         hopStroke.Thickness = 1
 
         hopBtn.MouseButton1Click:Connect(function()
-            BottleLib:Notify("Searching public servers...")
-            task.spawn(function()
-                local req = (syn and syn.request) or (http and http.request) or http_request or request
-                if req then
-                    local url = "https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100"
-                    local ok, res = pcall(function() return req({Url = url, Method = "GET"}) end)
-                    if ok and res and res.Body then
-                        local ok2, decoded = pcall(function() return HttpService:JSONDecode(res.Body) end)
-                        if ok2 and decoded and decoded.data then
-                            for _, v in ipairs(decoded.data) do
-                                if v.id ~= game.JobId and v.playing < v.maxPlayers then
-                                    BottleLib:Notify("Server found! Teleporting...")
-                                    pcall(function() TeleportService:TeleportToPlaceInstance(game.PlaceId, v.id, player) end)
-                                    return
-                                end
-                            end
-                        end
-                    end
-                end
-                pcall(function() TeleportService:Teleport(game.PlaceId, player) end)
-            end)
+            BottleLib:ServerHop({
+                Mode = serverHopMode,
+                BlacklistDuration = serverHopDuration,
+                MaxPages = serverHopPages
+            })
         end)
 
         -- 8. Discord Button (Position y: 172)
