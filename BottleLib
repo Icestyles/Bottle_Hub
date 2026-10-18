@@ -1366,15 +1366,12 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
         label.TextSize = 11
         label.TextTruncate = Enum.TextTruncate.AtEnd
 
-        local arrow = Instance.new("TextLabel", btn)
-        arrow.Size = UDim2.new(0, 20, 1, 0)
-        arrow.Position = UDim2.new(1, -26, 0, 0)
+        local arrow = Instance.new("ImageLabel", btn)
+        arrow.Size = UDim2.new(0, 14, 0, 14)
+        arrow.Position = UDim2.new(1, -24, 0.5, -7)
         arrow.BackgroundTransparency = 1
-        arrow.Text = "▾"
-        arrow.TextColor3 = T.SubText
-        arrow.Font = Enum.Font.GothamBold
-        arrow.TextSize = 13
-        arrow.TextXAlignment = Enum.TextXAlignment.Center
+        arrow.Image = "rbxassetid://6031091004"
+        arrow.ImageColor3 = T.SubText
 
         local function escapeXml(str)
             return tostring(str or ""):gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;"):gsub('"', "&quot;"):gsub("'", "&apos;")
@@ -1414,21 +1411,27 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
                 WindowObj.ActiveDropdown = nil
             end
             GlobalOverlayClose.Visible = false
-            arrow.Text = "▾"
-            arrow.TextColor3 = T.SubText
+            TweenService:Create(arrow, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                Rotation = 0,
+                ImageColor3 = T.SubText
+            }):Play()
             stroke.Color = T.Stroke
             stroke.Transparency = 0.4
         end
 
         DropOverlay:GetPropertyChangedSignal("Visible"):Connect(function()
             if not DropOverlay.Visible then
-                arrow.Text = "▾"
-                arrow.TextColor3 = T.SubText
+                TweenService:Create(arrow, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                    Rotation = 0,
+                    ImageColor3 = T.SubText
+                }):Play()
                 stroke.Color = T.Stroke
                 stroke.Transparency = 0.4
             else
-                arrow.Text = "▴"
-                arrow.TextColor3 = T.Accent
+                TweenService:Create(arrow, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                    Rotation = 180,
+                    ImageColor3 = T.Accent
+                }):Play()
                 stroke.Color = T.Accent
                 stroke.Transparency = 0.2
             end
@@ -1451,7 +1454,7 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
                 optBtn.Size = UDim2.new(1, 0, 0, 28)
                 optBtn.BackgroundColor3 = isCurrent and Color3.fromRGB(35, 35, 42) or Color3.fromRGB(20, 20, 20)
                 optBtn.BackgroundTransparency = isCurrent and 0.1 or 0.3
-                optBtn.Text = (isCurrent and "  ▸ " or "    ") .. itemStr
+                optBtn.Text = (isCurrent and "  > " or "    ") .. itemStr
                 optBtn.TextColor3 = isCurrent and T.Accent or T.Text
                 optBtn.Font = isCurrent and Enum.Font.GothamBold or Enum.Font.GothamMedium
                 optBtn.TextSize = 11
