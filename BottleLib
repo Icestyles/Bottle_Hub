@@ -16,6 +16,7 @@ local Players            = safeService("Players")
 local HttpService        = safeService("HttpService")
 local MarketplaceService = safeService("MarketplaceService")
 local TeleportService    = safeService("TeleportService")
+local VirtualUser        = safeService("VirtualUser")
 
 local player = Players.LocalPlayer
 while not player do
@@ -25,7 +26,7 @@ end
 
 local BottleLib = {}
 BottleLib.__index = BottleLib
-BottleLib.Version = "2.5.2-dev"
+BottleLib.Version = "2.5.3-dev"
 BottleLib.Edition = "Glassplane UI (Dock & Profile)"
 BottleLib.BuildDate = "2026-10-18"
 BottleLib.CleanUpEvent = Instance.new("BindableEvent")
@@ -128,6 +129,7 @@ end
 
 -- Connect global library cleanup to clean library-level tracked resources
 BottleLib.CleanUpEvent.Event:Connect(function()
+    BottleLib:DisableAntiAFK()
     for i = #BottleLib.TrackedResources, 1, -1 do
         local res = BottleLib.TrackedResources[i]
         if res then
@@ -191,6 +193,46 @@ function BottleLib:CreateDrawing(drawingType, properties, targetWindow)
     end
 
     return drawObj
+end
+
+-- ============================================================================
+-- 🛡️ BUILT-IN ANTI-AFK ENGINE (20-Minute Idle Kick Prevention)
+-- ============================================================================
+BottleLib.AntiAFKConnection = nil
+BottleLib.AntiAFKEnabled = false
+
+function BottleLib:EnableAntiAFK()
+    if self.AntiAFKConnection then
+        self.AntiAFKEnabled = true
+        return
+    end
+    self.AntiAFKEnabled = true
+
+    local ok, conn = pcall(function()
+        return player.Idled:Connect(function()
+            if not BottleLib.AntiAFKEnabled then return end
+            pcall(function()
+                if VirtualUser then
+                    VirtualUser:CaptureController()
+                    VirtualUser:ClickButton2(Vector2.new(0, 0))
+                end
+            end)
+        end)
+    end)
+
+    if ok and conn then
+        self.AntiAFKConnection = conn
+        self:Track(conn)
+    end
+end
+
+function BottleLib:DisableAntiAFK()
+    self.AntiAFKEnabled = false
+    if self.AntiAFKConnection then
+        pcall(function() self.AntiAFKConnection:Disconnect() end)
+        self:Untrack(self.AntiAFKConnection)
+        self.AntiAFKConnection = nil
+    end
 end
 
 -- ============================================================================
@@ -2245,6 +2287,11 @@ function BottleLib:CreateWindow(WindowConfig)
     local configFolder      = WindowConfig.ConfigFolder or "BottleLib"
     local configTabTitle    = WindowConfig.ConfigTabTitle or "Configs"
     local autoConfig        = (WindowConfig.AutoConfig ~= false)
+    local enableAntiAFK     = (WindowConfig.AntiAFK ~= false)
+
+    if enableAntiAFK then
+        BottleLib:EnableAntiAFK()
+    end
 
     -- Theme colors matching Lastest lib.txt
     local T = {
@@ -3275,6 +3322,7 @@ function BottleLib:CreateWindow(WindowConfig)
         self.IsClosed = true
 
         closeActiveDropdown()
+        BottleLib:DisableAntiAFK()
 
         -- 1. Disconnect all internal UI connections
         for _, conn in ipairs(self.Connections) do
@@ -3709,6 +3757,15 @@ function BottleLib:CreateWindow(WindowConfig)
         ConfigTab:CreateToggle("Auto Load", autoLoadEnabled, function(state)
             self:SetAutoLoad(selectedConfig or "default", state)
             BottleLib:Notify("Auto-load " .. (state and "ENABLED for '" .. tostring(selectedConfig) .. "'" or "DISABLED"))
+        end)
+
+        ConfigTab:CreateToggle("Anti AFK", BottleLib.AntiAFKEnabled, function(state)
+            if state then
+                BottleLib:EnableAntiAFK()
+            else
+                BottleLib:DisableAntiAFK()
+            end
+            BottleLib:Notify("Anti-AFK " .. (state and "ENABLED" or "DISABLED"))
         end)
 
         ConfigTab:CreateButton("Refresh List", function()
