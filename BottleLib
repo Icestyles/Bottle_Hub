@@ -1160,6 +1160,7 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
     end
 
     function APIObj:CreateDropdown(placeholder, optionsList, multiSelect, callback)
+        local isMulti = (multiSelect == true)
         local frame = Instance.new("Frame", targetContainer)
         frame.Size = UDim2.new(1, 0, 0, 34)
         frame.BackgroundColor3 = T.Element
@@ -1234,14 +1235,14 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
                     b.TextXAlignment = Enum.TextXAlignment.Left
                     b.ZIndex = 82
 
-                    if multiSelect and selectedItems[item] then
+                    if isMulti and selectedItems[item] then
                         b.TextColor3 = T.Accent
                         b.Text = "  ✅ " .. item
                     end
 
                     b.MouseButton1Click:Connect(function()
                         if WindowObj.IsClosing or WindowObj.IsClosed then return end
-                        if multiSelect then
+                        if isMulti then
                             selectedFromList = true
                             selectedItems[item] = not selectedItems[item]
                             b.TextColor3 = selectedItems[item] and T.Accent or T.Text
@@ -1267,22 +1268,22 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
         function DropObj:Refresh(newList)
             optionsList = newList
             table.clear(selectedItems)
-            if multiSelect then Input.Text = "" end
+            if isMulti then Input.Text = "" end
             RefreshList(Input.Text)
         end
 
         function DropObj:Set(items, suppressCallback)
             table.clear(selectedItems)
-            if multiSelect and type(items) == "table" then
+            if isMulti and type(items) == "table" then
                 for _, v in ipairs(items) do selectedItems[v] = true end
                 Input.Text = #items .. " Items Selected"
             elseif type(items) == "string" then
-                if multiSelect then selectedItems[items] = true end
+                if isMulti then selectedItems[items] = true end
                 Input.Text = items
             end
             RefreshList("")
             if not suppressCallback and not WindowObj.IsClosing and not WindowObj.IsClosed then
-                if callback then pcall(callback, multiSelect and getSelectedArray() or Input.Text) end
+                if callback then pcall(callback, isMulti and getSelectedArray() or Input.Text) end
             end
         end
 
@@ -1313,13 +1314,13 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
 
         Input.FocusLost:Connect(function()
             if selectedFromList then selectedFromList = false; return end
-            if not multiSelect and Input.Text ~= "" and callback and not WindowObj.IsClosing then
+            if not isMulti and Input.Text ~= "" and callback and not WindowObj.IsClosing then
                 pcall(callback, Input.Text)
             end
         end)
 
         function DropObj:Get()
-            if multiSelect then
+            if isMulti then
                 return getSelectedArray()
             else
                 return Input.Text
@@ -1335,6 +1336,229 @@ local function BindUIElements(APIObj, targetContainer, T, WindowObj, ScreenGui, 
         end
 
         return DropObj
+    end
+
+    function APIObj:CreateSelect(title, optionsList, defaultVal, callback)
+        optionsList = optionsList or {}
+        local titleText = tostring(title or "Select"):gsub(":%s*$", "")
+        local currentVal = (defaultVal ~= nil and tostring(defaultVal)) or "None"
+
+        local btn = Instance.new("TextButton", targetContainer)
+        btn.Size = UDim2.new(1, 0, 0, 34)
+        btn.BackgroundColor3 = T.Element
+        btn.BackgroundTransparency = 0.35
+        btn.AutoButtonColor = false
+        btn.Text = ""
+        Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+
+        local stroke = Instance.new("UIStroke", btn)
+        stroke.Color = T.Stroke
+        stroke.Thickness = 1
+        stroke.Transparency = 0.4
+
+        local label = Instance.new("TextLabel", btn)
+        label.Size = UDim2.new(1, -36, 1, 0)
+        label.Position = UDim2.new(0, 10, 0, 0)
+        label.BackgroundTransparency = 1
+        label.RichText = true
+        label.TextXAlignment = Enum.TextXAlignment.Left
+        label.Font = Enum.Font.GothamMedium
+        label.TextSize = 11
+        label.TextTruncate = Enum.TextTruncate.AtEnd
+
+        local arrow = Instance.new("TextLabel", btn)
+        arrow.Size = UDim2.new(0, 20, 1, 0)
+        arrow.Position = UDim2.new(1, -26, 0, 0)
+        arrow.BackgroundTransparency = 1
+        arrow.Text = "▾"
+        arrow.TextColor3 = T.SubText
+        arrow.Font = Enum.Font.GothamBold
+        arrow.TextSize = 13
+        arrow.TextXAlignment = Enum.TextXAlignment.Center
+
+        local function escapeXml(str)
+            return tostring(str or ""):gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;"):gsub('"', "&quot;"):gsub("'", "&apos;")
+        end
+
+        local function updateDisplay()
+            local safeTitle = escapeXml(titleText)
+            local safeVal = escapeXml(currentVal)
+            label.Text = string.format("<font color='#b4b9c3'>%s :</font> <font color='#ffffff'><b>%s</b></font>", safeTitle, safeVal)
+        end
+        updateDisplay()
+
+        local DropOverlay = Instance.new("Frame", ScreenGui)
+        DropOverlay.BackgroundColor3 = Color3.fromRGB(14, 14, 14)
+        DropOverlay.BackgroundTransparency = 0.15
+        DropOverlay.Visible = false
+        DropOverlay.ZIndex = 80
+        Instance.new("UICorner", DropOverlay).CornerRadius = UDim.new(0, 6)
+
+        local dStroke = Instance.new("UIStroke", DropOverlay)
+        dStroke.Color = T.Accent
+        dStroke.Thickness = 1.2
+
+        local DScroll = Instance.new("ScrollingFrame", DropOverlay)
+        DScroll.Size = UDim2.new(1, -4, 1, -4)
+        DScroll.Position = UDim2.new(0, 2, 0, 2)
+        DScroll.BackgroundTransparency = 1
+        DScroll.ScrollBarThickness = 3
+        DScroll.ScrollBarImageColor3 = T.Accent
+        DScroll.BorderSizePixel = 0
+        DScroll.ZIndex = 81
+        Instance.new("UIListLayout", DScroll).SortOrder = Enum.SortOrder.LayoutOrder
+
+        local function closeOverlay()
+            DropOverlay.Visible = false
+            if WindowObj.ActiveDropdown == DropOverlay then
+                WindowObj.ActiveDropdown = nil
+            end
+            GlobalOverlayClose.Visible = false
+            arrow.Text = "▾"
+            arrow.TextColor3 = T.SubText
+            stroke.Color = T.Stroke
+            stroke.Transparency = 0.4
+        end
+
+        DropOverlay:GetPropertyChangedSignal("Visible"):Connect(function()
+            if not DropOverlay.Visible then
+                arrow.Text = "▾"
+                arrow.TextColor3 = T.SubText
+                stroke.Color = T.Stroke
+                stroke.Transparency = 0.4
+            else
+                arrow.Text = "▴"
+                arrow.TextColor3 = T.Accent
+                stroke.Color = T.Accent
+                stroke.Transparency = 0.2
+            end
+        end)
+
+        local SelectObj = {
+            Value = currentVal,
+            Type = "Select"
+        }
+
+        local function refreshOptions()
+            for _, c in ipairs(DScroll:GetChildren()) do
+                if c:IsA("TextButton") then c:Destroy() end
+            end
+            for _, item in ipairs(optionsList) do
+                local itemStr = tostring(item)
+                local isCurrent = (itemStr == currentVal)
+
+                local optBtn = Instance.new("TextButton", DScroll)
+                optBtn.Size = UDim2.new(1, 0, 0, 28)
+                optBtn.BackgroundColor3 = isCurrent and Color3.fromRGB(35, 35, 42) or Color3.fromRGB(20, 20, 20)
+                optBtn.BackgroundTransparency = isCurrent and 0.1 or 0.3
+                optBtn.Text = (isCurrent and "  ▸ " or "    ") .. itemStr
+                optBtn.TextColor3 = isCurrent and T.Accent or T.Text
+                optBtn.Font = isCurrent and Enum.Font.GothamBold or Enum.Font.GothamMedium
+                optBtn.TextSize = 11
+                optBtn.TextXAlignment = Enum.TextXAlignment.Left
+                optBtn.ZIndex = 82
+                optBtn.AutoButtonColor = false
+
+                optBtn.MouseEnter:Connect(function()
+                    if itemStr ~= currentVal then
+                        optBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+                        optBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+                    end
+                end)
+                optBtn.MouseLeave:Connect(function()
+                    if itemStr ~= currentVal then
+                        optBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+                        optBtn.TextColor3 = T.Text
+                    end
+                end)
+
+                optBtn.MouseButton1Click:Connect(function()
+                    if WindowObj.IsClosing or WindowObj.IsClosed then return end
+                    SelectObj:Set(itemStr, false)
+                    closeOverlay()
+                end)
+            end
+            DScroll.CanvasSize = UDim2.new(0, 0, 0, #optionsList * 28 + 4)
+        end
+
+        function SelectObj:Set(newVal, suppressCallback)
+            currentVal = tostring(newVal)
+            self.Value = currentVal
+            updateDisplay()
+            refreshOptions()
+            if not suppressCallback and not WindowObj.IsClosing and not WindowObj.IsClosed then
+                if callback then
+                    task.spawn(function()
+                        pcall(callback, currentVal)
+                    end)
+                end
+            end
+        end
+
+        function SelectObj:Get()
+            return currentVal
+        end
+
+        function SelectObj:GetValue()
+            return currentVal
+        end
+
+        function SelectObj:Refresh(newList, newDefault)
+            optionsList = newList or {}
+            if newDefault ~= nil then
+                currentVal = tostring(newDefault)
+                self.Value = currentVal
+            end
+            updateDisplay()
+            refreshOptions()
+        end
+
+        btn.MouseEnter:Connect(function()
+            if not DropOverlay.Visible then
+                TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundTransparency = 0.2}):Play()
+                TweenService:Create(stroke, TweenInfo.new(0.15), {Color = T.Accent, Transparency = 0.2}):Play()
+            end
+        end)
+        btn.MouseLeave:Connect(function()
+            if not DropOverlay.Visible then
+                TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundTransparency = 0.35}):Play()
+                TweenService:Create(stroke, TweenInfo.new(0.2), {Color = T.Stroke, Transparency = 0.4}):Play()
+            end
+        end)
+
+        btn.MouseButton1Click:Connect(function()
+            if WindowObj.IsClosing or WindowObj.IsClosed then return end
+            if DropOverlay.Visible then
+                closeOverlay()
+            else
+                if WindowObj.ActiveDropdown and WindowObj.ActiveDropdown ~= DropOverlay then
+                    WindowObj.ActiveDropdown.Visible = false
+                end
+                WindowObj.ActiveDropdown = DropOverlay
+                local pos = btn.AbsolutePosition
+                local sz = btn.AbsoluteSize
+                local overlayHeight = math.clamp(#optionsList * 28 + 6, 32, 160)
+                local yPos = pos.Y + sz.Y + 4
+                if yPos + overlayHeight > ScreenGui.AbsoluteSize.Y then
+                    yPos = pos.Y - overlayHeight - 4
+                end
+                DropOverlay.Position = UDim2.new(0, pos.X, 0, yPos)
+                DropOverlay.Size = UDim2.new(0, math.max(sz.X, 200), 0, overlayHeight)
+                refreshOptions()
+                DropOverlay.Visible = true
+                GlobalOverlayClose.Visible = true
+            end
+        end)
+
+        if WindowObj and WindowObj.ConfigRegistry and not WindowObj._IsBuildingConfigTab then
+            WindowObj.ConfigRegistry[title] = {
+                Type = "Select",
+                Get = function() return SelectObj:Get() end,
+                Set = function(val, suppress) SelectObj:Set(val, suppress) end
+            }
+        end
+
+        return SelectObj
     end
 
     function APIObj:CreateDualKeyRow(l1, l2, callback1, callback2, default1, default2)
