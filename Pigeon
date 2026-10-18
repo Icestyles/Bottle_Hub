@@ -1,0 +1,2994 @@
+--[[
+    ═══════════════════════════════════════════════════════════════════
+    👑 PIXEL LINEAGE: BOTTLEHUB (Glassplane Edition)
+    ═══════════════════════════════════════════════════════════════════
+    Game: Pixel Lineage [DUNGEONS+HOLLOWEEN+RACE EVO] (Place: 126256942507957)
+    Author: BottleLib Senior Engineering
+    ═══════════════════════════════════════════════════════════════════
+]]
+
+-- Safe Service Resolver
+local function safeService(name)
+    local service = game:GetService(name)
+    if cloneref then
+        return cloneref(service)
+    end
+    return service
+end
+
+if not game:IsLoaded() then
+    game.Loaded:Wait()
+end
+
+local Players = safeService("Players")
+local ReplicatedStorage = safeService("ReplicatedStorage")
+local RunService = safeService("RunService")
+local Workspace = safeService("Workspace")
+local VirtualUser = safeService("VirtualUser")
+
+local LocalPlayer = Players.LocalPlayer or game:GetService("Players").LocalPlayer
+while not LocalPlayer do
+    task.wait(0.1)
+    LocalPlayer = Players.LocalPlayer or game:GetService("Players").LocalPlayer
+end
+
+local function getPBClient(shouldWait)
+    local lp = LocalPlayer or Players.LocalPlayer or game:GetService("Players").LocalPlayer
+    if not lp then return nil end
+    local ps = shouldWait and lp:WaitForChild("PlayerScripts", 10) or lp:FindFirstChild("PlayerScripts")
+    return ps and (shouldWait and ps:WaitForChild("PlatformBattlesClient", 10) or ps:FindFirstChild("PlatformBattlesClient")) or nil
+end
+
+local function getPlayerGui(shouldWait)
+    local lp = LocalPlayer or Players.LocalPlayer or game:GetService("Players").LocalPlayer
+    if not lp then return nil end
+    return shouldWait and lp:WaitForChild("PlayerGui", 10) or lp:FindFirstChild("PlayerGui")
+end
+
+-- Load BottleLib UI Engine
+local BottleLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/Icestyles/Bottle_Hub/main/BottleLib"))()
+
+-- ═══════════════════════════════════════════════════════════════════
+-- ⚔️ INLINE CORE COMBAT & DUNGEON ENGINES (100% Standalone)
+-- ═══════════════════════════════════════════════════════════════════
+local PlatformBattles = ReplicatedStorage:WaitForChild("PlatformBattles", 10)
+local Remotes = PlatformBattles and PlatformBattles:WaitForChild("Remotes", 10)
+local RPGCommand = Remotes and Remotes:WaitForChild("RPGCommand", 10)
+local RPGState = Remotes and Remotes:WaitForChild("RPGState", 10)
+
+local CombatConfig = {
+    AutoQTE_Defense = true,      -- 100% Perfect Dodge / Block (ON)
+    AutoQTE_Attack = true,       -- 100% Perfect Slash / Sigils / Punch (ON)
+    AutoTurn = false,            -- Automatically select action when your turn begins (DEFAULT OFF)
+    CombatMode = "Smart",        -- "None", "Basic", "Smart", "Scroll", "Maximum" (Default: "Smart")
+    ActionPriority = "Skill",    -- Fallback Priority
+    TargetStrategy = "None",     -- "None", "LowestHP", "Boss", "FirstAlive" (Default: "None")
+    AntiOverkill = true,         -- Anti-Overkill: Don't waste high energy skills on low-HP mobs (DEFAULT ON)
+    SmartSummon = true,          -- Smart Summon Optimization: Priority in turn 1-2 on high-HP/boss (DEFAULT ON)
+    AutoHeal_Satchel = false,    -- Emergency Satchel Potion (DEFAULT OFF)
+    AutoHeal_Threshold = 0.70,   -- 70% HP (DEFAULT 70%)
+    AutoGuard_Brace = false,     -- Auto-Guard on Boss Brace (DEFAULT OFF)
+    AutoMeditate_NoEnergy = false, -- Meditate if no energy (DEFAULT OFF)
+    AutoJoinBattle = false,      -- Automatically accept BattleJoinOffer
+    AutoDeclineBattle = false,   -- Automatically reject BattleJoinOffer
+    DispatchDelayMin = 0.06,     -- Minimum turn latency (60ms)
+    DispatchDelayMax = 0.12,     -- Maximum turn latency (120ms)
+}
+
+local SecretBossList = {
+    "Any Secret Boss",
+    "Honklord",
+    "JustARock",
+    "Chonkus",
+    "ToddFromAccounting",
+    "LordMildew",
+    "Error404",
+    "NanaRot"
+}
+
+local DungeonConfig = {
+    AutoStartDungeon = false,    -- Auto Start Dungeon (DEFAULT OFF)
+    StartDelay = 15,             -- Pre-start countdown delay in seconds (DEFAULT 15s)
+    DungeonMode = "Normal",      -- "Normal", "Torment", "Event (Haunted Harvest)"
+    NormalDifficulty = "normal", -- "normal", "hard", "nightmare"
+    StartAct = 1,                -- Act / Stage (1 to 10, default 1)
+    TormentMode = "Climb",       -- "Climb" (Auto Highest Unlocked) or "Stay" (Selected Tier)
+    TormentTier = 1,             -- 1 to 99
+    AutoChooseNode = false,      -- Auto Path Next Node (DEFAULT OFF)
+    PreferredNode = "None",      -- "None", "treasure", "elite", "rest", "mystery", "fight" (Default: "None")
+    Priority_SecretBoss = false, -- Priority on Secret Boss (DEFAULT OFF)
+    Target_SecretBoss = "Any Secret Boss", -- Default: "Any Secret Boss"
+    AutoReplay = false,          -- Auto Replay Dungeon Run (DEFAULT OFF)
+    ReplayMode = "replayNext",   -- "replayNext" or "replay"
+    AutoClaimChests = true,      -- Auto Claim Reward Chests (DEFAULT ON)
+    AutoRevealBloodline = false, -- Instant Bloodline Reveal (DEFAULT OFF)
+    AutoUpgradeValor = false,    -- Auto-Upgrade Valor after Torment (DEFAULT OFF)
+}
+local LastPlayedAct = 1
+
+local EggConfig = {
+    AutoHatch = false,          -- Auto Hatch Egg at Ranch (DEFAULT OFF)
+    EggType = "All Eggs",       -- "All Eggs", "Haunted", "Woodland", "Automaton", "Spooky"
+    FastHatch = true,           -- Skip hatch animation
+    HatchDelay = 0.5,           -- Delay between hatch requests (seconds)
+    AutoRelease = false,        -- Auto-Release Filtered Pets (DEFAULT OFF)
+    ReleaseRarities = {
+        Common = true,
+        Uncommon = false,
+        Rare = false,
+        Epic = false,
+        Legendary = false,
+    },
+}
+
+local AutoSellConfig = {
+    Enabled = false,             -- Auto-Sell Gears (DEFAULT OFF)
+    Tiers = {
+        Common = true,
+        Uncommon = true,
+        Rare = false,
+        Epic = false,
+        Legendary = false,
+    },
+    ProtectUpgraded = true,      -- Protect Upgraded Gear (+1+) (DEFAULT ON)
+}
+
+local function getServerTime()
+    local ok, res = pcall(function()
+        return Workspace:GetServerTimeNow()
+    end)
+    return (ok and res) and res or os.clock()
+end
+
+-- ═══════════════════════════════════════════════════════════════════
+-- 🏆 TORMENT PROGRESSION & BEST TIER TRACKER
+-- ═══════════════════════════════════════════════════════════════════
+local function getTormentProgress()
+    local pbClient = getPBClient(false)
+    local vMod = pbClient and pbClient:FindFirstChild("VillageView")
+    local best = 0
+    if vMod then
+        local ok, VillageView = pcall(require, vMod)
+        if ok and type(VillageView) == "table" and VillageView.profile then
+            best = tonumber(VillageView.profile.tormentBest) or 0
+        end
+    end
+    local maxUnlocked = math.clamp(best + 1, 1, 99)
+    return best, maxUnlocked
+end
+
+local function getTargetTormentTier()
+    local best, maxUnlocked = getTormentProgress()
+    local mode = tostring(DungeonConfig.TormentMode or "Climb")
+    if string.find(string.lower(mode), "climb", 1, true) then
+        return maxUnlocked
+    else
+        return math.clamp(tonumber(DungeonConfig.TormentTier) or 1, 1, maxUnlocked)
+    end
+end
+
+-- ═══════════════════════════════════════════════════════════════════
+-- 🎯 PART 1: DYNAMIC QTE AUTO-SOLVERS & HOOKS (100% Precision)
+-- ═══════════════════════════════════════════════════════════════════
+
+local function solveDefenseQTE(qteSelf, data)
+    if not CombatConfig.AutoQTE_Defense or type(data) ~= "table" then return end
+    local duration = tonumber(data.duration) or 0.85
+    local target = tonumber(data.target) or 0.5
+    local startedAt = tonumber(data.startedAt) or getServerTime()
+    local token = tostring(data.token or "")
+
+    -- Server Dodge Window: abs(elapsed - target * duration) <= 0.032s (Perfect)
+    local targetOffset = target * duration
+    local targetTimestamp = startedAt + targetOffset
+
+    -- Crisp Humanization Jitter: ±0.0005s (within perfect window)
+    local jitter = (math.random() - 0.5) * 0.001
+    local triggerTimestamp = targetTimestamp + jitter
+
+    local conn
+    conn = RunService.RenderStepped:Connect(function()
+        local now = getServerTime()
+        if now >= triggerTimestamp then
+            conn:Disconnect()
+            if qteSelf and qteSelf.defense and qteSelf.defense.token == token and not qteSelf.defense.pressed then
+                if type(qteSelf.pressHandler) == "function" then
+                    qteSelf.pressHandler()
+                elseif RPGCommand then
+                    RPGCommand:FireServer("DefenseTimingInput", {
+                        battleId = data.battleId,
+                        token = token,
+                        pressedAt = getServerTime()
+                    })
+                end
+            end
+        end
+    end)
+end
+
+local function solveWarriorQTE(qteSelf, data)
+    if not CombatConfig.AutoQTE_Attack or type(data) ~= "table" then return end
+    local rounds = type(data.rounds) == "table" and data.rounds or {}
+    if #rounds == 0 then
+        rounds = { { targetPosition = 0.5, sweepSeconds = 1, perfectWindow = 0.045 } }
+    end
+    local token = tostring(data.token or "")
+
+    task.spawn(function()
+        for idx, round in ipairs(rounds) do
+            if not qteSelf or qteSelf.token ~= token then break end
+
+            -- Transition cooldown between rounds: game engine sets u121 = os.clock() + 0.32
+            if idx > 1 then
+                task.wait(0.34)
+                if not qteSelf or qteSelf.token ~= token then break end
+            end
+
+            local targetPos = tonumber(round.targetPosition) or 0.5
+            local sweepSec = math.max(0.15, tonumber(round.sweepSeconds) or 1)
+            local isReverse = round.reverse == true
+            local targetFraction = isReverse and (1 - targetPos) or targetPos
+            local delayToHit = targetFraction * sweepSec
+
+            -- Crisp humanize micro-jitter
+            local jitter = (math.random() - 0.5) * 0.001
+            local waitTime = math.max(0.04, delayToHit + jitter)
+
+            task.wait(waitTime)
+
+            if qteSelf and qteSelf.token == token and type(qteSelf.pressHandler) == "function" then
+                pcall(qteSelf.pressHandler)
+            end
+        end
+    end)
+end
+
+local function solveThiefQTE(qteSelf, data)
+    if not CombatConfig.AutoQTE_Attack or type(data) ~= "table" then return end
+    local targets = type(data.targets) == "table" and data.targets or {}
+    local maxHits = tonumber(data.maximumHits) or #targets
+    local hitCount = math.clamp(math.floor(maxHits), 1, math.max(1, #targets))
+    local targetSec = math.clamp(tonumber(data.targetSeconds) or 0.78, 0.15, 1.25)
+    local openFrom = math.clamp(tonumber(data.openFrom) or 0.35, 0, 1)
+    local openTo = math.clamp(tonumber(data.openTo) or 0.8, openFrom, 1)
+    local sweetSpot = (openFrom + openTo) / 2
+    local token = tostring(data.token or "")
+
+    task.spawn(function()
+        -- Game engine starts with initial UI intro delay: u203 = os.clock() + 0.40
+        task.wait(0.42)
+
+        for i = 1, hitCount do
+            if not qteSelf or qteSelf.token ~= token then break end
+
+            -- Transition cooldown between marks: game engine sets u203 = os.clock() + 0.34
+            if i > 1 then
+                task.wait(0.36)
+                if not qteSelf or qteSelf.token ~= token then break end
+            end
+
+            -- Crisp humanize micro-jitter
+            local jitter = (math.random() - 0.5) * 0.001
+            local delayToHit = math.max(0.06, (sweetSpot * targetSec) + jitter)
+
+            task.wait(delayToHit)
+
+            if qteSelf and qteSelf.token == token and type(qteSelf.pressHandler) == "function" then
+                pcall(qteSelf.pressHandler)
+            end
+        end
+    end)
+end
+
+local function solveMageQTE(qteSelf, data)
+    if not CombatConfig.AutoQTE_Attack or type(data) ~= "table" then return end
+    local circles = type(data.circles) == "table" and data.circles or {}
+    local sigilCount = math.min(3, math.max(1, #circles))
+    local circleSec = math.clamp(tonumber(data.circleSeconds) or 0.95, 0.15, 1.5)
+    local openWindow = math.clamp(tonumber(data.openWindow) or 0.72, 0.5, 0.95)
+    local token = tostring(data.token or "")
+
+    task.spawn(function()
+        for i = 1, sigilCount do
+            if not qteSelf or qteSelf.token ~= token then break end
+
+            -- Transition cooldown between sigils: game engine sets u152 = os.clock() + 0.25
+            if i > 1 then
+                task.wait(0.27)
+                if not qteSelf or qteSelf.token ~= token then break end
+            end
+
+            -- Crisp humanize micro-jitter (Target safely inside open window)
+            local jitter = (math.random() - 0.5) * 0.001
+            local delayToHit = math.max(0.08, ((openWindow + 0.035) * circleSec) + jitter)
+
+            task.wait(delayToHit)
+
+            if qteSelf and qteSelf.token == token and type(qteSelf.pressHandler) == "function" then
+                pcall(qteSelf.pressHandler)
+            end
+        end
+    end)
+end
+
+local function setupQTE()
+    local pbClient = getPBClient(false)
+    if not pbClient then return false end
+
+    -- 1. Hook PixelQTE (2D Pixel Battles)
+    local qteModule = pbClient:FindFirstChild("PixelQTE")
+    if qteModule then
+        local ok, PixelQTE = pcall(require, qteModule)
+        if ok and type(PixelQTE) == "table" and PixelQTE.Handle and not PixelQTE.__bhHooked then
+            PixelQTE.__bhHooked = true
+            local oldHandle = PixelQTE.Handle
+            PixelQTE.Handle = function(self, signal, payload)
+                local res = oldHandle(self, signal, payload)
+
+                if signal == "DefenseTimingStarted" then
+                    solveDefenseQTE(self, payload)
+                elseif signal == "WarriorBladeTimingStarted" then
+                    solveWarriorQTE(self, payload)
+                elseif signal == "ThiefSlashStarted" then
+                    solveThiefQTE(self, payload)
+                elseif signal == "MageRhythmStarted" then
+                    solveMageQTE(self, payload)
+                end
+
+                return res
+            end
+        end
+    end
+
+    -- 2. Standalone DefenseTimingClient (100% Perfect Dodge)
+    local defModule = pbClient:FindFirstChild("DefenseTimingClient")
+    if defModule then
+        local defOk, DefenseTimingClient = pcall(require, defModule)
+        if defOk and type(DefenseTimingClient) == "table" and DefenseTimingClient.Start and not DefenseTimingClient.__bhHooked then
+            DefenseTimingClient.__bhHooked = true
+            local oldStart = DefenseTimingClient.Start
+            DefenseTimingClient.Start = function(self, payload)
+                local res = oldStart(self, payload)
+                if CombatConfig.AutoQTE_Defense and payload and payload.startedAt and payload.target then
+                    local duration = payload.duration or 0.85
+                    local targetTimestamp = payload.startedAt + (payload.target * duration)
+                    local jitter = (math.random() - 0.5) * 0.001
+
+                    local conn
+                    conn = RunService.RenderStepped:Connect(function()
+                        if getServerTime() >= targetTimestamp + jitter then
+                            conn:Disconnect()
+                            if self.pending and not self.sent then
+                                pcall(self.Press, self)
+                            end
+                        end
+                    end)
+                end
+                return res
+            end
+        end
+    end
+
+    -- 3. Standalone WarriorBladeTimingClient (100% Perfect Blade Chain Trace)
+    local warriorModule = pbClient:FindFirstChild("WarriorBladeTimingClient")
+    if warriorModule then
+        local wOk, WarriorBladeTimingClient = pcall(require, warriorModule)
+        if wOk and type(WarriorBladeTimingClient) == "table" and WarriorBladeTimingClient.Start and not WarriorBladeTimingClient.__bhHooked then
+            WarriorBladeTimingClient.__bhHooked = true
+            local oldWarriorStart = WarriorBladeTimingClient.Start
+            WarriorBladeTimingClient.Start = function(self, payload)
+                local res = oldWarriorStart(self, payload)
+                if CombatConfig.AutoQTE_Attack then
+                    local token = self.token
+                    task.spawn(function()
+                        local dur = tonumber(self.duration) or 0.85
+                        local traceDelay = math.clamp(dur * 0.45, 0.15, 0.6) + ((math.random() - 0.5) * 0.005)
+                        task.wait(traceDelay)
+                        if self.active and self.token == token and not self.completingPattern then
+                            pcall(function()
+                                self:_completeTrace()
+                            end)
+                        end
+                    end)
+                end
+                return res
+            end
+        end
+    end
+
+    -- 4. Standalone ThiefSlashClient (100% Perfect Slash Cuts)
+    local thiefModule = pbClient:FindFirstChild("ThiefSlashClient")
+    if thiefModule then
+        local tOk, ThiefSlashClient = pcall(require, thiefModule)
+        if tOk and type(ThiefSlashClient) == "table" and ThiefSlashClient.Start and not ThiefSlashClient.__bhHooked then
+            ThiefSlashClient.__bhHooked = true
+            local oldThiefStart = ThiefSlashClient.Start
+            ThiefSlashClient.Start = function(self, payload)
+                local res = oldThiefStart(self, payload)
+                if CombatConfig.AutoQTE_Attack then
+                    local token = self.token
+                    task.spawn(function()
+                        while self.active and self.token == token do
+                            if self.currentTarget and not self.currentResolved then
+                                local slashDelay = 0.12 + ((math.random() - 0.5) * 0.01)
+                                task.wait(slashDelay)
+                                if self.active and self.token == token and self.currentTarget and not self.currentResolved then
+                                    self.currentSlashAngle = math.random(30, 150)
+                                    self.currentResolved = true
+                                end
+                            end
+                            RunService.Heartbeat:Wait()
+                        end
+                    end)
+                end
+                return res
+            end
+        end
+    end
+
+    -- 5. Standalone MageRhythmClient (100% Perfect Arcane Sigils)
+    local mageModule = pbClient:FindFirstChild("MageRhythmClient")
+    if mageModule then
+        local mOk, MageRhythmClient = pcall(require, mageModule)
+        if mOk and type(MageRhythmClient) == "table" and not MageRhythmClient.__bhHooked then
+            local oldPlayCircle = MageRhythmClient._playCircle
+            if oldPlayCircle then
+                MageRhythmClient.__bhHooked = true
+                MageRhythmClient._playCircle = function(self, circleData, circleSeconds, token, streak)
+                    task.spawn(function()
+                        if CombatConfig.AutoQTE_Attack then
+                            local winStart = (circleData and tonumber(circleData.windowStart)) or 0.62
+                            local dur = tonumber(circleSeconds) or 0.95
+                            local hitDelay = math.clamp(winStart * dur + 0.015, 0.15, 1.2) + ((math.random() - 0.5) * 0.001)
+                            task.wait(hitDelay)
+                            if self.active and self.token == token and self.currentCircle then
+                                local btn = self.currentCircle
+                                if firesignal then
+                                    firesignal(btn.Activated)
+                                elseif getconnections then
+                                    for _, c in ipairs(getconnections(btn.Activated)) do
+                                        if c and c.Fire then c:Fire() end
+                                    end
+                                end
+                            end
+                        end
+                    end)
+                    return oldPlayCircle(self, circleData, circleSeconds, token, streak)
+                end
+            end
+        end
+    end
+
+    return true
+end
+
+-- ═══════════════════════════════════════════════════════════════════
+-- 🤖 PART 2: DYNAMIC TURN-BASED ACTION BOT (Native PixelCommandMenu Hook)
+-- ═══════════════════════════════════════════════════════════════════
+
+local NativeMenuHooked = false
+
+-- Unified Combat State & Turn Lock
+local CombatState = {
+    CurrentBattle = nil,
+    DispatchedTurnKey = "",
+    PendingDispatchThread = nil,
+    ActiveMenu = nil,
+}
+
+local function getTurnKey(snapshot)
+    if type(snapshot) ~= "table" or not snapshot.id then return "" end
+    -- Strictly use battleId and turnNumber. Never use revision to prevent repeat dispatches!
+    return string.format("%s:%s", tostring(snapshot.id), tostring(snapshot.turnNumber or 1))
+end
+
+local function selectTargetEnemy(enemies, strategy)
+    local aliveFoes = {}
+    for idx, foe in ipairs(enemies or {}) do
+        local actor = (type(foe) == "table" and foe.actor) or foe
+        local hp = tonumber(foe.hp) or (actor and tonumber(actor.hp)) or 100
+        local isDefeated = foe.defeated == true or (actor and actor.defeated == true) or hp <= 0
+        if not isDefeated and hp > 0 then
+            table.insert(aliveFoes, {
+                index = tonumber(foe.index) or idx,
+                hp = hp,
+                isBoss = foe.boss == true or (actor and actor.boss == true)
+            })
+        end
+    end
+
+    if #aliveFoes == 0 then return 1 end
+
+    local strat = (type(strategy) == "table" and strategy[1]) or tostring(strategy or "LowestHP")
+    if strat == "LowestHP" or strat == "None" or strat == "" then
+        table.sort(aliveFoes, function(a, b) return a.hp < b.hp end)
+        return aliveFoes[1].index
+    elseif strat == "Boss" then
+        for _, f in ipairs(aliveFoes) do
+            if f.isBoss then return f.index end
+        end
+        return aliveFoes[1].index
+    else
+        return aliveFoes[1].index
+    end
+end
+
+local function isScrollAction(act)
+    if type(act) ~= "table" then return false end
+    local id = string.lower(tostring(act.id or ""))
+    local cat = string.lower(tostring(act.category or act.kind or ""))
+    return act.scrollId ~= nil or string.find(id, "scroll_", 1, true) ~= nil or cat == "gearscroll" or string.find(cat, "scroll", 1, true) ~= nil
+end
+
+local function getSkillCost(skill): number
+    if type(skill) ~= "table" then return 0 end
+    -- 📜 Scrolls do NOT consume any Energy (0 MP / 0 Cost)
+    if isScrollAction(skill) then return 0 end
+    local c = tonumber(skill.cost)
+    if c then return c end
+    local ec = tonumber(skill.energyCost)
+    if ec then return ec end
+    local mp = tonumber(skill.mpCost)
+    if mp then return math.ceil(mp / 10) end
+    return 0
+end
+
+local function getMyEnergy(menu, snapshot)
+    if menu and menu._myEnergy then
+        local ok, curMp = pcall(function() return menu:_myEnergy() end)
+        if ok and curMp ~= nil then return curMp end
+    end
+    if snapshot and type(snapshot.party) == "table" then
+        local myId = tonumber(LocalPlayer.UserId)
+        for _, member in ipairs(snapshot.party) do
+            if tonumber(member.userId) == myId then
+                return tonumber(member.mp) or 0
+            end
+        end
+    end
+    return 0
+end
+
+local function getLocalMemberHP(snapshot)
+    if not snapshot then return 100, 100, 1 end
+
+    -- 1. Match by local player's UserId in party if party exists
+    local myId = tonumber(LocalPlayer.UserId)
+    if type(snapshot.party) == "table" then
+        for _, member in ipairs(snapshot.party) do
+            local memId = tonumber(member.userId or member.id)
+            if memId and memId == myId and member.hp ~= nil then
+                local hp = tonumber(member.hp) or 0
+                local maxHp = math.max(1, tonumber(member.maxHp) or 1)
+                return hp, maxHp, math.clamp(hp / maxHp, 0, 1)
+            end
+        end
+    end
+
+    -- 2. Direct snapshot.player (standard in combat snapshot for local actor)
+    if type(snapshot.player) == "table" and snapshot.player.hp ~= nil then
+        local hp = tonumber(snapshot.player.hp) or 0
+        local maxHp = math.max(1, tonumber(snapshot.player.maxHp) or 1)
+        return hp, maxHp, math.clamp(hp / maxHp, 0, 1)
+    end
+
+    -- 3. Party first member fallback
+    if type(snapshot.party) == "table" and #snapshot.party > 0 then
+        local member = snapshot.party[1]
+        local hp = tonumber(member.hp) or 0
+        local maxHp = math.max(1, tonumber(member.maxHp) or 1)
+        return hp, maxHp, math.clamp(hp / maxHp, 0, 1)
+    end
+
+    -- 4. Humanoid fallback
+    local char = LocalPlayer and LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        return hum.Health, hum.MaxHealth, math.clamp(hum.Health / math.max(1, hum.MaxHealth), 0, 1)
+    end
+    return 100, 100, 1
+end
+
+local function findHealingAction(Groups, allActions, snapshot)
+    if snapshot and type(snapshot.satchel) == "table" and tonumber(snapshot.satchel.hp) and tonumber(snapshot.satchel.hp) >= 3 then
+        return nil
+    end
+
+    for _, act in ipairs((Groups and Groups.Item) or {}) do
+        if act.enabled ~= false and (act.count == nil or (tonumber(act.count) or 0) > 0) then
+            local text = string.lower(tostring(act.name or act.id or act.text or ""))
+            if string.find(text, "heal", 1, true) or string.find(text, "potion", 1, true)
+                or string.find(text, "tonic", 1, true) or string.find(text, "satchel", 1, true)
+                or string.find(text, "draught", 1, true) or string.find(text, "nectar", 1, true)
+                or string.find(text, "salve", 1, true) or act.heal ~= nil then
+                return act
+            end
+        end
+    end
+
+    for _, act in ipairs(allActions or {}) do
+        if act.enabled ~= false and (act.count == nil or (tonumber(act.count) or 0) > 0) then
+            local id = tostring(act.id or "")
+            local cat = tostring(act.category or "")
+            local name = string.lower(tostring(act.name or ""))
+            if id == "Potion" or cat == "Item" or string.find(name, "potion", 1, true) or string.find(name, "heal", 1, true) then
+                return act
+            end
+        end
+    end
+
+    -- First available item action
+    for _, act in ipairs((Groups and Groups.Item) or {}) do
+        if act.enabled ~= false and (act.count == nil or (tonumber(act.count) or 0) > 0) then
+            return act
+        end
+    end
+
+    -- Synthetic fallback for Satchel Potion (standard actionId "Potion" in Pixel Lineage)
+    return {
+        id = "Potion",
+        category = "Item",
+        name = "Potion",
+        targetType = "Self",
+        enabled = true
+    }
+end
+
+-- ─────────────────────────────────────────────────────────────
+-- 🧮 ADVANCE DAMAGE CALCULATION & SKILL SCALING ENGINE
+-- ─────────────────────────────────────────────────────────────
+local SkillScalingModule = nil
+pcall(function()
+    local pb = ReplicatedStorage:FindFirstChild("PlatformBattles")
+    local shared = pb and pb:FindFirstChild("Shared")
+    local mod = shared and shared:FindFirstChild("SkillScaling")
+    if mod then
+        SkillScalingModule = require(mod)
+    end
+end)
+
+local function getTargetEnemyData(enemies, targetIdx)
+    for idx, foe in ipairs(enemies or {}) do
+        local foeIdx = tonumber(foe.index) or idx
+        if foeIdx == targetIdx then
+            local actor = (type(foe) == "table" and foe.actor) or foe
+            local hp = tonumber(foe.hp) or (actor and tonumber(actor.hp)) or 100
+            local maxHp = math.max(1, tonumber(foe.maxHp) or (actor and tonumber(actor.maxHp)) or 100)
+            local isBoss = foe.boss == true or (actor and actor.boss == true)
+            return {
+                data = foe,
+                index = foeIdx,
+                hp = hp,
+                maxHp = maxHp,
+                isBoss = isBoss,
+                statuses = foe.statuses or (actor and actor.statuses) or {}
+            }
+        end
+    end
+    return {
+        data = nil,
+        index = targetIdx or 1,
+        hp = 100,
+        maxHp = 100,
+        isBoss = false,
+        statuses = {}
+    }
+end
+
+local function calculateExpectedDamage(action, targetFoe, snapshot)
+    if type(action) ~= "table" then return 1 end
+
+    -- Extract local player member data from party
+    local myMember = nil
+    if snapshot and type(snapshot.party) == "table" then
+        local myId = tonumber(LocalPlayer.UserId)
+        for _, member in ipairs(snapshot.party) do
+            if tonumber(member.userId) == myId then
+                myMember = member
+                break
+            end
+        end
+        if not myMember and #snapshot.party > 0 then
+            myMember = snapshot.party[1]
+        end
+    end
+
+    local scaling = tostring(action.scaling or "")
+    if scaling == "" or scaling == "nil" then
+        if isScrollAction(action) or string.find(string.lower(tostring(action.category or "")), "scroll", 1, true) then
+            scaling = "magic"
+        else
+            scaling = "attack"
+        end
+    end
+
+    -- Base Stat Power via SkillScaling module if available
+    local baseStat = 0
+    if SkillScalingModule and type(SkillScalingModule.Value) == "function" and myMember then
+        local ok, val = pcall(SkillScalingModule.Value, myMember, action)
+        if ok and tonumber(val) and val > 0 then
+            baseStat = tonumber(val)
+        end
+    end
+
+    -- Fallback base stat
+    if baseStat <= 0 then
+        local level = tonumber(myMember and myMember.level) or 1
+        if scaling == "magic" then
+            baseStat = tonumber(myMember and myMember.magic) or (20 + level * 3.5)
+        elseif scaling == "defense" then
+            baseStat = tonumber(myMember and myMember.defense) or (15 + level * 2.5)
+        elseif scaling == "best" then
+            local atk = tonumber(myMember and myMember.attack) or (25 + level * 3.5)
+            local mag = tonumber(myMember and myMember.magic) or (20 + level * 3.5)
+            baseStat = math.max(atk, mag)
+        else
+            baseStat = tonumber(myMember and myMember.attack) or (25 + level * 3.5)
+        end
+    end
+
+    local power = tonumber(action.power) or 1.0
+    local hits = tonumber(action.hits) or 1
+    local buffMult = 1.0
+
+    if myMember and type(myMember.statuses) == "table" then
+        if myMember.statuses.Inspired then buffMult = buffMult + 0.35 end
+        if myMember.statuses.BattleFury then buffMult = buffMult + 0.25 end
+        if myMember.statuses.Weakened then buffMult = buffMult - 0.15 end
+    end
+
+    local rawDamage = baseStat * power * hits * math.max(0.2, buffMult)
+
+    -- Effective Defense reduction (~15% base, reduced by armorPierce)
+    local armorPierce = tonumber(action.armorPierce) or 0
+    local baseDef = 0.15
+    local effectiveDef = math.clamp(baseDef * (1 - armorPierce), 0, 0.8)
+
+    local netDamage = math.max(1, math.floor(rawDamage * (1 - effectiveDef) + 0.5))
+    return netDamage
+end
+
+local function isSummonAction(act)
+    if type(act) ~= "table" then return false, nil end
+    if act.summon and type(act.summon) == "table" then
+        return true, tostring(act.summon.kind or act.summon.label or "Summon")
+    end
+    local kind = tostring(act.kind or "")
+    if kind == "SummonUndead" then return true, "Undead" end
+    if kind == "SummonSylph" then return true, "Sylph" end
+    local id = string.lower(tostring(act.id or ""))
+    if string.find(id, "summon", 1, true) or string.find(id, "beast_wolves", 1, true) or string.find(id, "beast_bear", 1, true) then
+        return true, id
+    end
+    return false, nil
+end
+
+local function hasActiveSummon(snapshot, summonKind)
+    if not snapshot then return false end
+    if type(snapshot.party) == "table" then
+        local myId = tonumber(LocalPlayer.UserId)
+        for _, member in ipairs(snapshot.party) do
+            if member.kind == "Companion" or member.isSummon == true or (member.ownerUserId and tonumber(member.ownerUserId) == myId) then
+                if not summonKind then
+                    return true
+                end
+                local mName = string.lower(tostring(member.name or member.id or ""))
+                if string.find(mName, string.lower(tostring(summonKind)), 1, true) then
+                    return true
+                end
+            end
+        end
+    end
+    if type(snapshot.companions) == "table" and #snapshot.companions > 0 then
+        return true
+    end
+    return false
+end
+
+local function dispatchNativeAction(menu, snapshot, action, targetIdx)
+    if not action or not action.id then return false end
+    local targetType = tostring(action.targetType or "")
+    local payload = nil
+    if targetType == "Enemy" or (targetType ~= "Self" and targetType ~= "Ally" and targetType ~= "SelfOnly" and action.category ~= "Meditate" and action.category ~= "Guard" and action.category ~= "Item") then
+        payload = { targetEnemyIndex = targetIdx or 1 }
+    elseif targetType == "Ally" then
+        payload = { targetUserId = LocalPlayer.UserId }
+    end
+    -- NOTE: For targetType == "Self", "SelfOnly", or category == "Item", payload MUST remain nil!
+
+    if menu and menu._send then
+        local ok = pcall(function()
+            if payload then
+                menu:_send(action, payload)
+            else
+                menu:_send(action)
+            end
+        end)
+        if ok then return true end
+    end
+
+    -- Direct remote fallback if menu:_send failed or menu not available
+    if RPGCommand and snapshot and snapshot.id then
+        local p = { battleId = snapshot.id, actionId = action.id }
+        if payload then
+            for k, v in pairs(payload) do p[k] = v end
+        end
+        RPGCommand:FireServer("CombatAction", p)
+        return true
+    end
+    return false
+end
+
+local function executeNativeTurn(menu, snapshot)
+    if not CombatConfig.AutoTurn or not snapshot or not snapshot.id or snapshot.canAct ~= true then
+        return
+    end
+
+    if menu and menu._canAct and not menu:_canAct() then
+        return
+    end
+
+    local battleId = snapshot.id
+    local actions = snapshot.actions or {}
+    local enemies = snapshot.enemies or {}
+
+    -- Group actions using native menu.actions if available, else group manually
+    local Groups = { Attack = {}, Skill = {}, Scroll = {}, Guard = {}, Meditate = {}, Item = {} }
+    if menu and type(menu.actions) == "table" and menu.actions.Attack then
+        for k, v in pairs(menu.actions) do
+            if Groups[k] then
+                Groups[k] = v
+            end
+        end
+    else
+        for _, act in ipairs(actions) do
+            local cat = act.category or act.kind or act.id or ""
+            local low = string.lower(tostring(cat))
+
+            if isScrollAction(act) then
+                table.insert(Groups.Scroll, act)
+            elseif low == "meditate" then
+                table.insert(Groups.Meditate, act)
+            elseif string.find(low, "skill", 1, true) or string.find(low, "spell", 1, true) or string.find(low, "ability", 1, true) then
+                table.insert(Groups.Skill, act)
+            elseif string.find(low, "item", 1, true) or string.find(low, "potion", 1, true) or string.find(low, "satchel", 1, true) then
+                table.insert(Groups.Item, act)
+            elseif string.find(low, "guard", 1, true) or string.find(low, "defend", 1, true) then
+                table.insert(Groups.Guard, act)
+            else
+                table.insert(Groups.Attack, act)
+            end
+        end
+    end
+
+    -- Ensure any scrolls categorized into Attack/Skill are also present in Groups.Scroll
+    for _, act in ipairs(actions) do
+        if isScrollAction(act) and not table.find(Groups.Scroll, act) then
+            table.insert(Groups.Scroll, act)
+        end
+    end
+
+    -- 1. Emergency Potion Heal (Satchel) - checks true combat HP from snapshot.party
+    local curHp, maxHp, hpPct = getLocalMemberHP(snapshot)
+    if CombatConfig.AutoHeal_Satchel and hpPct <= CombatConfig.AutoHeal_Threshold then
+        local healAction = findHealingAction(Groups, actions, snapshot)
+        if healAction then
+            dispatchNativeAction(menu, snapshot, healAction)
+            return
+        end
+    end
+
+    -- 2. Boss Brace Warning Guard
+    if CombatConfig.AutoGuard_Brace and #Groups.Guard > 0 then
+        local bossTelegraph = false
+        for _, foe in ipairs(enemies) do
+            local tele = foe.actor and foe.actor.telegraph
+            if tele and tonumber(tele.targetUserId) == tonumber(LocalPlayer.UserId) and not foe.defeated then
+                bossTelegraph = true
+                break
+            end
+        end
+        if bossTelegraph then
+            dispatchNativeAction(menu, snapshot, Groups.Guard[1])
+            return
+        end
+    end
+
+    -- Target selection
+    local rawTarget = CombatConfig.TargetStrategy
+    local targetStrategy = (type(rawTarget) == "table" and rawTarget[1]) or tostring(rawTarget or "LowestHP")
+    local targetIdx = selectTargetEnemy(enemies, targetStrategy)
+
+    local rawMode = CombatConfig.CombatMode
+    local mode = (type(rawMode) == "table" and rawMode[1]) or tostring(rawMode or "None")
+
+    -- Player Energy
+    local myMp = getMyEnergy(menu, snapshot)
+
+    if mode == "None" or mode == "" then
+        return
+    end
+
+    -- Parse Skills & Energy Costs
+    local parsedSkills = {}
+    for _, skill in ipairs(Groups.Skill) do
+        local rawCost = getSkillCost(skill)
+        local cd = tonumber(skill.cooldown) or 0
+        local isEnabled = (skill.enabled ~= false) and (cd <= 0)
+        table.insert(parsedSkills, {
+            data = skill,
+            cost = rawCost,
+            enabled = isEnabled,
+            canAfford = isEnabled and (myMp >= rawCost)
+        })
+    end
+
+    -- Parse Scrolls & Energy Costs
+    local parsedScrolls = {}
+    for _, scroll in ipairs(Groups.Scroll) do
+        local rawCost = getSkillCost(scroll)
+        local cd = tonumber(scroll.cooldown) or 0
+        local isEnabled = (scroll.enabled ~= false) and (cd <= 0)
+        table.insert(parsedScrolls, {
+            data = scroll,
+            cost = rawCost,
+            enabled = isEnabled,
+            canAfford = isEnabled and (myMp >= rawCost)
+        })
+    end
+
+    -- ─────────────────────────────────────────────────────────────
+    -- 🧠 MODE 1: SMART (Advance Damage AI + Anti-Overkill + Summon Optimization)
+    -- ─────────────────────────────────────────────────────────────
+    if mode == "Smart" then
+        local targetFoe = getTargetEnemyData(enemies, targetIdx)
+        local foeHp = targetFoe.hp
+        local foeMaxHp = targetFoe.maxHp
+        local isBoss = targetFoe.isBoss
+
+        local basicAttack = Groups.Attack[1]
+        local basicDamage = basicAttack and calculateExpectedDamage(basicAttack, targetFoe, snapshot) or 30
+
+        -- 1. Anti-Overkill Rule 1: Basic Attack Finisher
+        -- If enemy HP <= expected Basic Attack damage, kill it with 0 energy!
+        if CombatConfig.AntiOverkill and basicAttack and basicAttack.enabled ~= false and foeHp <= basicDamage then
+            dispatchNativeAction(menu, snapshot, basicAttack, targetIdx)
+            return
+        end
+
+        -- 2. Smart Summon Optimization: Priority in turn 1-2 on high-HP enemy or boss
+        if CombatConfig.SmartSummon then
+            local isTargetWorthSummon = isBoss or foeHp >= (basicDamage * 2.5) or (foeHp / math.max(1, foeMaxHp) > 0.40)
+            if isTargetWorthSummon then
+                for _, s in ipairs(parsedSkills) do
+                    if s.canAfford then
+                        local isSummon, summonKind = isSummonAction(s.data)
+                        if isSummon and not hasActiveSummon(snapshot, summonKind) then
+                            dispatchNativeAction(menu, snapshot, s.data, targetIdx)
+                            return
+                        end
+                    end
+                end
+            end
+        end
+
+        -- 3. Anti-Overkill Rule 2: Exact-Cost Skill / Scroll Finisher
+        -- If an affordable skill or 0-energy scroll can kill the enemy in 1 hit, choose the one with the LOWEST Energy cost!
+        if CombatConfig.AntiOverkill then
+            local killSkills = {}
+            for _, s in ipairs(parsedSkills) do
+                if s.canAfford then
+                    local expDmg = calculateExpectedDamage(s.data, targetFoe, snapshot)
+                    if expDmg >= foeHp then
+                        table.insert(killSkills, {
+                            skill = s.data,
+                            cost = s.cost,
+                            dmg = expDmg
+                        })
+                    end
+                end
+            end
+            -- Integrate Scrolls: 0 Energy cost finishers!
+            for _, sc in ipairs(parsedScrolls) do
+                if sc.canAfford then
+                    local expDmg = calculateExpectedDamage(sc.data, targetFoe, snapshot)
+                    if expDmg >= foeHp then
+                        table.insert(killSkills, {
+                            skill = sc.data,
+                            cost = 0,
+                            dmg = expDmg
+                        })
+                    end
+                end
+            end
+            if #killSkills > 0 then
+                table.sort(killSkills, function(a, b)
+                    if a.cost ~= b.cost then
+                        return a.cost < b.cost -- Lowest cost first! (0-energy scrolls win!)
+                    end
+                    return a.dmg < b.dmg -- Lowest overkill first!
+                end)
+                dispatchNativeAction(menu, snapshot, killSkills[1].skill, targetIdx)
+                return
+            end
+        end
+
+        -- 4. General Combat Scoring: Damage-per-Energy (DPE) & AoE / Status Utility + 0-Energy Scrolls
+        local scoredSkills = {}
+        local livingFoesCount = 0
+        for _, f in ipairs(enemies) do
+            local actor = (type(f) == "table" and f.actor) or f
+            local fHp = tonumber(f.hp) or (actor and tonumber(actor.hp)) or 0
+            if not f.defeated and fHp > 0 then
+                livingFoesCount = livingFoesCount + 1
+            end
+        end
+
+        for _, s in ipairs(parsedSkills) do
+            if s.canAfford then
+                local expDmg = calculateExpectedDamage(s.data, targetFoe, snapshot)
+                local cost = math.max(1, s.cost)
+                local dpe = expDmg / cost
+                local score = (expDmg * 0.5) + (dpe * 10 * 0.5)
+
+                -- AoE bonus if multiple foes alive
+                if (s.data.allEnemies or s.data.aoe) and livingFoesCount > 1 then
+                    score = score * (1.0 + (livingFoesCount * 0.35))
+                end
+
+                -- Utility/Debuff bonus
+                if s.data.inflict then
+                    score = score * 1.15
+                end
+
+                table.insert(scoredSkills, {
+                    skill = s.data,
+                    score = score
+                })
+            end
+        end
+
+        -- Evaluate ready Scrolls in Smart Combat (0 Energy Cost -> High Priority Damage Burst)
+        for _, sc in ipairs(parsedScrolls) do
+            if sc.canAfford then
+                local expDmg = calculateExpectedDamage(sc.data, targetFoe, snapshot)
+                -- 0-Energy Scroll Burst Score: base damage + bonus since it consumes 0 MP
+                local score = (expDmg * 0.6) + 35
+
+                -- AoE bonus if multiple foes alive (e.g. Meteor / Blizzard)
+                if (sc.data.allEnemies or sc.data.aoe) and livingFoesCount > 1 then
+                    score = score * (1.0 + (livingFoesCount * 0.4))
+                end
+
+                if sc.data.inflict then
+                    score = score * 1.15
+                end
+
+                table.insert(scoredSkills, {
+                    skill = sc.data,
+                    score = score
+                })
+            end
+        end
+
+        if #scoredSkills > 0 then
+            table.sort(scoredSkills, function(a, b)
+                return a.score > b.score
+            end)
+            dispatchNativeAction(menu, snapshot, scoredSkills[1].skill, targetIdx)
+            return
+        end
+
+        -- 5. Fallback: Meditate if no energy and out of skills, else Basic Attack
+        if CombatConfig.AutoMeditate_NoEnergy and #Groups.Meditate > 0 and myMp <= 1 then
+            dispatchNativeAction(menu, snapshot, Groups.Meditate[1])
+            return
+        elseif #Groups.Attack > 0 then
+            dispatchNativeAction(menu, snapshot, Groups.Attack[1], targetIdx)
+            return
+        elseif #Groups.Meditate > 0 then
+            dispatchNativeAction(menu, snapshot, Groups.Meditate[1])
+            return
+        end
+
+    -- ─────────────────────────────────────────────────────────────
+    -- 🥊 MODE 2: BASIC (Continuously Attack with basic attack)
+    -- ─────────────────────────────────────────────────────────────
+    elseif mode == "Basic" then
+        if #Groups.Attack > 0 then
+            dispatchNativeAction(menu, snapshot, Groups.Attack[1], targetIdx)
+            return
+        elseif #Groups.Meditate > 0 then
+            dispatchNativeAction(menu, snapshot, Groups.Meditate[1])
+            return
+        end
+
+    -- ─────────────────────────────────────────────────────────────
+    -- ⚡ MODE 4: MAXIMUM (Focus on Skills! Meditate spam & always cast HIGHEST energy cost skill first)
+    -- ─────────────────────────────────────────────────────────────
+    elseif mode == "Maximum" then
+        local targetFoe = getTargetEnemyData(enemies, targetIdx)
+        local foeHp = targetFoe.hp
+        local basicAttack = Groups.Attack[1]
+        local basicDamage = basicAttack and calculateExpectedDamage(basicAttack, targetFoe, snapshot) or 30
+
+        -- Anti-Overkill: Don't blow huge skills on 1-hit killable mobs even in Maximum mode
+        if CombatConfig.AntiOverkill and basicAttack and basicAttack.enabled ~= false and foeHp <= basicDamage then
+            dispatchNativeAction(menu, snapshot, basicAttack, targetIdx)
+            return
+        end
+
+        table.sort(parsedSkills, function(a, b)
+            return a.cost > b.cost
+        end)
+
+        local highestSkill = nil
+        for _, s in ipairs(parsedSkills) do
+            if s.enabled then
+                highestSkill = s
+                break
+            end
+        end
+
+        if highestSkill and highestSkill.canAfford then
+            dispatchNativeAction(menu, snapshot, highestSkill.data, targetIdx)
+            return
+        end
+
+        if #Groups.Meditate > 0 then
+            dispatchNativeAction(menu, snapshot, Groups.Meditate[1])
+            return
+        elseif #Groups.Attack > 0 then
+            dispatchNativeAction(menu, snapshot, Groups.Attack[1], targetIdx)
+            return
+        end
+
+    -- ─────────────────────────────────────────────────────────────
+    -- 📜 MODE 5: SCROLL (Prioritize Scrolls, fallback to Skill then Attack)
+    -- ─────────────────────────────────────────────────────────────
+    elseif mode == "Scroll" then
+        local affordableScroll = nil
+        for _, s in ipairs(parsedScrolls) do
+            if s.canAfford then
+                affordableScroll = s.data
+                break
+            end
+        end
+
+        if affordableScroll then
+            dispatchNativeAction(menu, snapshot, affordableScroll, targetIdx)
+            return
+        end
+
+        local affordableSkill = nil
+        for _, s in ipairs(parsedSkills) do
+            if s.canAfford then
+                affordableSkill = s.data
+                break
+            end
+        end
+
+        if affordableSkill then
+            dispatchNativeAction(menu, snapshot, affordableSkill, targetIdx)
+            return
+        elseif #Groups.Attack > 0 then
+            dispatchNativeAction(menu, snapshot, Groups.Attack[1], targetIdx)
+            return
+        elseif #Groups.Meditate > 0 then
+            dispatchNativeAction(menu, snapshot, Groups.Meditate[1])
+            return
+        end
+    end
+
+    -- Universal fallback
+    if #actions > 0 then
+        dispatchNativeAction(menu, snapshot, actions[1], targetIdx)
+    end
+end
+
+local function safeExecuteNativeTurn(menu, snapshot)
+    local ok, err = pcall(executeNativeTurn, menu, snapshot)
+    if not ok then
+        warn("[BottleHub] ⚠️ Error in executeNativeTurn:", err)
+        if snapshot and snapshot.id and type(snapshot.actions) == "table" and #snapshot.actions > 0 then
+            dispatchNativeAction(menu, snapshot, snapshot.actions[1], 1)
+        end
+    end
+end
+
+local function dispatchTurnAction(menu, snapshot, source)
+    if not CombatConfig.AutoTurn then return end
+    local rawMode = CombatConfig.CombatMode
+    local mode = (type(rawMode) == "table" and rawMode[1]) or tostring(rawMode or "None")
+    if mode == "None" or mode == "" then
+        return
+    end
+
+    if not snapshot or snapshot.canAct ~= true then return end
+    if menu and menu._canAct and not menu:_canAct() then
+        return
+    end
+
+    local turnKey = getTurnKey(snapshot)
+    if turnKey == "" or CombatState.DispatchedTurnKey == turnKey then
+        -- Strict lock: Turn already dispatched! Never re-send.
+        return
+    end
+
+    -- Cancel any previously scheduled pending dispatch
+    if CombatState.PendingDispatchThread then
+        pcall(task.cancel, CombatState.PendingDispatchThread)
+        CombatState.PendingDispatchThread = nil
+    end
+
+    -- Mark turn as dispatched immediately to prevent any concurrent race condition
+    CombatState.DispatchedTurnKey = turnKey
+
+    local delayTime = (source == "ToggleEnabled" or source == "ModeSelected") and 0.05 or (CombatConfig.DispatchDelayMin + math.random() * (CombatConfig.DispatchDelayMax - CombatConfig.DispatchDelayMin))
+
+    CombatState.PendingDispatchThread = task.delay(delayTime, function()
+        CombatState.PendingDispatchThread = nil
+        if snapshot and snapshot.id and (menu == nil or menu._canAct == nil or menu:_canAct()) then
+            safeExecuteNativeTurn(menu, snapshot)
+        end
+    end)
+end
+
+local function hookPixelCommandMenu()
+    local pbClient = getPBClient(false)
+    local mod = pbClient and pbClient:FindFirstChild("PixelCommandMenu")
+    if not mod then
+        return false
+    end
+
+    local ok, Menu = pcall(require, mod)
+    if not ok or type(Menu) ~= "table" or not Menu.Update then
+        return false
+    end
+
+    if Menu.__bhHooked then
+        NativeMenuHooked = true
+        return true
+    end
+    Menu.__bhHooked = true
+
+    local oldUpdate = Menu.Update
+    Menu.Update = function(self, snapshot)
+        local res = oldUpdate(self, snapshot)
+        CombatState.ActiveMenu = self
+        CombatState.CurrentBattle = snapshot
+
+        if CombatConfig.AutoTurn and type(snapshot) == "table" and snapshot.canAct == true then
+            dispatchTurnAction(self, snapshot, "MenuUpdate")
+        end
+
+        return res
+    end
+
+    NativeMenuHooked = true
+    return true
+end
+
+-- ═══════════════════════════════════════════════════════════════════
+-- 🏰 PART 3: DUNGEON ROUTE PATHFINDER & HOOKS
+-- ═══════════════════════════════════════════════════════════════════
+
+local function matchesSecretBoss(choice, targetBoss)
+    if type(choice) ~= "table" then return false end
+    local title = string.lower(tostring(choice.title or choice.name or choice.preview or choice.boss or ""))
+    local cType = string.lower(tostring(choice.type or choice.kind or ""))
+    local rarity = string.lower(tostring(choice.rarity or ""))
+
+    local isSecretNode = cType == "secret" or rarity == "secret" or string.find(title, "secret", 1, true) ~= nil
+
+    local rawTarget = targetBoss or "Randomly"
+    local target = (type(rawTarget) == "table" and rawTarget[1]) or tostring(rawTarget or "Randomly")
+
+    if target == "Randomly" or target == "Any Secret Boss" then
+        if isSecretNode then return true end
+        for _, b in ipairs(SecretBossList) do
+            if b ~= "Randomly" and b ~= "Any Secret Boss" and string.find(title, string.lower(b), 1, true) then
+                return true
+            end
+        end
+        return false
+    else
+        local targetLower = string.lower(target)
+        return string.find(title, targetLower, 1, true) ~= nil
+    end
+end
+
+local function selectBestNodeChoice(choices)
+    if type(choices) ~= "table" or #choices == 0 then return 1 end
+
+    -- 1. Secret Boss Override: If enabled and matches, pick immediately!
+    if DungeonConfig.Priority_SecretBoss then
+        local matchedBosses = {}
+        for idx, choice in ipairs(choices) do
+            if matchesSecretBoss(choice, DungeonConfig.Target_SecretBoss) then
+                table.insert(matchedBosses, idx)
+            end
+        end
+        if #matchedBosses > 0 then
+            local picked = matchedBosses[math.random(1, #matchedBosses)]
+            return picked
+        end
+    end
+
+    -- 2. Preferred Node Choice: If set and found in choices, pick it!
+    local rawPref = DungeonConfig.PreferredNode
+    local preferred = (type(rawPref) == "table" and rawPref[1]) or tostring(rawPref or "None")
+    if preferred and preferred ~= "None" and preferred ~= "" then
+        local preferredLower = string.lower(preferred)
+        for idx, choice in ipairs(choices) do
+            local nodeType = string.lower(tostring(choice.kind or choice.type or choice.name or choice.title or ""))
+            if string.find(nodeType, preferredLower, 1, true) then
+                return idx
+            end
+        end
+    end
+
+    -- 3. Random Fallback: If preferred not found or None, pick randomly!
+    local randomIdx = math.random(1, #choices)
+    return randomIdx
+end
+
+local function triggerAutoReplay(info)
+    if not DungeonConfig.AutoReplay or not RPGCommand then return end
+    task.delay(1.2, function()
+        if DungeonConfig.DungeonMode == "Torment" then
+            local curTier = tonumber(info and (info.tier or info.tormentTier)) or DungeonConfig.TormentTier or 1
+            if DungeonConfig.ReplayMode == "replayNext" then
+                RPGCommand:FireServer("RunLobby", { action = "replayNext", tier = curTier + 1 })
+            else
+                RPGCommand:FireServer("RunLobby", { action = "replay" })
+            end
+        else
+            -- Normal / Event Dungeons: Preserve and replay the exact Act/Stage (e.g. Act 9)!
+            local currentAct = tonumber(info and (info.startAct or info.act)) or LastPlayedAct or DungeonConfig.StartAct or 1
+            local diff = string.lower(tostring((info and info.difficulty) or DungeonConfig.NormalDifficulty or "normal"))
+
+            if DungeonConfig.ReplayMode == "replay" then
+                -- Replay the SAME Act / Stage that was just played
+                RPGCommand:FireServer("RunLobby", {
+                    action = "solo",
+                    difficulty = diff,
+                    startAct = currentAct
+                })
+            else
+                -- "replayNext": progress to next Act (capped at 10)
+                local nextAct = math.min(10, currentAct + 1)
+                RPGCommand:FireServer("RunLobby", {
+                    action = "solo",
+                    difficulty = diff,
+                    startAct = nextAct
+                })
+            end
+        end
+    end)
+end
+
+-- ═══════════════════════════════════════════════════════════════════
+-- 🛡️ NORMAL MODE SINGLE-ACT EXIT & AUTO-NODE SYNC (Zero-Life Loss)
+-- ═══════════════════════════════════════════════════════════════════
+local NormalActBossDefeated = false
+local NormalActReturningHome = false
+local CurrentCombatIsBoss = false
+
+-- ═══════════════════════════════════════════════════════════════════
+-- 🎁 AUTO CLAIM DUNGEON REWARD CHESTS & DISMISS VICTORY SCREEN
+-- ═══════════════════════════════════════════════════════════════════
+local function autoClaimDungeonChests()
+    if not DungeonConfig.AutoClaimChests then return end
+    task.spawn(function()
+        -- 1. Auto-dismiss Victory Screen ("RETURN TO THE ROAD" / "Continue")
+        local pg = getPlayerGui(false)
+        if pg then
+            for _, desc in ipairs(pg:GetDescendants()) do
+                if desc:IsA("TextButton") or desc:IsA("ImageButton") then
+                    local name = string.upper(tostring(desc.Name))
+                    local text = desc:IsA("TextButton") and string.upper(tostring(desc.Text)) or ""
+                    if text == "RETURN TO THE ROAD" or text == "CONTINUE" or name == "CONTINUE" then
+                        if desc.Visible and desc.Active then
+                            if firesignal then
+                                pcall(firesignal, desc.Activated)
+                                pcall(firesignal, desc.MouseButton1Click)
+                            end
+                        end
+                    -- 2. GUI Chest Claim Buttons: "CLAIM", "OPEN", "TAKE ALL", "OPEN CHEST", "COLLECT"
+                    elseif string.find(text, "CLAIM", 1, true)
+                        or string.find(text, "OPEN CHEST", 1, true)
+                        or string.find(text, "TAKE ALL", 1, true)
+                        or string.find(text, "COLLECT", 1, true) then
+                        if desc.Visible and desc.Active then
+                            if firesignal then
+                                pcall(firesignal, desc.Activated)
+                                pcall(firesignal, desc.MouseButton1Click)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+
+        -- 3. 3D Workspace Chests ProximityPrompt & ClickDetector
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            local oName = string.lower(obj.Name)
+            if string.find(oName, "chest", 1, true) or string.find(oName, "reward", 1, true) or string.find(oName, "treasure", 1, true) then
+                -- Check ProximityPrompt
+                local prompt = obj:FindFirstChildOfClass("ProximityPrompt") or (obj:IsA("ProximityPrompt") and obj)
+                if prompt and prompt.Enabled then
+                    if fireproximityprompt then
+                        pcall(fireproximityprompt, prompt)
+                    end
+                end
+                -- Check ClickDetector
+                local cd = obj:FindFirstChildOfClass("ClickDetector") or (obj:IsA("ClickDetector") and obj)
+                if cd then
+                    if fireclickdetector then
+                        pcall(fireclickdetector, cd)
+                    end
+                end
+            end
+        end
+    end)
+end
+
+local function isNormalActFinished(state)
+    if DungeonConfig.DungeonMode ~= "Normal" then return false end
+    if not state or type(state) ~= "table" then return false end
+
+    local targetAct = math.clamp(tonumber(DungeonConfig.StartAct) or 1, 1, 10)
+    local curAct = tonumber(state.act or state.startAct) or targetAct
+
+    -- Only return home when we reached the next Act's Route Selection (phase == "choose")!
+    -- This guarantees the boss in targetAct has died, victory screen dismissed, chest loot collected, and character loses 0 life!
+    if curAct > targetAct and state.phase == "choose" then
+        return true
+    end
+
+    -- If run completed, victory, or ended
+    if state.phase == "completed" or state.phase == "victory" or state.phase == "ended" or state.active == false then
+        return true
+    end
+
+    return false
+end
+
+local function performSafeReturnHome(state)
+    if NormalActReturningHome then return end
+    NormalActReturningHome = true
+
+    if DungeonStatusLabel then
+        DungeonStatusLabel:SetText("Act Cleared! Returning to Castle (Zero Life Loss)...")
+    end
+
+    task.spawn(function()
+        local runId = (state and state.id) or ""
+        local round = (state and state.round) or 1
+        local phase = (state and state.phase) or "choose"
+
+        -- Step 1: Fire RunAction abandon at choose phase (Zero-Life Loss handshake verified!)
+        if RPGCommand and runId ~= "" then
+            pcall(function()
+                RPGCommand:FireServer("RunAction", {
+                    action = "abandon",
+                    phase = phase,
+                    round = round,
+                    runId = runId
+                })
+            end)
+        end
+
+        task.wait(0.2)
+
+        -- Step 2: Fire RunLobby abandon
+        if RPGCommand then
+            pcall(function()
+                RPGCommand:FireServer("RunLobby", { action = "abandon" })
+            end)
+        end
+
+        task.wait(0.2)
+
+        -- Step 3: Fire RunGoHome { now = true }
+        if RPGCommand then
+            pcall(function()
+                RPGCommand:FireServer("RunGoHome", { now = true })
+            end)
+        end
+
+        -- GUI Fallback: Trigger native Return Home / Head Home buttons if rendered
+        local pg = getPlayerGui(false)
+        if pg then
+            for _, desc in ipairs(pg:GetDescendants()) do
+                if desc:IsA("TextButton") or desc:IsA("ImageButton") then
+                    local text = string.upper(tostring(desc.Name .. " " .. (desc:IsA("TextButton") and desc.Text or "")))
+                    if string.find(text, "RETURN HOME", 1, true)
+                        or string.find(text, "HEAD HOME", 1, true)
+                        or string.find(text, "RETURN TO CASTLE", 1, true)
+                        or string.find(text, "TURN BACK", 1, true) then
+                        if firesignal then
+                            pcall(firesignal, desc.Activated)
+                            pcall(firesignal, desc.MouseButton1Click)
+                        end
+                    end
+                end
+            end
+        end
+
+        -- Safety retry if still in run after 3s
+        task.wait(3)
+        if LocalPlayer and LocalPlayer:GetAttribute("PBInRun") == true and RPGCommand then
+            pcall(function()
+                RPGCommand:FireServer("RunGoHome", { now = true })
+            end)
+        end
+    end)
+end
+
+-- Hook RunMapView directly in memory for seamless native integration
+local function hookRunMapView()
+    local pbClient = getPBClient(false)
+    local runMapModule = pbClient and pbClient:FindFirstChild("RunMapView")
+    if not runMapModule then return false end
+
+    local ok, RunMapView = pcall(require, runMapModule)
+    if not ok or type(RunMapView) ~= "table" or not RunMapView.SetState then return false end
+
+    if RunMapView.__bhHooked then return true end
+    RunMapView.__bhHooked = true
+
+    local oldSetState = RunMapView.SetState
+    RunMapView.SetState = function(self, newState)
+        local res = oldSetState(self, newState)
+
+        if type(newState) == "table" then
+            local actNum = tonumber(newState.startAct or newState.act)
+            if actNum and actNum > 0 then
+                LastPlayedAct = actNum
+            end
+            if type(updateStageDisplay) == "function" then
+                updateStageDisplay(newState)
+            end
+
+            -- Check Auto Claim Chests / Dismiss Victory Screen in event / victory phases
+            if newState.phase == "event" or newState.phase == "victory" or newState.phase == "completed" then
+                autoClaimDungeonChests()
+            end
+        end
+
+        -- Normal Mode Single-Act Synchronization: Block advancing into next Act!
+        if isNormalActFinished(newState) then
+            performSafeReturnHome(newState)
+            return res
+        end
+
+        if DungeonConfig.AutoChooseNode and type(newState) == "table" then
+            local phase = newState.phase
+            local runId = newState.id
+            local round = newState.round
+
+            -- 1. Auto-Vote Best Route Node
+            if phase == "choose" and newState.choices and #newState.choices > 0 then
+                local bestIdx = selectBestNodeChoice(newState.choices)
+                task.delay(0.35, function()
+                    if self.state and self.state.phase == "choose" then
+                        if isNormalActFinished(self.state) then
+                            performSafeReturnHome(self.state)
+                            return
+                        end
+                        pcall(function()
+                            self:_send({
+                                action = "vote",
+                                choice = bestIdx
+                            }, self.state)
+                            if self.votes and self.player then
+                                self.votes[self.player.UserId] = bestIdx
+                                if self._refreshVotes then
+                                    self:_refreshVotes()
+                                end
+                            end
+                        end)
+                    end
+                end)
+
+            -- 2. Auto-Confirm Event / Shop
+            elseif phase == "event" then
+                autoClaimDungeonChests()
+                task.delay(0.6, function()
+                    if self.state and self.state.phase == "event" then
+                        if isNormalActFinished(self.state) then
+                            performSafeReturnHome(self.state)
+                            return
+                        end
+                        pcall(function()
+                            self:_send({ action = "eventReady" }, self.state)
+                        end)
+                    end
+                end)
+
+            -- 3. Auto-Progress Story Dialogues
+            elseif phase == "story" then
+                task.delay(0.4, function()
+                    if self.state and self.state.phase == "story" then
+                        if isNormalActFinished(self.state) then
+                            performSafeReturnHome(self.state)
+                            return
+                        end
+                        pcall(function()
+                            self:_send({ action = "storyChoice", choice = "continue" }, self.state)
+                        end)
+                    end
+                end)
+
+            -- 4. Auto-Replay Upon Floor Completion
+            elseif phase == "ended" or newState.active == false then
+                triggerAutoReplay(newState)
+            end
+        end
+
+        return res
+    end
+
+    return true
+end
+
+-- Setup Dual-Layer Network Listeners
+local lastHandledMapPhase = ""
+local LatestProfile = nil
+local sweepAndSellBagGears = nil
+local sweepAndReleasePets = nil
+local upgradeValorAll = nil
+local dismissHatchCinematic = nil
+local TormentTrackerLabel = nil
+local refreshEggDropdown = nil
+local StageBadge = nil
+
+local function updateStageDisplay(stateOrPayload)
+    if not StageBadge then return end
+    if not stateOrPayload or type(stateOrPayload) ~= "table" then
+        StageBadge:SetText("📍 Lobby (Idle)")
+        return
+    end
+
+    local inRun = LocalPlayer and LocalPlayer:GetAttribute("PBInRun") == true
+    if not inRun and (stateOrPayload.active == false or stateOrPayload.phase == "lobby") then
+        StageBadge:SetText("📍 Lobby (Idle)")
+        return
+    end
+
+    local round = tonumber(stateOrPayload.round) or 1
+    local mode = tostring(stateOrPayload.difficulty or DungeonConfig.DungeonMode or "")
+    local act = tonumber(stateOrPayload.act or stateOrPayload.startAct or LastPlayedAct or DungeonConfig.StartAct) or 1
+    local tier = tonumber(stateOrPayload.tier or stateOrPayload.tormentLevel or DungeonConfig.TormentTier) or 1
+
+    local text = ""
+    if string.find(string.lower(mode), "torment", 1, true) or stateOrPayload.torment then
+        text = string.format("📍 Torment.lvl%d Stage %d", tier, round)
+    elseif string.find(string.lower(mode), "spooky", 1, true) or string.find(string.lower(mode), "halloween", 1, true) then
+        text = string.format("📍 Spooky Stage %d", round)
+    else
+        text = string.format("📍 Act %d Stage %d", act, round)
+    end
+    StageBadge:SetText(text)
+end
+
+if RPGState then
+    RPGState.OnClientEvent:Connect(function(event, payload)
+        if event == "Profile" and type(payload) == "table" then
+            LatestProfile = payload
+            if AutoSellConfig.Enabled and type(sweepAndSellBagGears) == "function" then
+                task.delay(0.5, sweepAndSellBagGears)
+            end
+            if EggConfig.AutoRelease and type(sweepAndReleasePets) == "function" then
+                task.delay(0.7, sweepAndReleasePets)
+            end
+            if type(refreshEggDropdown) == "function" then
+                task.delay(0.2, refreshEggDropdown)
+            end
+
+        elseif (event == "BattleStarted" or event == "BattleUpdated") and type(payload) == "table" then
+            local snapshot = payload.snapshot or payload.battle or payload
+            if type(snapshot) == "table" and snapshot.id then
+                CombatState.CurrentBattle = snapshot
+
+                -- Check if battle contains a Boss enemy
+                local hasBoss = false
+                if snapshot.enemies and type(snapshot.enemies) == "table" then
+                    for _, foe in ipairs(snapshot.enemies) do
+                        local actor = (type(foe) == "table" and foe.actor) or foe
+                        if foe.isBoss or (actor and (actor.isBoss or actor.category == "boss" or actor.kind == "boss")) then
+                            hasBoss = true
+                            break
+                        end
+                    end
+                end
+                CurrentCombatIsBoss = hasBoss
+
+                -- Fallback turn execution ONLY if native PixelCommandMenu hook is not available
+                if not NativeMenuHooked and CombatConfig.AutoTurn and snapshot.canAct == true then
+                    dispatchTurnAction(nil, snapshot, "RPGStateFallback")
+                end
+            end
+
+        elseif event == "BattleEnded" then
+            CombatState.CurrentBattle = nil
+            CombatState.DispatchedTurnKey = ""
+            if CombatState.PendingDispatchThread then
+                pcall(task.cancel, CombatState.PendingDispatchThread)
+                CombatState.PendingDispatchThread = nil
+            end
+            if CurrentCombatIsBoss then
+                CurrentCombatIsBoss = false
+                NormalActBossDefeated = true
+            end
+            -- Auto Claim Chests / Dismiss Victory Screen
+            autoClaimDungeonChests()
+            task.delay(0.6, autoClaimDungeonChests)
+            task.delay(1.5, autoClaimDungeonChests)
+
+            if AutoSellConfig.Enabled and type(sweepAndSellBagGears) == "function" then
+                task.delay(0.8, sweepAndSellBagGears)
+            end
+
+        elseif event == "BossChestLoot" or event == "RunGearDrop" then
+            autoClaimDungeonChests()
+
+        elseif event == "PetHatched" then
+            if EggConfig.FastHatch then
+                task.defer(dismissHatchCinematic)
+            end
+            if EggConfig.AutoRelease and type(sweepAndReleasePets) == "function" then
+                task.delay(0.5, sweepAndReleasePets)
+            end
+
+        elseif event == "BattleJoinOffer" and payload and payload.battleId then
+            if CombatConfig.AutoJoinBattle then
+                RPGCommand:FireServer("JoinBattle", { battleId = payload.battleId })
+            elseif CombatConfig.AutoDeclineBattle then
+                RPGCommand:FireServer("DeclineBattleJoin", { battleId = payload.battleId })
+            end
+
+        -- Dungeon Map Auto-Choose Fallback
+        elseif (event == "RunState" or event == "RunMapUpdated") and type(payload) == "table" then
+            local actNum = tonumber(payload.startAct or payload.act)
+            if actNum and actNum > 0 then
+                LastPlayedAct = actNum
+            end
+            updateStageDisplay(payload)
+
+            if payload.phase == "event" or payload.phase == "victory" or payload.phase == "completed" then
+                autoClaimDungeonChests()
+            end
+
+            -- Normal Mode Single-Act Synchronization: Block advancing into next Act!
+            if isNormalActFinished(payload) then
+                performSafeReturnHome(payload)
+            else
+                local runId = payload.id
+                local round = payload.round or 1
+                local phase = payload.phase or ""
+                local phaseKey = string.format("%s:%s:%s", tostring(runId), tostring(round), tostring(phase))
+
+                if lastHandledMapPhase ~= phaseKey then
+                    lastHandledMapPhase = phaseKey
+                    if phase == "choose" and DungeonConfig.AutoChooseNode and payload.choices and #payload.choices > 0 then
+                        local bestIdx = selectBestNodeChoice(payload.choices)
+                        task.delay(0.5, function()
+                            RPGCommand:FireServer("RunAction", { action = "vote", runId = runId, round = round, phase = phase, choice = bestIdx })
+                        end)
+                    elseif (phase == "event" or phase == "mystery") and DungeonConfig.AutoChooseNode then
+                        autoClaimDungeonChests()
+                        task.delay(0.6, function()
+                            RPGCommand:FireServer("RunAction", { action = "eventReady", runId = runId, round = round, phase = phase })
+                        end)
+                    elseif phase == "story" and DungeonConfig.AutoChooseNode then
+                        task.delay(0.4, function()
+                            RPGCommand:FireServer("RunAction", { action = "storyChoice", choice = "continue", runId = runId, round = round, phase = phase })
+                        end)
+                    elseif phase == "completed" or phase == "victory" or phase == "ended" then
+                        -- 1. Post-Torment / Post-Run Valor Auto-Upgrade
+                        if DungeonConfig.AutoUpgradeValor and type(upgradeValorAll) == "function" then
+                            task.delay(0.4, upgradeValorAll)
+                        end
+                        -- 2. Post-Run Bag Clean
+                        if AutoSellConfig.Enabled and type(sweepAndSellBagGears) == "function" then
+                            task.delay(0.8, sweepAndSellBagGears)
+                        end
+                        -- 3. Auto Replay Runner
+                        triggerAutoReplay(payload)
+                    end
+                end
+            end
+
+        elseif event == "RunLobbyState" and type(payload) == "table" then
+            -- Reset Normal Mode Single-Act tracking when back in Lobby
+            NormalActBossDefeated = false
+            NormalActReturningHome = false
+            CurrentCombatIsBoss = false
+            updateStageDisplay(nil)
+
+            -- Check Valor Upgrade in lobby transition
+            if DungeonConfig.AutoUpgradeValor and type(upgradeValorAll) == "function" then
+                task.delay(0.3, upgradeValorAll)
+            end
+            if AutoSellConfig.Enabled and type(sweepAndSellBagGears) == "function" then
+                task.delay(0.5, sweepAndSellBagGears)
+            end
+            if DungeonConfig.AutoReplay and (payload.status == "waiting" or payload.canReady) then
+                task.delay(0.5, function()
+                    RPGCommand:FireServer("RunReady", { ready = true })
+                end)
+            end
+
+        elseif event == "BloodlineItemFound" and DungeonConfig.AutoRevealBloodline and type(payload) == "table" and payload.itemId then
+            RPGCommand:FireServer("BloodlineRevealed", { itemId = payload.itemId })
+        end
+    end)
+end
+
+-- Initialize Engine Hooks Safely
+task.spawn(function()
+    local pbClient = getPBClient(true)
+    if not pbClient then
+        warn("[BottleHub] ⚠️ PlatformBattlesClient not found!")
+        return
+    end
+
+    if pbClient:WaitForChild("PixelQTE", 10) then
+        pcall(setupQTE)
+    end
+
+    if pbClient:WaitForChild("RunMapView", 10) then
+        pcall(hookRunMapView)
+    end
+
+    if pbClient:WaitForChild("PixelCommandMenu", 10) then
+        pcall(hookPixelCommandMenu)
+    end
+end)
+
+-- ═══════════════════════════════════════════════════════════════════
+-- 🐾 PET & EGG HELPERS (Ranch Fast-Hatch System)
+-- ═══════════════════════════════════════════════════════════════════
+
+local GearConfigMod = nil
+pcall(function()
+    local pbShared = ReplicatedStorage:FindFirstChild("PlatformBattles") and ReplicatedStorage.PlatformBattles:FindFirstChild("Shared")
+    if pbShared and pbShared:FindFirstChild("GearConfig") then
+        GearConfigMod = require(pbShared.GearConfig)
+    end
+end)
+
+local PetConfigMod = nil
+pcall(function()
+    local pbShared = ReplicatedStorage:FindFirstChild("PlatformBattles") and ReplicatedStorage.PlatformBattles:FindFirstChild("Shared")
+    if pbShared and pbShared:FindFirstChild("PetConfig") then
+        PetConfigMod = require(pbShared.PetConfig)
+    end
+end)
+
+dismissHatchCinematic = function()
+    local pg = getPlayerGui(false)
+    if not pg then return end
+
+    for _, gui in ipairs(pg:GetChildren()) do
+        local low = string.lower(gui.Name)
+        if gui:IsA("ScreenGui") and (string.find(low, "cinematic", 1, true) or string.find(low, "hatch", 1, true)) then
+            gui.Enabled = false
+        end
+    end
+
+    local ranch = pg:FindFirstChild("Ranch") or pg:FindFirstChild("PlatformBattlesUI") or pg:FindFirstChild("Village")
+    if ranch then
+        for _, child in ipairs(ranch:GetDescendants()) do
+            local low = string.lower(child.Name)
+            if string.find(low, "hatch", 1, true) or string.find(low, "cinematic", 1, true) then
+                if child:IsA("GuiObject") then
+                    child.Visible = false
+                end
+            end
+        end
+    end
+end
+
+-- Hook RanchView._playHatch directly for instant zero-animation Fast Hatch
+local function hookRanchFastHatch()
+    local pbClient = getPBClient(true)
+    local rMod = pbClient and pbClient:WaitForChild("RanchView", 10)
+    if rMod then
+        local ok, RanchView = pcall(require, rMod)
+        if ok and type(RanchView) == "table" then
+            local targetTable = (type(RanchView.__index) == "table" and RanchView.__index) or RanchView
+            if type(targetTable._playHatch) == "function" and not targetTable._fastHatchHooked then
+                local origPlayHatch = targetTable._playHatch
+                targetTable._fastHatchHooked = true
+                targetTable._playHatch = function(self, pet, itemId)
+                    if EggConfig.FastHatch then
+                        self.hatching = false
+                        if self.hatchLayer and self.hatchLayer.Parent then
+                            pcall(function() self.hatchLayer:Destroy() end)
+                            self.hatchLayer = nil
+                        end
+                        if type(self._afterHatch) == "function" then
+                            pcall(function() self:_afterHatch(pet, itemId) end)
+                        end
+                        if type(self.Refresh) == "function" then
+                            pcall(function() self:Refresh() end)
+                        end
+                        return
+                    end
+                    return origPlayHatch(self, pet, itemId)
+                end
+            end
+        end
+    end
+end
+task.spawn(hookRanchFastHatch)
+
+-- Real-time Fast Hatch Listener (intercepts any hatch GUI or cinematic immediately)
+local function setupFastHatchListener()
+    local pg = getPlayerGui(true)
+    if not pg then return end
+
+    pg.ChildAdded:Connect(function(child)
+        if not EggConfig.FastHatch then return end
+        local name = string.lower(child.Name)
+        if child:IsA("ScreenGui") and (string.find(name, "cinematic", 1, true) or string.find(name, "hatch", 1, true)) then
+            child.Enabled = false
+        end
+    end)
+
+    pg.DescendantAdded:Connect(function(desc)
+        if not EggConfig.FastHatch then return end
+        local name = string.lower(desc.Name)
+        if string.find(name, "cinematic", 1, true) or string.find(name, "hatchlayer", 1, true) or string.find(name, "pethatch", 1, true) then
+            if desc:IsA("ScreenGui") then
+                desc.Enabled = false
+            elseif desc:IsA("GuiObject") then
+                desc.Visible = false
+            end
+        end
+    end)
+end
+task.spawn(setupFastHatchListener)
+
+local function extractProfileFromMemory()
+    if LatestProfile and (type(LatestProfile.inventory) == "table" or type(LatestProfile.gearBag) == "table") then
+        return LatestProfile
+    end
+
+    -- 1. Try getconnections on RPGState.OnClientEvent upvalues
+    if getconnections and RPGState then
+        pcall(function()
+            for _, conn in ipairs(getconnections(RPGState.OnClientEvent)) do
+                local fn = conn.Function
+                if fn and getupvalues then
+                    local uvs = getupvalues(fn)
+                    for _, uv in pairs(uvs) do
+                        if type(uv) == "table" then
+                            if uv.profile and type(uv.profile) == "table" and (type(uv.profile.inventory) == "table" or type(uv.profile.gearBag) == "table") then
+                                LatestProfile = uv.profile
+                                return
+                            elseif (type(uv.inventory) == "table" or type(uv.gearBag) == "table") and (uv.gold ~= nil or uv.valor ~= nil or uv.lineage ~= nil or uv.userId ~= nil) then
+                                LatestProfile = uv
+                                return
+                            end
+                            if uv.pixelGear and type(uv.pixelGear) == "table" and uv.pixelGear.profile and (type(uv.pixelGear.profile.inventory) == "table" or type(uv.pixelGear.profile.gearBag) == "table") then
+                                LatestProfile = uv.pixelGear.profile
+                                return
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+        if LatestProfile and (type(LatestProfile.inventory) == "table" or type(LatestProfile.gearBag) == "table") then
+            return LatestProfile
+        end
+    end
+
+    -- 2. Try getgc(true) scanning
+    if getgc then
+        pcall(function()
+            local gc = getgc(true)
+            for _, tbl in ipairs(gc) do
+                if type(tbl) == "table" then
+                    if (type(rawget(tbl, "inventory")) == "table" or type(rawget(tbl, "gearBag")) == "table") and (rawget(tbl, "gold") ~= nil or rawget(tbl, "valor") ~= nil or rawget(tbl, "gems") ~= nil or rawget(tbl, "lineage") ~= nil) then
+                        LatestProfile = tbl
+                        return
+                    elseif type(rawget(tbl, "profile")) == "table" and (type(rawget(tbl.profile, "inventory")) == "table" or type(rawget(tbl.profile, "gearBag")) == "table") then
+                        LatestProfile = tbl.profile
+                        return
+                    end
+                end
+            end
+        end)
+        if LatestProfile and (type(LatestProfile.inventory) == "table" or type(LatestProfile.gearBag) == "table") then
+            return LatestProfile
+        end
+    end
+
+    -- 3. Fallback: Request profile from server if ProfileRequest exists
+    local pReq = Remotes and Remotes:FindFirstChild("ProfileRequest")
+    if pReq then
+        pcall(function()
+            local res = pReq:InvokeServer("GetProfile") or pReq:InvokeServer("Profile") or pReq:InvokeServer()
+            if type(res) == "table" then
+                local p = res.profile or res
+                if type(p.inventory) == "table" or type(p.gearBag) == "table" then
+                    LatestProfile = p
+                end
+            end
+        end)
+        if LatestProfile and (type(LatestProfile.inventory) == "table" or type(LatestProfile.gearBag) == "table") then
+            return LatestProfile
+        end
+    end
+
+    return LatestProfile
+end
+
+local function getProfileInventory()
+    local prof = extractProfileFromMemory()
+    if prof and type(prof.inventory) == "table" then
+        return prof.inventory
+    end
+    local pbClient = getPBClient(false)
+    if pbClient then
+        local vMod = pbClient:FindFirstChild("VillageView")
+        if vMod then
+            local ok, VillageView = pcall(require, vMod)
+            if ok and type(VillageView) == "table" and VillageView.profile and type(VillageView.profile.inventory) == "table" then
+                return VillageView.profile.inventory
+            end
+        end
+    end
+    return nil
+end
+
+local function getProfileGearBag()
+    local prof = extractProfileFromMemory()
+    if prof and type(prof.gearBag) == "table" then
+        return prof.gearBag, prof.gear
+    end
+    local pbClient = getPBClient(false)
+    if pbClient then
+        local gMod = pbClient:FindFirstChild("PixelGearView")
+        if gMod then
+            local ok, PixelGearView = pcall(require, gMod)
+            if ok and type(PixelGearView) == "table" and PixelGearView.profile and type(PixelGearView.profile.gearBag) == "table" then
+                return PixelGearView.profile.gearBag, PixelGearView.profile.gear
+            end
+        end
+    end
+    return nil, nil
+end
+
+local function formatEggDisplayName(itemId)
+    local s = tostring(itemId or "")
+    if string.sub(s, 1, 3) == "Egg" then
+        s = string.sub(s, 4)
+    end
+    local rarityFound = ""
+    for _, r in ipairs({ "Legendary", "Common", "Uncommon", "Rare", "Epic", "Mythic" }) do
+        if string.sub(s, -#r) == r then
+            rarityFound = r
+            s = string.sub(s, 1, -#r - 1)
+            break
+        end
+    end
+    local family = string.gsub(s, "(%l)(%u)", "%1 %2")
+    if rarityFound ~= "" then
+        return string.format("%s Egg (%s)", family, rarityFound)
+    else
+        return string.format("%s Egg", family)
+    end
+end
+
+local function getAllEggsInInventory()
+    local eggs = { "All Eggs" }
+    local seen = { ["All Eggs"] = true }
+
+    local inv = getProfileInventory()
+    if inv and type(inv) == "table" then
+        for key, item in pairs(inv) do
+            local itemId = ""
+            local count = 0
+
+            if type(item) == "number" then
+                itemId = tostring(key)
+                count = item
+            elseif type(item) == "table" then
+                itemId = tostring(item.itemId or item.id or item.name or key or "")
+                count = tonumber(item.count or item.amount or item.quantity or 1) or 1
+            elseif type(item) == "string" then
+                itemId = item
+                count = 1
+            end
+
+            local lowId = string.lower(itemId)
+            if string.find(lowId, "egg", 1, true) ~= nil and count > 0 then
+                local disp = formatEggDisplayName(itemId)
+                if not seen[disp] then
+                    seen[disp] = true
+                    table.insert(eggs, disp)
+                end
+            end
+        end
+    end
+
+    if PetConfigMod and type(PetConfigMod.FamilyById) == "table" then
+        for family, _ in pairs(PetConfigMod.FamilyById) do
+            local name = family .. " Egg"
+            if not seen[name] then
+                seen[name] = true
+                table.insert(eggs, name)
+            end
+        end
+    else
+        local knownEggs = { "Canine Egg", "Automaton Egg", "Spooky Egg", "Woodland Egg", "Haunted Egg" }
+        for _, eggName in ipairs(knownEggs) do
+            if not seen[eggName] then
+                seen[eggName] = true
+                table.insert(eggs, eggName)
+            end
+        end
+    end
+
+    return eggs
+end
+
+local function findEggToHatch()
+    local chosenType = EggConfig.EggType
+    local lowChosen = string.lower(tostring(chosenType or "All Eggs"))
+    local cleanChosen = string.gsub(lowChosen, "%s*%[.*%]", "")
+    cleanChosen = string.gsub(cleanChosen, "%s*egg", "")
+    cleanChosen = string.gsub(cleanChosen, "%s*%(.*%)", "")
+    cleanChosen = string.match(cleanChosen, "^%s*(.-)%s*$") or ""
+
+    local inv = getProfileInventory()
+    if inv and type(inv) == "table" then
+        for key, item in pairs(inv) do
+            local itemId = ""
+            local count = 0
+
+            if type(item) == "number" then
+                itemId = tostring(key)
+                count = item
+            elseif type(item) == "table" then
+                itemId = tostring(item.itemId or item.id or item.name or key or "")
+                count = tonumber(item.count or item.amount or item.quantity or 1) or 1
+            elseif type(item) == "string" then
+                itemId = item
+                count = 1
+            end
+
+            local lowId = string.lower(itemId)
+            if string.find(lowId, "egg", 1, true) ~= nil and count > 0 then
+                if lowChosen == "all eggs" or lowChosen == "" or lowChosen == "all" then
+                    return itemId
+                end
+
+                local disp = formatEggDisplayName(itemId)
+                local lowDisp = string.lower(disp)
+
+                if string.find(lowDisp, lowChosen, 1, true)
+                    or string.find(lowId, lowChosen, 1, true)
+                    or (cleanChosen ~= "" and string.find(lowId, cleanChosen, 1, true)) then
+                    return itemId
+                end
+            end
+        end
+    end
+
+    -- Fallback: Scan PlayerGui inventory / ranch slots
+    local pg = getPlayerGui(false)
+    if pg then
+        local pbUI = pg:FindFirstChild("PlatformBattlesUI") or pg:FindFirstChild("Inventory") or pg:FindFirstChild("Village") or pg:FindFirstChild("Ranch")
+        if pbUI then
+            for _, desc in ipairs(pbUI:GetDescendants()) do
+                if desc:IsA("GuiButton") or desc:IsA("Frame") then
+                    local text = ""
+                    local tLabel = desc:FindFirstChildOfClass("TextLabel")
+                    if tLabel then text = tLabel.Text end
+                    local n = desc.Name
+                    if string.find(string.lower(text), "egg", 1, true) or string.find(string.lower(n), "egg", 1, true) then
+                        local matches = (lowChosen == "all eggs" or lowChosen == "")
+                        if not matches then
+                            matches = string.find(string.lower(text .. n), lowChosen, 1, true) ~= nil
+                                or (cleanChosen ~= "" and string.find(string.lower(text .. n), cleanChosen, 1, true) ~= nil)
+                        end
+                        if matches then
+                            local itemId = desc:GetAttribute("ItemId") or desc:GetAttribute("itemId") or desc:GetAttribute("Id") or desc.Name
+                            return itemId
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return nil
+end
+
+-- ═══════════════════════════════════════════════════════════════════
+-- 🐾 PET AUTO-RELEASE HELPERS (Ranch System)
+-- ═══════════════════════════════════════════════════════════════════
+
+local function getProfilePets()
+    local prof = extractProfileFromMemory()
+    local pets = prof and (prof.pets or prof.petBag or prof.ranch or (prof.ranchData and prof.ranchData.pets))
+    local activePet = prof and (prof.activePet or prof.pet or prof.equippedPet or (prof.gear and prof.gear.pet))
+
+    if not pets then
+        local pbClient = getPBClient(false)
+        if pbClient then
+            local rMod = pbClient:FindFirstChild("RanchView")
+            if rMod then
+                local ok, RanchView = pcall(require, rMod)
+                if ok and type(RanchView) == "table" and RanchView.profile then
+                    pets = RanchView.profile.pets or RanchView.profile.petBag
+                    activePet = activePet or RanchView.profile.activePet
+                end
+            end
+        end
+    end
+
+    return pets, activePet
+end
+
+local function getPetRarity(pet)
+    if not pet then return "Common" end
+
+    -- 1. Direct rarity attribute
+    local rawRarity = pet.rarity or pet.Rarity or pet.tier or pet.Tier
+    if rawRarity and rawRarity ~= "" then
+        local s = tostring(rawRarity)
+        return string.upper(string.sub(s, 1, 1)) .. string.lower(string.sub(s, 2))
+    end
+
+    -- 2. Lookup in PetConfigMod definitions
+    local kind = pet.kind or pet.name or pet.type or pet.itemId or pet.id or ""
+    if PetConfigMod and PetConfigMod.Pets and PetConfigMod.Pets[kind] then
+        local def = PetConfigMod.Pets[kind]
+        if def.rarity then
+            local s = tostring(def.rarity)
+            return string.upper(string.sub(s, 1, 1)) .. string.lower(string.sub(s, 2))
+        end
+    end
+
+    -- 3. String name heuristic
+    local sKind = tostring(kind)
+    for _, r in ipairs({ "Legendary", "Epic", "Rare", "Uncommon", "Common" }) do
+        if string.find(sKind, r, 1, true) then
+            return r
+        end
+    end
+
+    return "Common"
+end
+
+sweepAndReleasePets = function()
+    if not EggConfig.AutoRelease or not RPGCommand then return end
+    local pets, activePet = getProfilePets()
+    if not pets or type(pets) ~= "table" then return end
+
+    local activePetId = nil
+    if type(activePet) == "string" or type(activePet) == "number" then
+        activePetId = tostring(activePet)
+    elseif type(activePet) == "table" then
+        activePetId = tostring(activePet.id or activePet.petId or activePet.uid or "")
+    end
+
+    local petsToRelease = {}
+
+    for key, pet in pairs(pets) do
+        local petTable = type(pet) == "table" and pet or nil
+        local petId = petTable and (petTable.id or petTable.petId or petTable.uid or key) or tostring(key)
+        petId = tostring(petId)
+
+        -- 1. Strictly protect equipped or active pet
+        local isEquipped = (petId == activePetId)
+            or (petTable and (petTable.equipped == true or petTable.active == true or petTable.isEquipped == true))
+
+        -- 2. Strictly respect user lock
+        local isLocked = petTable and (petTable.locked == true)
+
+        if not isEquipped and not isLocked and petId ~= "" then
+            local rarity = getPetRarity(petTable)
+            if EggConfig.ReleaseRarities[rarity] == true then
+                table.insert(petsToRelease, petId)
+            end
+        end
+    end
+
+    if #petsToRelease > 0 then
+        task.spawn(function()
+            for _, pId in ipairs(petsToRelease) do
+                if not EggConfig.AutoRelease then break end
+                pcall(function()
+                    RPGCommand:FireServer("Ranch", {
+                        action = "release",
+                        petId = pId
+                    })
+                end)
+                task.wait(0.25)
+            end
+        end)
+    end
+end
+
+-- ═══════════════════════════════════════════════════════════════════
+-- 🛡️ AUTO-SELL GEARS HELPERS (QoL Dual-Engine)
+-- ═══════════════════════════════════════════════════════════════════
+
+local RarityLevelMap = {
+    Common = 1,
+    Uncommon = 2,
+    Rare = 3,
+    Epic = 4,
+    Legendary = 5
+}
+
+local function syncNativeAutoSell()
+    if not RPGCommand then return end
+    local level = 0
+    if AutoSellConfig.Enabled then
+        for _, name in ipairs({ "Legendary", "Epic", "Rare", "Uncommon", "Common" }) do
+            if AutoSellConfig.Tiers[name] then
+                level = RarityLevelMap[name] or 0
+                break
+            end
+        end
+    end
+    pcall(function()
+        RPGCommand:FireServer("Settings", { key = "PBAutoSell", value = level })
+    end)
+end
+
+sweepAndSellBagGears = function()
+    if not AutoSellConfig.Enabled or not RPGCommand then return end
+    local gearBag, equippedGear = getProfileGearBag()
+    if not gearBag or type(gearBag) ~= "table" then return end
+
+    -- Whitelist all equipped gears to guarantee they are never touched
+    local equippedUids = {}
+    if type(equippedGear) == "table" then
+        for _, g in pairs(equippedGear) do
+            if type(g) == "table" and g.uid then
+                equippedUids[tostring(g.uid)] = true
+            elseif type(g) == "string" then
+                equippedUids[g] = true
+            end
+        end
+    end
+
+    local uidsToSell = {}
+    for _, item in pairs(gearBag) do
+        if type(item) == "table" and item.uid then
+            local uid = tostring(item.uid)
+            -- 1. Never sell equipped or worn items
+            if not equippedUids[uid] and item.worn ~= true and item.equipped ~= true then
+                -- 2. Strictly respect user lock
+                if item.locked ~= true then
+                    -- 3. Protect upgraded / honed gear (+1+)
+                    local hone = tonumber(item.plus) or tonumber(item.hone) or 0
+                    if not (AutoSellConfig.ProtectUpgraded and hone > 0) then
+                        -- 4. Check if rarity matches user's chosen tiers
+                        local rawRarity = tostring(item.rarity or item.Rarity or "")
+                        if rawRarity == "" and GearConfigMod and GearConfigMod.Items and item.base then
+                            local baseDef = GearConfigMod.Items[item.base]
+                            if baseDef and baseDef.rarity then
+                                rawRarity = tostring(baseDef.rarity)
+                            end
+                        end
+                        if rawRarity == "" then rawRarity = "Common" end
+                        local normRarity = string.upper(string.sub(rawRarity, 1, 1)) .. string.lower(string.sub(rawRarity, 2))
+
+                        if AutoSellConfig.Tiers[normRarity] == true then
+                            table.insert(uidsToSell, uid)
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    if #uidsToSell > 0 then
+        task.spawn(function()
+            for i = 1, #uidsToSell, 20 do
+                local batch = {}
+                for j = i, math.min(i + 19, #uidsToSell) do
+                    table.insert(batch, uidsToSell[j])
+                end
+                pcall(function()
+                    RPGCommand:FireServer("GearSellMany", { uids = batch })
+                end)
+                task.wait(0.25)
+            end
+        end)
+    end
+end
+
+-- ═══════════════════════════════════════════════════════════════════
+-- ⚡ VALOR AUTO-UPGRADE SYSTEM (Post-Torment Ranks)
+-- ═══════════════════════════════════════════════════════════════════
+
+upgradeValorAll = function()
+    if not DungeonConfig.AutoUpgradeValor then return end
+    local prof = extractProfileFromMemory()
+    if not prof then return end
+
+    local curRank = tonumber(prof.lineage or prof.lineageRank or prof.tormentRank) or 0
+    local valor = tonumber(prof.valor) or 0
+    local gold = tonumber(prof.gold) or 0
+
+    local TormentConfigMod = nil
+    pcall(function()
+        local pbShared = ReplicatedStorage:FindFirstChild("PlatformBattles") and ReplicatedStorage.PlatformBattles:FindFirstChild("Shared")
+        if pbShared and pbShared:FindFirstChild("TormentConfig") then
+            TormentConfigMod = require(pbShared.TormentConfig)
+        end
+    end)
+
+    local function getRankCost(r)
+        if TormentConfigMod and type(TormentConfigMod.RankCost) == "function" then
+            local ok, vC, gC = pcall(TormentConfigMod.RankCost, r)
+            if ok and vC and gC then return vC, gC end
+        end
+        local mult = 1.044 ^ math.max(0, math.floor(r))
+        local vC = math.max(1, math.floor(8 * mult + 0.5))
+        local gC = math.max(1, math.floor(20000 * mult + 0.5))
+        return vC, gC
+    end
+
+    local pReq = Remotes and Remotes:FindFirstChild("ProfileRequest")
+    local upgradesDone = 0
+
+    while true do
+        local needValor, needGold = getRankCost(curRank)
+        if valor < needValor or gold < needGold then
+            break
+        end
+
+        local success = false
+        if pReq then
+            pcall(function()
+                local res = pReq:InvokeServer("Village", { action = "upgradeLineage" })
+                if res and res.ok ~= false and res.success ~= false then success = true end
+            end)
+            if not success then
+                pcall(function()
+                    pReq:InvokeServer("Village", { action = "lineageRank" })
+                    success = true
+                end)
+            end
+        end
+
+        if not success and RPGCommand then
+            pcall(function()
+                RPGCommand:FireServer("UpgradeLineage", {})
+                RPGCommand:FireServer("LineageRank", {})
+                success = true
+            end)
+        end
+
+        valor = valor - needValor
+        gold = gold - needGold
+        curRank = curRank + 1
+        upgradesDone = upgradesDone + 1
+
+        task.wait(0.2)
+        if upgradesDone >= 50 then break end
+    end
+
+    if upgradesDone > 0 and TormentTrackerLabel then
+        local best = prof.tormentBest or 1
+        TormentTrackerLabel:SetText(string.format("Torment Best: Tier %d | Rank: %d (+%d)", best, curRank, upgradesDone))
+    end
+end
+
+-- ═══════════════════════════════════════════════════════════════════
+-- 🏰 BACKGROUND RUNNER 1: AUTO START DUNGEON (Solo with 15s Countdown)
+-- ═══════════════════════════════════════════════════════════════════
+local countdownRemaining = 0
+local isCountingDown = false
+local DungeonStatusLabel = nil
+
+task.spawn(function()
+    while true do
+        task.wait(1)
+
+        -- Real-time update of Torment progress label
+        if TormentTrackerLabel then
+            pcall(function()
+                local best, maxUnlocked = getTormentProgress()
+                TormentTrackerLabel:SetText(string.format("Torment Best: Tier %d | Unlocked: Tier %d", best, maxUnlocked))
+            end)
+        end
+
+        local inRun = LocalPlayer and LocalPlayer:GetAttribute("PBInRun") == true
+        local inBattle = LocalPlayer and (LocalPlayer:GetAttribute("InTurnBattle") == true or LocalPlayer:GetAttribute("PlatformBattleActive") == true)
+
+        if DungeonConfig.AutoStartDungeon and RPGCommand then
+            local char = LocalPlayer and LocalPlayer.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+
+            if not inRun and not inBattle and hrp then
+                -- Reset Normal Mode Single-Act tracking when confirmed in lobby
+                NormalActBossDefeated = false
+                NormalActReturningHome = false
+                CurrentCombatIsBoss = false
+
+                if not isCountingDown then
+                    isCountingDown = true
+                    countdownRemaining = math.max(1, tonumber(DungeonConfig.StartDelay) or 15)
+                end
+
+                if DungeonStatusLabel then
+                    DungeonStatusLabel:SetText(string.format("Auto Starting in: %ds (Toggle OFF to Cancel)", countdownRemaining))
+                end
+
+                countdownRemaining = countdownRemaining - 1
+
+                if countdownRemaining <= 0 then
+                    isCountingDown = false
+                    local payload = nil
+                    local mode = DungeonConfig.DungeonMode
+
+                    if mode == "Normal" then
+                        payload = {
+                            action = "solo",
+                            difficulty = string.lower(tostring(DungeonConfig.NormalDifficulty or "normal")),
+                            startAct = math.clamp(tonumber(DungeonConfig.StartAct) or 1, 1, 10)
+                        }
+                    elseif mode == "Torment" then
+                        local chosenTier = getTargetTormentTier()
+                        payload = {
+                            action = "solo",
+                            difficulty = "torment" .. tostring(chosenTier),
+                            startAct = 1
+                        }
+                    elseif mode == "Event (Haunted Harvest)" or mode == "Event" then
+                        payload = {
+                            action = "solo",
+                            difficulty = "haunted",
+                            startAct = 1
+                        }
+                    end
+
+                    if payload then
+                        if DungeonStatusLabel then
+                            DungeonStatusLabel:SetText("Launching Run...")
+                        end
+                        pcall(function()
+                            RPGCommand:FireServer("RunLobby", payload)
+                        end)
+                        task.wait(3)
+                    end
+                end
+            else
+                isCountingDown = false
+                countdownRemaining = 0
+                if DungeonStatusLabel then
+                    if inBattle then
+                        DungeonStatusLabel:SetText("Status: In Combat")
+                    elseif inRun then
+                        DungeonStatusLabel:SetText("Status: In Dungeon Run")
+                    else
+                        DungeonStatusLabel:SetText("Status: Waiting for Character / Lobby...")
+                    end
+                end
+            end
+        else
+            isCountingDown = false
+            countdownRemaining = 0
+            if DungeonStatusLabel then
+                if inBattle then
+                    DungeonStatusLabel:SetText("Status: In Combat")
+                elseif inRun then
+                    DungeonStatusLabel:SetText("Status: In Dungeon Run")
+                else
+                    DungeonStatusLabel:SetText("Status: Idle (Auto Start OFF)")
+                end
+            end
+        end
+    end
+end)
+
+-- ═══════════════════════════════════════════════════════════════════
+-- 🐾 BACKGROUND RUNNER 2: AUTO HATCH EGG (Ranch)
+-- ═══════════════════════════════════════════════════════════════════
+task.spawn(function()
+    while true do
+        local delayTime = math.max(0.3, tonumber(EggConfig.HatchDelay) or 0.5)
+        task.wait(delayTime)
+
+        if EggConfig.AutoHatch then
+            local inBattle = LocalPlayer and LocalPlayer:GetAttribute("InTurnBattle") == true
+            if not inBattle then
+                local pg = getPlayerGui(false)
+                local ranchGui = pg and pg:FindFirstChild("Ranch")
+
+                -- Strategy 1: Native Ranch GUI Clicker (100% reliable when Ranch window is open)
+                if ranchGui and ranchGui.Enabled ~= false then
+                    pcall(function()
+                        -- Check for Egg Tab and switch to it if needed
+                        for _, desc in ipairs(ranchGui:GetDescendants()) do
+                            if desc:IsA("TextButton") or desc:IsA("ImageButton") then
+                                local text = string.lower(tostring(desc.Name .. " " .. (desc:IsA("TextButton") and desc.Text or "")))
+                                if string.find(text, "egg", 1, true) and not string.find(text, "hatch", 1, true) and not string.find(text, "card", 1, true) then
+                                    if firesignal then
+                                        firesignal(desc.MouseButton1Click)
+                                    end
+                                end
+                            end
+                        end
+
+                        -- Find Egg Card / Hatch Button matching filter
+                        local chosenType = string.lower(EggConfig.EggType)
+                        for _, desc in ipairs(ranchGui:GetDescendants()) do
+                            if desc:IsA("TextButton") or desc:IsA("ImageButton") then
+                                local bText = string.lower(tostring(desc.Name .. " " .. (desc:IsA("TextButton") and desc.Text or "")))
+                                local parentName = desc.Parent and string.lower(desc.Parent.Name) or ""
+                                local isCardOrHatch = string.find(bText, "hatch", 1, true) or string.find(parentName, "card", 1, true) or desc.Name == "Card"
+
+                                if isCardOrHatch then
+                                    local matches = (chosenType == "all eggs") or string.find(bText, chosenType, 1, true) or string.find(parentName, chosenType, 1, true)
+                                    if matches then
+                                        if firesignal then
+                                            firesignal(desc.MouseButton1Click)
+                                            firesignal(desc.Activated)
+                                        end
+                                        if EggConfig.FastHatch then
+                                            task.defer(dismissHatchCinematic)
+                                            task.delay(0.15, dismissHatchCinematic)
+                                            task.delay(0.35, dismissHatchCinematic)
+                                        end
+                                        break
+                                    end
+                                end
+                            end
+                        end
+                    end)
+                end
+
+                -- Strategy 2: Direct Network Hatch Dispatch via RPGCommand
+                local eggId = findEggToHatch()
+                if eggId and RPGCommand then
+                    pcall(function()
+                        RPGCommand:FireServer("Ranch", { action = "hatch", itemId = eggId })
+                    end)
+                    if EggConfig.FastHatch then
+                        task.defer(dismissHatchCinematic)
+                        task.delay(0.1, dismissHatchCinematic)
+                        task.delay(0.25, dismissHatchCinematic)
+                    end
+                end
+            end
+        end
+    end
+end)
+
+-- Helper: Single-Select Embedded "Title : Value" Dropdown
+local function createSelect(tab, title, optionsList, defaultVal, callback)
+    if type(tab.CreateSelect) == "function" then
+        return tab:CreateSelect(title, optionsList, defaultVal, callback)
+    end
+
+    local formattedOptions = {}
+    local prefix = title .. " : "
+    for _, opt in ipairs(optionsList) do
+        table.insert(formattedOptions, prefix .. tostring(opt))
+    end
+
+    local initial = defaultVal or "None"
+    local initialDisplay = prefix .. tostring(initial)
+
+    local drop
+    drop = tab:CreateDropdown(title, formattedOptions, false, function(selected)
+        local raw = (type(selected) == "table" and selected[1]) or tostring(selected or "")
+        local clean = string.gsub(raw, "^" .. title .. "%s*:%s*", "")
+        if clean == "" then clean = "None" end
+        if callback then
+            callback(clean)
+        end
+    end)
+
+    if drop and drop.Set then
+        pcall(function()
+            drop:Set(initialDisplay, true)
+        end)
+    end
+
+    return drop
+end
+
+-- ═══════════════════════════════════════════════════════════════════
+-- 🎨 BOTTLELIB USER INTERFACE CREATION
+-- ═══════════════════════════════════════════════════════════════════
+
+local Window = BottleLib:CreateWindow({
+    Title = "Pixel Lineage",
+    SubTitle = "BottleLib Hub",
+    AccentColor = Color3.fromRGB(230, 8, 82), -- Hot Pink
+    LogoId = "rbxassetid://10723415903",
+    EnableProfileCard = true,
+    ServerHopMode = "Nearest"
+})
+
+-- Dynamic Header & Mini-Dock Stage Indicator Badge (e.g. "Act 2 Stage 5", "Torment.lvl5 Stage 1", "Lobby (Idle)")
+StageBadge = Window:AddHeaderBadge("📍 Lobby (Idle)", Color3.fromRGB(24, 24, 30), Color3.fromRGB(255, 215, 0))
+if StageBadge and StageBadge.OnClick then
+    StageBadge:OnClick(function()
+        Window:Toggle()
+    end)
+end
+
+-- Initial Stage Sync if already in run upon script execution
+task.defer(function()
+    pcall(function()
+        local pb = getPBClient(true)
+        local rm = pb and pb:FindFirstChild("RunMapView")
+        if rm then
+            local ok, view = pcall(require, rm)
+            if ok and view and view.state then
+                updateStageDisplay(view.state)
+            end
+        end
+    end)
+end)
+
+---- TAB 1: ⚔️ COMBAT & QTE
+local CombatTab = Window:CreateTab("⚔️ Combat & QTE")
+
+CombatTab:CreateSection("Auto-QTE Solver")
+
+CombatTab:CreateToggle("Auto Attack QTE", CombatConfig.AutoQTE_Attack, function(state)
+    CombatConfig.AutoQTE_Attack = state
+end)
+
+CombatTab:CreateToggle("Auto Perfect Dodge", CombatConfig.AutoQTE_Defense, function(state)
+    CombatConfig.AutoQTE_Defense = state
+end)
+
+CombatTab:CreateSection("Combat Actions")
+
+CombatTab:CreateToggle("Auto Turn Combat", CombatConfig.AutoTurn, function(state)
+    CombatConfig.AutoTurn = state
+    if state then
+        local menu = CombatState.ActiveMenu
+        local snapshot = (menu and menu.snapshot) or CombatState.CurrentBattle
+        if snapshot and snapshot.canAct == true then
+            dispatchTurnAction(menu, snapshot, "ToggleEnabled")
+        end
+    end
+end)
+
+createSelect(CombatTab, "Mode", { "None", "Basic", "Smart", "Scroll", "Maximum" }, CombatConfig.CombatMode, function(selected)
+    local chosen = (type(selected) == "table" and selected[1]) or tostring(selected or "Smart")
+    CombatConfig.CombatMode = chosen
+    if CombatConfig.AutoTurn and chosen ~= "None" then
+        local menu = CombatState.ActiveMenu
+        local snapshot = (menu and menu.snapshot) or CombatState.CurrentBattle
+        if snapshot and snapshot.canAct == true then
+            dispatchTurnAction(menu, snapshot, "ModeSelected")
+        end
+    end
+end)
+
+createSelect(CombatTab, "Target", { "None", "LowestHP", "Boss", "FirstAlive" }, CombatConfig.TargetStrategy, function(selected)
+    local chosen = (type(selected) == "table" and selected[1]) or tostring(selected or"LowestHP")
+    CombatConfig.TargetStrategy = chosen
+end)
+
+CombatTab:CreateToggle("Anti-Overkill", CombatConfig.AntiOverkill, function(state)
+    CombatConfig.AntiOverkill = state
+end)
+
+CombatTab:CreateToggle("Smart Summon", CombatConfig.SmartSummon, function(state)
+    CombatConfig.SmartSummon = state
+end)
+
+CombatTab:CreateToggle("Auto-Guard on Boss Brace", CombatConfig.AutoGuard_Brace, function(state)
+    CombatConfig.AutoGuard_Brace = state
+end)
+
+CombatTab:CreateToggle("Auto-Drink Satchel Potion", CombatConfig.AutoHeal_Satchel, function(state)
+    CombatConfig.AutoHeal_Satchel = state
+end)
+
+CombatTab:CreateSlider("Emergency Potion HP %", 30, 90, math.floor(CombatConfig.AutoHeal_Threshold * 100), 5, function(val)
+    CombatConfig.AutoHeal_Threshold = val / 100
+end)
+
+-- TAB 2: 🏰 DUNGEON & RUN AUTOMATION
+local DungeonTab = Window:CreateTab("🏰 Dungeon & Run")
+
+DungeonTab:CreateSection("Auto Start Dungeon")
+
+DungeonStatusLabel = DungeonTab:CreateLabel("Status: Idle (Auto Start OFF)")
+TormentTrackerLabel = DungeonTab:CreateLabel("Torment Best: Tier 0 | Unlocked: Tier 1")
+
+DungeonTab:CreateToggle("Auto Start Dungeon", DungeonConfig.AutoStartDungeon, function(state)
+    DungeonConfig.AutoStartDungeon = state
+    if not state then
+        countdownRemaining = 0
+        isCountingDown = false
+        if DungeonStatusLabel then
+            DungeonStatusLabel:SetText("Status: Idle (Auto Start OFF)")
+        end
+    end
+end)
+
+DungeonTab:CreateSlider("Pre-Start Delay (s)", 5, 30, DungeonConfig.StartDelay, 1, function(val)
+    DungeonConfig.StartDelay = math.floor(val)
+end)
+
+createSelect(DungeonTab, "Dungeon Mode", { "Normal", "Torment", "Event (Haunted Harvest)" }, DungeonConfig.DungeonMode, function(mode)
+    local chosen = (type(mode) == "table" and mode[1]) or tostring(mode or "Normal")
+    DungeonConfig.DungeonMode = chosen
+end)
+
+createSelect(DungeonTab, "Normal Difficulty", { "normal", "hard", "nightmare" }, DungeonConfig.NormalDifficulty, function(diff)
+    local chosen = (type(diff) == "table" and diff[1]) or tostring(diff or "normal")
+    DungeonConfig.NormalDifficulty = chosen
+end)
+
+DungeonTab:CreateSlider("Select Start Act (Normal)", 1, 10, DungeonConfig.StartAct, 1, function(val)
+    DungeonConfig.StartAct = math.floor(val)
+end)
+
+createSelect(DungeonTab, "Torment Mode", { "Climb", "Stay" }, DungeonConfig.TormentMode, function(mode)
+    DungeonConfig.TormentMode = mode
+end)
+
+DungeonTab:CreateSlider("Stay at Torment Tier", 1, 99, DungeonConfig.TormentTier, 1, function(tier)
+    DungeonConfig.TormentTier = math.floor(tier)
+end)
+
+DungeonTab:CreateSection("Stage & Node Selection")
+
+DungeonTab:CreateToggle("Auto Path Next Node", DungeonConfig.AutoChooseNode, function(state)
+    DungeonConfig.AutoChooseNode = state
+end)
+
+createSelect(DungeonTab, "Preferred Node", { "None", "treasure", "elite", "rest", "mystery", "fight" }, DungeonConfig.PreferredNode, function(selected)
+    local chosen = (type(selected) == "table" and selected[1]) or tostring(selected or "None")
+    DungeonConfig.PreferredNode = chosen
+end)
+
+DungeonTab:CreateSection("Chests & Bloodlines")
+
+DungeonTab:CreateToggle("Auto Claim Reward Chests", DungeonConfig.AutoClaimChests, function(state)
+    DungeonConfig.AutoClaimChests = state
+end)
+
+DungeonTab:CreateToggle("Instant Bloodline Reveal", DungeonConfig.AutoRevealBloodline, function(state)
+    DungeonConfig.AutoRevealBloodline = state
+end)
+
+DungeonTab:CreateSection("Secret Boss")
+
+DungeonTab:CreateToggle("Priority on Secret Boss", DungeonConfig.Priority_SecretBoss, function(state)
+    DungeonConfig.Priority_SecretBoss = state
+end)
+
+createSelect(DungeonTab, "Secret Boss", SecretBossList, DungeonConfig.Target_SecretBoss, function(selected)
+    local chosen = (type(selected) == "table" and selected[1]) or tostring(selected or "Any Secret Boss")
+    DungeonConfig.Target_SecretBoss = chosen
+end)
+
+DungeonTab:CreateSection("Run Replay")
+
+DungeonTab:CreateToggle("Auto Replay Dungeon Run", DungeonConfig.AutoReplay, function(state)
+    DungeonConfig.AutoReplay = state
+end)
+
+createSelect(DungeonTab, "Replay Mode", { "replayNext", "replay" }, DungeonConfig.ReplayMode, function(mode)
+    local chosen = (type(mode) == "table" and mode[1]) or tostring(mode or "replayNext")
+    DungeonConfig.ReplayMode = chosen
+end)
+
+DungeonTab:CreateToggle("Auto-Upgrade Valor (Post-Torment)", DungeonConfig.AutoUpgradeValor, function(state)
+    DungeonConfig.AutoUpgradeValor = state
+end)
+
+-- TAB 3: 🚀 QOL
+local QoLTab = Window:CreateTab("🚀 QoL")
+
+QoLTab:CreateSection("Auto-Sell Gears")
+
+QoLTab:CreateToggle("Auto-Sell Gears", AutoSellConfig.Enabled, function(state)
+    AutoSellConfig.Enabled = state
+    syncNativeAutoSell()
+    if state and type(sweepAndSellBagGears) == "function" then
+        sweepAndSellBagGears()
+    end
+end)
+
+local tierSelector = QoLTab:CreateSelector("Select Tiers to Sell", { "Common", "Uncommon", "Rare", "Epic", "Legendary" }, true, function(selectedList)
+    AutoSellConfig.Tiers = {}
+    for _, tier in ipairs(selectedList) do
+        AutoSellConfig.Tiers[tier] = true
+    end
+    syncNativeAutoSell()
+end)
+
+local initialTiers = {}
+for tier, enabled in pairs(AutoSellConfig.Tiers) do
+    if enabled then
+        table.insert(initialTiers, tier)
+    end
+end
+if tierSelector and tierSelector.Set then
+    tierSelector:Set(initialTiers, true)
+end
+
+QoLTab:CreateToggle("Protect Upgraded Gear (+1+)", AutoSellConfig.ProtectUpgraded, function(state)
+    AutoSellConfig.ProtectUpgraded = state
+end)
+
+QoLTab:CreateSection("Auto Hatch Egg (Ranch)")
+
+QoLTab:CreateToggle("Auto Hatch Egg", EggConfig.AutoHatch, function(state)
+    EggConfig.AutoHatch = state
+end)
+
+local eggTypeSelector
+eggTypeSelector = createSelect(QoLTab, "Egg Type", getAllEggsInInventory(), EggConfig.EggType, function(t)
+    local chosen = (type(t) == "table" and t[1]) or tostring(t or "All Eggs")
+    EggConfig.EggType = chosen
+end)
+
+refreshEggDropdown = function()
+    extractProfileFromMemory()
+    local refreshed = getAllEggsInInventory()
+    if eggTypeSelector and eggTypeSelector.Refresh then
+        eggTypeSelector:Refresh(refreshed, EggConfig.EggType)
+    end
+end
+
+QoLTab:CreateButton("🔄 Refresh Eggs", refreshEggDropdown)
+
+QoLTab:CreateToggle("Fast Hatch", EggConfig.FastHatch, function(state)
+    EggConfig.FastHatch = state
+end)
+
+QoLTab:CreateSlider("Hatch Delay (s)", 3, 20, math.floor(EggConfig.HatchDelay * 10), 1, function(val)
+    EggConfig.HatchDelay = val / 10
+end)
+
+QoLTab:CreateSection("Auto-Release Pets (Ranch)")
+
+QoLTab:CreateToggle("Auto-Release Filtered Pets", EggConfig.AutoRelease, function(state)
+    EggConfig.AutoRelease = state
+    if state and type(sweepAndReleasePets) == "function" then
+        task.delay(0.2, sweepAndReleasePets)
+    end
+end)
+
+local petRaritySelector = QoLTab:CreateSelector("Select Rarities to Release", { "Common", "Uncommon", "Rare", "Epic", "Legendary" }, true, function(selectedList)
+    EggConfig.ReleaseRarities = {}
+    for _, rarity in ipairs(selectedList) do
+        EggConfig.ReleaseRarities[rarity] = true
+    end
+end)
+
+local initialReleaseRarities = {}
+for r, enabled in pairs(EggConfig.ReleaseRarities) do
+    if enabled then
+        table.insert(initialReleaseRarities, r)
+    end
+end
+if petRaritySelector and petRaritySelector.Set then
+    petRaritySelector:Set(initialReleaseRarities, true)
+end
+
+-- TAB 4: ⚙️ CONFIGS
+Window:BuildConfigTab()
+
+print("═══════════════════════════════════════════════════════════════════")
+print("🎉 BottleHub Pixel Lineage Loaded Successfully!")
+print("═══════════════════════════════════════════════════════════════════")
