@@ -267,11 +267,7 @@ local function solveDefenseQTE(qteSelf, data)
     local target = tonumber(data.target) or 0.5
     local startedAt = tonumber(data.startedAt) or getServerTime()
     local targetOffset = target * duration
-    local targetTimestamp = startedAt + targetOffset
-
-    -- Humanize Micro-Jitter: 5ms - 10ms (0.005s to 0.010s)
-    local jitter = 0.005 + (math.random() * 0.005)
-    local triggerTimestamp = targetTimestamp + jitter
+    local triggerTimestamp = startedAt + targetOffset
 
     task.spawn(function()
         local conn
@@ -362,11 +358,9 @@ local function solveWarriorQTE(qteSelf, data)
             -- Handle reverse blade sweep (1 -> 0): blade reaches target at (1 - targetPos) * sweepSec
             local effectiveTarget = (round.reverse == true) and (1 - targetPos) or targetPos
             local waitTime = effectiveTarget * sweepSec
-            -- Humanized micro-jitter: 5ms - 10ms (0.005s <= jitter <= 0.010s)
-            local jitter = 0.005 + (math.random() * 0.005)
 
             -- 🎯 Clamp min wait to 0.26s so PixelQTE:_press passes the openedAt + 0.25 anti-spam window!
-            task.wait(math.clamp(waitTime + jitter, 0.26, 1.5))
+            task.wait(math.clamp(waitTime, 0.26, 1.5))
 
             local pressTime = getServerTime()
 
@@ -387,7 +381,7 @@ local function solveWarriorQTE(qteSelf, data)
 
             -- Transition interval between rounds in PixelQTE is 0.32s
             if i < #rounds then
-                task.wait(0.32 + (math.random() * 0.02))
+                task.wait(0.32)
             end
         end
 
@@ -398,10 +392,9 @@ local function solveWarriorQTE(qteSelf, data)
             local results = {}
             for i, round in ipairs(rounds) do
                 local targetPos = tonumber(round.targetPosition) or 0.5
-                local jitterOffset = (0.005 + math.random() * 0.005) * 0.5
                 results[i] = {
                     pressed = true,
-                    position = math.clamp(targetPos + jitterOffset, 0, 1)
+                    position = math.clamp(targetPos, 0, 1)
                 }
             end
             pcall(function()
@@ -459,10 +452,9 @@ local function solveThiefQTE(qteSelf, data)
             -- Mark 1 has an initial 0.40s lead-in delay in PixelQTE._thief & _timedMarks
             local initialLeadIn = (i == 1) and 0.40 or 0
             local markDelay = sweetSpot * targetSec
-            -- Humanized micro-jitter: 5ms - 10ms (0.005s <= jitter <= 0.010s)
-            local jitter = 0.005 + (math.random() * 0.005)
+
             -- 🎯 Clamp min wait to 0.26s so PixelQTE:_press passes the openedAt + 0.25 anti-spam window!
-            local waitTime = math.clamp(initialLeadIn + markDelay + jitter, 0.26, 1.75)
+            local waitTime = math.clamp(initialLeadIn + markDelay, 0.26, 1.75)
             task.wait(waitTime)
 
             local pressTime = getServerTime()
@@ -481,7 +473,7 @@ local function solveThiefQTE(qteSelf, data)
 
             -- Inter-mark transition delay in PixelQTE._thief & _timedMarks is exactly 0.34s
             if i < hitCount then
-                task.wait(0.34 + (math.random() * 0.02))
+                task.wait(0.34)
             end
         end
 
@@ -538,10 +530,9 @@ local function solveMageQTE(qteSelf, data)
 
             local roundStart = getServerTime()
             local hitDelay = targetProgress * circleSec
-            -- Humanized micro-jitter: 5ms - 10ms (0.005s <= jitter <= 0.010s)
-            local jitter = 0.005 + (math.random() * 0.005)
+
             -- 🎯 Clamp min wait to 0.26s so PixelQTE:_press passes the openedAt + 0.25 anti-spam window!
-            local waitTime = math.clamp(hitDelay + jitter, 0.26, 1.45)
+            local waitTime = math.clamp(hitDelay, 0.26, 1.45)
             task.wait(waitTime)
 
             local pressTime = getServerTime()
@@ -568,7 +559,7 @@ local function solveMageQTE(qteSelf, data)
 
             -- Transition interval between sigils in PixelQTE is 0.25s (wait 0.27s for clean next rune spawn)
             if i < sigilCount then
-                task.wait(0.27 + (math.random() * 0.02))
+                task.wait(0.27)
             end
         end
 
@@ -699,8 +690,7 @@ local function setupQTE()
                         if CombatConfig.AutoQTE_Attack then
                             local winStart = (circleData and tonumber(circleData.windowStart)) or 0.62
                             local dur = tonumber(circleSeconds) or 0.95
-                            local jitter = 0.005 + (math.random() * 0.005)
-                            local hitDelay = math.clamp(winStart * dur + jitter, 0.15, 1.2)
+                            local hitDelay = math.clamp(winStart * dur, 0.15, 1.2)
                             task.wait(hitDelay)
                             if self.active and self.token == token and self.currentCircle then
                                 local btn = self.currentCircle
@@ -3380,5 +3370,5 @@ end
 Window:BuildConfigTab()
 
 print("═══════════════════════════════════════════════════════════════════")
-print("🎉 BottleHub Pixel Lineage Loaded Successfully!")
+print("BottleHub Pixel Lineage Loaded Successfully!")
 print("═══════════════════════════════════════════════════════════════════")
