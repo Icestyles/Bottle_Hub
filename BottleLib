@@ -26,9 +26,9 @@ end
 
 local BottleLib = {}
 BottleLib.__index = BottleLib
-BottleLib.Version = "2.5.2-dev"
+BottleLib.Version = "2.5.3-dev"
 BottleLib.Edition = "Glassplane UI (Dock & Profile)"
-BottleLib.BuildDate = "2026-10-18"
+BottleLib.BuildDate = "2026-10-19"
 BottleLib.CleanUpEvent = Instance.new("BindableEvent")
 BottleLib.ActiveScreenGui = nil
 BottleLib.ActiveNotifyContainer = nil
@@ -2622,7 +2622,7 @@ function BottleLib:CreateWindow(WindowConfig)
         pcBannerTitle.Size = UDim2.new(1, -16, 1, 0)
         pcBannerTitle.Position = UDim2.new(0, 10, 0, 0)
         pcBannerTitle.BackgroundTransparency = 1
-        pcBannerTitle.Text = "BottleHub"
+        pcBannerTitle.Text = config.Title or "BottleHub"
         pcBannerTitle.TextColor3 = Color3.fromRGB(245, 245, 250)
         pcBannerTitle.Font = Enum.Font.GothamBold
         pcBannerTitle.TextSize = 11
@@ -3507,6 +3507,9 @@ function BottleLib:CreateWindow(WindowConfig)
             _PlaceId = game.PlaceId,
             _UserId = player.UserId,
             _Timestamp = os.time(),
+            System = {
+                AntiAFK = (BottleLib.AntiAFKEnabled == true)
+            },
             ServerHop = {
                 Mode = WindowConfig.ServerHopMode or "Nearest",
                 BlacklistDuration = WindowConfig.ServerHopBlacklistDuration or 600,
@@ -3571,6 +3574,21 @@ function BottleLib:CreateWindow(WindowConfig)
             return false
         end
 
+        -- 0. Restore System settings (Anti-AFK persistence)
+        if type(decoded.System) == "table" then
+            if decoded.System.AntiAFK ~= nil then
+                local shouldAntiAfk = (decoded.System.AntiAFK == true)
+                if shouldAntiAfk then
+                    BottleLib:EnableAntiAFK()
+                else
+                    BottleLib:DisableAntiAFK()
+                end
+                if self._AntiAfkToggle then
+                    pcall(function() self._AntiAfkToggle:Set(shouldAntiAfk, true) end)
+                end
+            end
+        end
+
         -- 1. Restore ServerHop settings if present
         if type(decoded.ServerHop) == "table" then
             if decoded.ServerHop.Mode then
@@ -3632,6 +3650,17 @@ function BottleLib:CreateWindow(WindowConfig)
         end
 
         if deleted then
+            -- Cascade cleanup: If deleted profile was currently set as AutoLoad, clear AutoLoad
+            local isAuto, autoTarget = self:GetAutoLoad()
+            if autoTarget == configName then
+                self:SetAutoLoad("default", false)
+                if self._AutoLoadStatusLabel then
+                    pcall(function() self._AutoLoadStatusLabel:SetText("⚡ Active Auto-Load: [ None (Cleared) ]") end)
+                end
+                if self._AutoLoadToggle then
+                    pcall(function() self._AutoLoadToggle:Set(false, true) end)
+                end
+            end
             BottleLib:Notify("Config '" .. configName .. "' deleted.")
         else
             BottleLib:Notify("Config '" .. configName .. "' could not be deleted.")
@@ -3753,21 +3782,6 @@ function BottleLib:CreateWindow(WindowConfig)
             end
         end)
 
-        local autoLoadEnabled, autoLoadTarget = self:GetAutoLoad()
-        ConfigTab:CreateToggle("Auto Load", autoLoadEnabled, function(state)
-            self:SetAutoLoad(selectedConfig or "default", state)
-            BottleLib:Notify("Auto-load " .. (state and "ENABLED for '" .. tostring(selectedConfig) .. "'" or "DISABLED"))
-        end)
-
-        ConfigTab:CreateToggle("Anti AFK", BottleLib.AntiAFKEnabled, function(state)
-            if state then
-                BottleLib:EnableAntiAFK()
-            else
-                BottleLib:DisableAntiAFK()
-            end
-            BottleLib:Notify("Anti-AFK " .. (state and "ENABLED" or "DISABLED"))
-        end)
-
         ConfigTab:CreateButton("Refresh List", function()
             local refreshed = self:GetConfigList()
             if #refreshed == 0 then refreshed = {"default"} end
@@ -3779,7 +3793,70 @@ function BottleLib:CreateWindow(WindowConfig)
 
         ConfigTab:CreateSeparator()
 
-        -- 2. Server Hop Section
+        -- 2. Auto-Load Section (Redesigned & Intuitive UX)
+        ConfigTab:CreateSection("Auto-Load on Startup")
+
+        local autoLoadEnabled, autoLoadTarget = self:GetAutoLoad()
+        local function getStatusText(enabled, target)
+            if enabled and target and #target > 0 then
+                return "⚡ Active Auto-Load: [ " .. target .. " ] (ON)"
+            else
+                return "⚡ Active Auto-Load: [ None / Disabled ]"
+            end
+        end
+
+        self._AutoLoadStatusLabel = ConfigTab:CreateLabel(getStatusText(autoLoadEnabled, autoLoadTarget))
+
+        self._AutoLoadToggle = ConfigTab:CreateToggle("Auto-Load on Launch", autoLoadEnabled, function(state)
+            local currentEnabled, currentTarget = self:GetAutoLoad()
+            local targetToSave = (currentTarget and #currentTarget > 0 and currentTarget ~= "default") and currentTarget or (selectedConfig or "default")
+            self:SetAutoLoad(targetToSave, state)
+            if self._AutoLoadStatusLabel then
+                self._AutoLoadStatusLabel:SetText(getStatusText(state, targetToSave))
+            end
+            BottleLib:Notify("Auto-load " .. (state and ("ENABLED for '" .. tostring(targetToSave) .. "'") or "DISABLED"))
+        end)
+
+        ConfigTab:CreateButton("📌 Set Selected Profile as Auto-Load", function()
+            local target = (selectedConfig and #selectedConfig > 0) and selectedConfig or "default"
+            self:SetAutoLoad(target, true)
+            if self._AutoLoadToggle then
+                self._AutoLoadToggle:Set(true, true)
+            end
+            if self._AutoLoadStatusLabel then
+                self._AutoLoadStatusLabel:SetText(getStatusText(true, target))
+            end
+            BottleLib:Notify("📌 Config '" .. target .. "' set as Auto-Load on startup!")
+        end)
+
+        ConfigTab:CreateButton("❌ Clear / Disable Auto-Load", function()
+            self:SetAutoLoad("default", false)
+            if self._AutoLoadToggle then
+                self._AutoLoadToggle:Set(false, true)
+            end
+            if self._AutoLoadStatusLabel then
+                self._AutoLoadStatusLabel:SetText(getStatusText(false, nil))
+            end
+            BottleLib:Notify("❌ Auto-load disabled.")
+        end)
+
+        ConfigTab:CreateSeparator()
+
+        -- 3. System & Anti-AFK Section
+        ConfigTab:CreateSection("System Settings")
+
+        self._AntiAfkToggle = ConfigTab:CreateToggle("Anti AFK (20-Min Idle Kick Guard)", BottleLib.AntiAFKEnabled, function(state)
+            if state then
+                BottleLib:EnableAntiAFK()
+            else
+                BottleLib:DisableAntiAFK()
+            end
+            BottleLib:Notify("Anti-AFK " .. (state and "ENABLED" or "DISABLED"))
+        end)
+
+        ConfigTab:CreateSeparator()
+
+        -- 4. Server Hop Section
         ConfigTab:CreateSection("Server Hop")
 
         local hopModeOptions = {"Nearest", "Lowest", "Highest", "Random"}
@@ -3839,11 +3916,13 @@ function BottleLib:CreateWindow(WindowConfig)
 
         self._IsBuildingConfigTab = false
 
-        -- Execute Auto-Load if enabled
+        -- Execute Auto-Load if enabled with Startup Guard
         if autoLoadEnabled and autoLoadTarget then
-            task.defer(function()
+            task.spawn(function()
+                -- Startup Guard: Allow consumer script tabs and controls to finish registering
+                task.wait(0.8)
                 if not self.IsClosed then
-                    self:LoadConfig(autoLoadTarget)
+                    self:LoadConfig(autoLoadTarget, true)
                 end
             end)
         end
