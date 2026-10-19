@@ -2267,7 +2267,7 @@ function BottleLib:CreateWindow(WindowConfig)
 
     WindowConfig = WindowConfig or {}
     local titleText        = WindowConfig.Title or "BottleLib UI"
-    local showProfileCard  = (WindowConfig.ProfileCard ~= false)
+    local showProfileCard  = (WindowConfig.ProfileCard ~= false and WindowConfig.EnableProfileCard ~= false)
     local profileRoleText  = WindowConfig.ProfileRole or "Owner"
     local discordInviteUrl = WindowConfig.Discord or "https://discord.gg/JbSUQCxW2w"
     local sidebarW         = WindowConfig.SidebarWidth or (showProfileCard and 175 or 130)
@@ -2295,7 +2295,7 @@ function BottleLib:CreateWindow(WindowConfig)
 
     -- Theme colors matching Lastest lib.txt
     local T = {
-        Accent   = WindowConfig.Accent or Color3.fromHex("#e60852"),
+        Accent   = WindowConfig.Accent or WindowConfig.AccentColor or Color3.fromHex("#e60852"),
         Main     = Color3.fromRGB(10, 10, 10),
         Sidebar  = Color3.fromRGB(15, 15, 15),
         Content  = Color3.fromRGB(6, 6, 6),
@@ -2622,7 +2622,7 @@ function BottleLib:CreateWindow(WindowConfig)
         pcBannerTitle.Size = UDim2.new(1, -16, 1, 0)
         pcBannerTitle.Position = UDim2.new(0, 10, 0, 0)
         pcBannerTitle.BackgroundTransparency = 1
-        pcBannerTitle.Text = config.Title or "BottleHub"
+        pcBannerTitle.Text = (WindowConfig and (WindowConfig.ProfileTitle or WindowConfig.Title)) or titleText or "BottleHub"
         pcBannerTitle.TextColor3 = Color3.fromRGB(245, 245, 250)
         pcBannerTitle.Font = Enum.Font.GothamBold
         pcBannerTitle.TextSize = 11
