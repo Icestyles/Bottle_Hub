@@ -3688,7 +3688,7 @@ function BottleLib:CreateWindow(WindowConfig)
             if autoTarget == configName then
                 self:SetAutoLoad("default", false)
                 if self._AutoLoadStatusLabel then
-                    pcall(function() self._AutoLoadStatusLabel:SetText("⚡ Active Auto-Load: [ None (Cleared) ]") end)
+                    pcall(function() self._AutoLoadStatusLabel:SetText("Active Auto-Load: [ None (Cleared) ]") end)
                 end
                 if self._AutoLoadToggle then
                     pcall(function() self._AutoLoadToggle:Set(false, true) end)
@@ -3850,7 +3850,7 @@ function BottleLib:CreateWindow(WindowConfig)
             BottleLib:Notify("Auto-load " .. (state and ("ENABLED for '" .. tostring(targetToSave) .. "'") or "DISABLED"))
         end)
 
-        ConfigTab:CreateButton("📌 Set Selected Profile as Auto-Load", function()
+        ConfigTab:CreateButton("Selected Profile as Auto-Load", function()
             local target = (selectedConfig and #selectedConfig > 0) and selectedConfig or "default"
             self:SetAutoLoad(target, true)
             if self._AutoLoadToggle then
@@ -3862,7 +3862,7 @@ function BottleLib:CreateWindow(WindowConfig)
             BottleLib:Notify("📌 Config '" .. target .. "' set as Auto-Load on startup!")
         end)
 
-        ConfigTab:CreateButton("❌ Clear / Disable Auto-Load", function()
+        ConfigTab:CreateButton("Disable Auto-Load", function()
             self:SetAutoLoad("default", false)
             if self._AutoLoadToggle then
                 self._AutoLoadToggle:Set(false, true)
