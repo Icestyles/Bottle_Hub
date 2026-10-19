@@ -92,6 +92,7 @@ local DungeonConfig = {
     DungeonMode = "Normal",      -- "Normal", "Torment", "Event (Haunted Harvest)"
     NormalDifficulty = "normal", -- "normal", "hard", "nightmare"
     StartAct = 1,                -- Act / Stage (1 to 10, default 1)
+    ActProgression = "Continuous", -- "Continuous" (Progress to next Act) or "Single Act" (Return to Lobby when Act finished)
     TormentMode = "Climb",       -- "Climb" (Auto Highest Unlocked) or "Stay" (Selected Tier)
     TormentTier = 1,             -- 1 to 99
     AutoChooseNode = false,      -- Auto Path Next Node (DEFAULT OFF)
@@ -126,8 +127,8 @@ local AutoSellConfig = {
     Tiers = {
         Common = true,
         Uncommon = true,
-        Rare = false,
-        Epic = false,
+        Rare = true,
+        Epic = true,
         Legendary = false,
     },
     ProtectUpgraded = true,      -- Protect Upgraded Gear (+1+) (DEFAULT ON)
@@ -171,151 +172,433 @@ end
 -- 🎯 PART 1: DYNAMIC QTE AUTO-SOLVERS & HOOKS (100% Precision)
 -- ═══════════════════════════════════════════════════════════════════
 
+local LivePBState = nil
+local function getLivePBState()
+    if LivePBState and (LivePBState.defenseTiming or LivePBState.pixelQTE or LivePBState.warriorBladeTiming) then
+        return LivePBState
+    end
+    if getconnections and RPGState and getupvalues then
+        pcall(function()
+            for _, conn in ipairs(getconnections(RPGState.OnClientEvent)) do
+                local fn = conn.Function
+                if fn then
+                    local uvs = getupvalues(fn)
+                    for _, uv in pairs(uvs) do
+                        if type(uv) == "table" and (uv.defenseTiming or uv.warriorBladeTiming or uv.pixelQTE or uv.explorationPanels) then
+                            LivePBState = uv
+                            return
+                        end
+                    end
+                end
+            end
+        end)
+    end
+    return LivePBState
+end
+
+-- Unified Active QTE Session Tracker
+local ActiveQTESessions = {}
+
+-- 📡 Real-Time SkillCheckPress Telemetry Streamer
+-- Streams real-time telemetry packets to RPGCommand for each QTE round/sigil/mark.
+-- Crucial: The server validates attacks by verifying that SkillCheckPress was received
+-- for each round i matching the server time window. If absent, the server flags a MISS.
+local function sendSkillCheckPress(battleId, token, roundIndex, startTime, pressTime)
+    if not RPGCommand or not battleId or not token then return false end
+    local ok = pcall(function()
+        RPGCommand:FireServer("SkillCheckPress", {
+            battleId = tostring(battleId),
+            token = tostring(token),
+            i = math.floor(tonumber(roundIndex) or 1),
+            s = tonumber(startTime) or getServerTime(),
+            at = tonumber(pressTime) or getServerTime(),
+        })
+    end)
+    return ok
+end
+
+-- 🎯 Central Precision QTE Press Dispatcher
+-- Primary: Triggers native activeQte:_press("key") so SkillCheckStream captures and streams
+-- SkillCheckPress telemetry packets to the server in real-time (prevents anti-macro MISS penalty).
+-- Fallback: Directly invokes pressHandler() if _press() is not implemented or blocked.
+local function triggerPrecisionPress(activeQte, token)
+    if not activeQte then return false end
+    if token and activeQte.token and activeQte.token ~= token then return false end
+    local handled = false
+
+    -- 1. Primary: Native _press("key") triggers SkillCheckStream hook which streams SkillCheckPress to Server
+    if type(activeQte._press) == "function" then
+        local ok = pcall(function()
+            activeQte:_press("key")
+        end)
+        if ok then handled = true end
+    end
+
+    -- 2. Fallback: Direct pressHandler invocation if _press failed, was blocked, or not available
+    if not handled and type(activeQte.pressHandler) == "function" then
+        local ok = pcall(activeQte.pressHandler)
+        if ok then handled = true end
+    end
+
+    return handled
+end
+
 local function solveDefenseQTE(qteSelf, data)
     if not CombatConfig.AutoQTE_Defense or type(data) ~= "table" then return end
+    local token = tostring(data.token or "")
+    if token == "" then return end
+
+    local session = ActiveQTESessions[token]
+    if session then
+        if qteSelf then session.qteSelf = qteSelf end
+        return
+    end
+
+    session = {
+        token = token,
+        qteSelf = qteSelf,
+        resolved = false,
+        sentPresses = {},
+        startedAt = os.clock(),
+    }
+    ActiveQTESessions[token] = session
+
     local duration = tonumber(data.duration) or 0.85
     local target = tonumber(data.target) or 0.5
     local startedAt = tonumber(data.startedAt) or getServerTime()
-    local token = tostring(data.token or "")
-
-    -- Server Dodge Window: abs(elapsed - target * duration) <= 0.032s (Perfect)
     local targetOffset = target * duration
     local targetTimestamp = startedAt + targetOffset
 
-    -- Crisp Humanization Jitter: ±0.0005s (within perfect window)
-    local jitter = (math.random() - 0.5) * 0.001
+    -- Humanize Micro-Jitter: 5ms - 10ms (0.005s to 0.010s)
+    local jitter = 0.005 + (math.random() * 0.005)
     local triggerTimestamp = targetTimestamp + jitter
 
-    local conn
-    conn = RunService.RenderStepped:Connect(function()
-        local now = getServerTime()
-        if now >= triggerTimestamp then
-            conn:Disconnect()
-            if qteSelf and qteSelf.defense and qteSelf.defense.token == token and not qteSelf.defense.pressed then
-                if type(qteSelf.pressHandler) == "function" then
-                    qteSelf.pressHandler()
-                elseif RPGCommand then
-                    RPGCommand:FireServer("DefenseTimingInput", {
-                        battleId = data.battleId,
-                        token = token,
-                        pressedAt = getServerTime()
-                    })
+    task.spawn(function()
+        local conn
+        conn = RunService.RenderStepped:Connect(function()
+            local now = getServerTime()
+            if now >= triggerTimestamp then
+                if session.resolved then
+                    if conn and conn.Connected then conn:Disconnect() end
+                    return
+                end
+                session.resolved = true
+                if conn and conn.Connected then conn:Disconnect() end
+
+                -- Layer 1: Native In-Memory Driver via _press("key") (Streams SkillCheckPress + triggers UI)
+                local nativeHandled = false
+                local activeQte = session.qteSelf or (LivePBState and LivePBState.pixelQTE)
+                if activeQte and activeQte.token == token then
+                    nativeHandled = triggerPrecisionPress(activeQte, token)
+                end
+
+                -- Layer 2: Direct Network Dispatch (Fail-Safe if native UI is inactive/headless)
+                if not nativeHandled and RPGCommand then
+                    pcall(function()
+                        RPGCommand:FireServer("DefenseTimingInput", {
+                            battleId = data.battleId,
+                            token = token,
+                            pressedAt = triggerTimestamp
+                        })
+                    end)
+                end
+
+                -- Client UI Sync (Update UI rings & mark sent to avoid conflicts)
+                local pbState = getLivePBState()
+                local clientObj = (session.qteSelf and session.qteSelf.pending and session.qteSelf) or (pbState and pbState.defenseTiming)
+                if clientObj and clientObj.pending and clientObj.pending.token == token and not clientObj.sent then
+                    pcall(function()
+                        clientObj.sent = true
+                        if clientObj.key then clientObj.key.Text = "·" end
+                        if clientObj.help then clientObj.help.Text = "" end
+                    end)
                 end
             end
-        end
+        end)
+
+        -- Safety cleanup after duration + 1.2s
+        task.delay(duration + 1.2, function()
+            if conn and conn.Connected then
+                conn:Disconnect()
+            end
+            ActiveQTESessions[token] = nil
+        end)
     end)
 end
 
 local function solveWarriorQTE(qteSelf, data)
     if not CombatConfig.AutoQTE_Attack or type(data) ~= "table" then return end
+    local token = tostring(data.token or "")
+    if token == "" then return end
+
+    local session = ActiveQTESessions[token]
+    if session then
+        if qteSelf then session.qteSelf = qteSelf end
+        return
+    end
+
+    session = {
+        token = token,
+        qteSelf = qteSelf,
+        resolved = false,
+        sentPresses = {},
+        startedAt = os.clock(),
+    }
+    ActiveQTESessions[token] = session
+
+    local battleId = data.battleId
     local rounds = type(data.rounds) == "table" and data.rounds or {}
     if #rounds == 0 then
-        rounds = { { targetPosition = 0.5, sweepSeconds = 1, perfectWindow = 0.045 } }
+        rounds = { { targetPosition = 0.5, sweepSeconds = 1, goodWindow = 0.12, perfectWindow = 0.045 } }
     end
-    local token = tostring(data.token or "")
 
     task.spawn(function()
-        for idx, round in ipairs(rounds) do
-            if not qteSelf or qteSelf.token ~= token then break end
+        for i, round in ipairs(rounds) do
+            if session.resolved then break end
 
-            -- Transition cooldown between rounds: game engine sets u121 = os.clock() + 0.32
-            if idx > 1 then
-                task.wait(0.34)
-                if not qteSelf or qteSelf.token ~= token then break end
+            local roundStart = getServerTime()
+            local targetPos = tonumber(round.targetPosition) or 0.5
+            local sweepSec = tonumber(round.sweepSeconds) or 1
+            -- Handle reverse blade sweep (1 -> 0): blade reaches target at (1 - targetPos) * sweepSec
+            local effectiveTarget = (round.reverse == true) and (1 - targetPos) or targetPos
+            local waitTime = effectiveTarget * sweepSec
+            -- Humanized micro-jitter: 5ms - 10ms (0.005s <= jitter <= 0.010s)
+            local jitter = 0.005 + (math.random() * 0.005)
+
+            -- 🎯 Clamp min wait to 0.26s so PixelQTE:_press passes the openedAt + 0.25 anti-spam window!
+            task.wait(math.clamp(waitTime + jitter, 0.26, 1.5))
+
+            local pressTime = getServerTime()
+
+            -- 1. Stream real-time SkillCheckPress packet to Server (prevents anti-macro MISS penalty)
+            if not session.sentPresses[i] then
+                session.sentPresses[i] = true
+                sendSkillCheckPress(battleId, token, i, roundStart, pressTime)
             end
 
-            local targetPos = tonumber(round.targetPosition) or 0.5
-            local sweepSec = math.max(0.15, tonumber(round.sweepSeconds) or 1)
-            local isReverse = round.reverse == true
-            local targetFraction = isReverse and (1 - targetPos) or targetPos
-            local delayToHit = targetFraction * sweepSec
+            -- 2. Native In-Memory Driver: Trigger PixelQTE visual feedback & animations
+            local activeQte = session.qteSelf or (LivePBState and LivePBState.pixelQTE)
+            if activeQte and activeQte.token == token then
+                local pressed = triggerPrecisionPress(activeQte, token)
+                if not pressed and type(activeQte._completeTrace) == "function" then
+                    pcall(activeQte._completeTrace, activeQte)
+                end
+            end
 
-            -- Crisp humanize micro-jitter
-            local jitter = (math.random() - 0.5) * 0.001
-            local waitTime = math.max(0.04, delayToHit + jitter)
-
-            task.wait(waitTime)
-
-            if qteSelf and qteSelf.token == token and type(qteSelf.pressHandler) == "function" then
-                pcall(qteSelf.pressHandler)
+            -- Transition interval between rounds in PixelQTE is 0.32s
+            if i < #rounds then
+                task.wait(0.32 + (math.random() * 0.02))
             end
         end
+
+        -- Completion Dispatch: Wait 0.15s after final sweep, then fire WarriorBladeTimingResult
+        task.wait(0.15)
+        if not session.resolved and RPGCommand and token ~= "" then
+            session.resolved = true
+            local results = {}
+            for i, round in ipairs(rounds) do
+                local targetPos = tonumber(round.targetPosition) or 0.5
+                local jitterOffset = (0.005 + math.random() * 0.005) * 0.5
+                results[i] = {
+                    pressed = true,
+                    position = math.clamp(targetPos + jitterOffset, 0, 1)
+                }
+            end
+            pcall(function()
+                RPGCommand:FireServer("WarriorBladeTimingResult", {
+                    battleId = tostring(battleId or ""),
+                    token = token,
+                    results = results
+                })
+            end)
+        end
+
+        task.delay(1.5, function()
+            ActiveQTESessions[token] = nil
+        end)
     end)
 end
 
 local function solveThiefQTE(qteSelf, data)
     if not CombatConfig.AutoQTE_Attack or type(data) ~= "table" then return end
+    local token = tostring(data.token or "")
+    if token == "" then return end
+
+    local session = ActiveQTESessions[token]
+    if session then
+        if qteSelf then session.qteSelf = qteSelf end
+        return
+    end
+
+    session = {
+        token = token,
+        qteSelf = qteSelf,
+        resolved = false,
+        sentPresses = {},
+        startedAt = os.clock(),
+    }
+    ActiveQTESessions[token] = session
+
+    local battleId = data.battleId
     local targets = type(data.targets) == "table" and data.targets or {}
-    local maxHits = tonumber(data.maximumHits) or #targets
-    local hitCount = math.clamp(math.floor(maxHits), 1, math.max(1, #targets))
-    local targetSec = math.clamp(tonumber(data.targetSeconds) or 0.78, 0.15, 1.25)
+    local marks = type(data.marks) == "table" and data.marks or {}
+    local maxHits = tonumber(data.maximumHits)
+    local totalHits = maxHits or (#targets > 0 and #targets) or (#marks > 0 and #marks) or 1
+    local hitCount = math.clamp(math.floor(totalHits), 1, 8)
+
+    local targetSec = math.clamp(tonumber(data.targetSeconds) or tonumber(data.duration) or 0.78, 0.15, 1.5)
     local openFrom = math.clamp(tonumber(data.openFrom) or 0.35, 0, 1)
     local openTo = math.clamp(tonumber(data.openTo) or 0.8, openFrom, 1)
     local sweetSpot = (openFrom + openTo) / 2
-    local token = tostring(data.token or "")
 
     task.spawn(function()
-        -- Game engine starts with initial UI intro delay: u203 = os.clock() + 0.40
-        task.wait(0.42)
-
         for i = 1, hitCount do
-            if not qteSelf or qteSelf.token ~= token then break end
+            if session.resolved then break end
 
-            -- Transition cooldown between marks: game engine sets u203 = os.clock() + 0.34
-            if i > 1 then
-                task.wait(0.36)
-                if not qteSelf or qteSelf.token ~= token then break end
+            local roundStart = getServerTime()
+            -- Mark 1 has an initial 0.40s lead-in delay in PixelQTE._thief & _timedMarks
+            local initialLeadIn = (i == 1) and 0.40 or 0
+            local markDelay = sweetSpot * targetSec
+            -- Humanized micro-jitter: 5ms - 10ms (0.005s <= jitter <= 0.010s)
+            local jitter = 0.005 + (math.random() * 0.005)
+            -- 🎯 Clamp min wait to 0.26s so PixelQTE:_press passes the openedAt + 0.25 anti-spam window!
+            local waitTime = math.clamp(initialLeadIn + markDelay + jitter, 0.26, 1.75)
+            task.wait(waitTime)
+
+            local pressTime = getServerTime()
+
+            -- 1. Stream real-time SkillCheckPress packet to Server (prevents anti-macro MISS penalty)
+            if not session.sentPresses[i] then
+                session.sentPresses[i] = true
+                sendSkillCheckPress(battleId, token, i, roundStart, pressTime)
             end
 
-            -- Crisp humanize micro-jitter
-            local jitter = (math.random() - 0.5) * 0.001
-            local delayToHit = math.max(0.06, (sweetSpot * targetSec) + jitter)
+            -- 2. Native In-Memory Driver: Trigger PixelQTE visual feedback & animations
+            local activeQte = session.qteSelf or (LivePBState and LivePBState.pixelQTE)
+            if activeQte and activeQte.token == token then
+                triggerPrecisionPress(activeQte, token)
+            end
 
-            task.wait(delayToHit)
-
-            if qteSelf and qteSelf.token == token and type(qteSelf.pressHandler) == "function" then
-                pcall(qteSelf.pressHandler)
+            -- Inter-mark transition delay in PixelQTE._thief & _timedMarks is exactly 0.34s
+            if i < hitCount then
+                task.wait(0.34 + (math.random() * 0.02))
             end
         end
+
+        -- Completion Dispatch: Wait 0.15s after final mark, then fire ThiefSlashResult
+        task.wait(0.15)
+        if not session.resolved and RPGCommand and token ~= "" then
+            session.resolved = true
+            pcall(function()
+                RPGCommand:FireServer("ThiefSlashResult", {
+                    battleId = tostring(battleId or ""),
+                    token = token,
+                    hits = hitCount -- 🎯 CRITICAL FIX: INTEGER NUMBER, NEVER A TABLE!
+                })
+            end)
+        end
+
+        task.delay(1.5, function()
+            ActiveQTESessions[token] = nil
+        end)
     end)
 end
 
 local function solveMageQTE(qteSelf, data)
     if not CombatConfig.AutoQTE_Attack or type(data) ~= "table" then return end
+    local token = tostring(data.token or "")
+    if token == "" then return end
+
+    local session = ActiveQTESessions[token]
+    if session then
+        if qteSelf then session.qteSelf = qteSelf end
+        return
+    end
+
+    session = {
+        token = token,
+        qteSelf = qteSelf,
+        resolved = false,
+        sentPresses = {},
+        startedAt = os.clock(),
+    }
+    ActiveQTESessions[token] = session
+
+    local battleId = data.battleId
     local circles = type(data.circles) == "table" and data.circles or {}
-    local sigilCount = math.min(3, math.max(1, #circles))
+    local sigilCount = math.min(4, math.max(1, #circles))
     local circleSec = math.clamp(tonumber(data.circleSeconds) or 0.95, 0.15, 1.5)
     local openWindow = math.clamp(tonumber(data.openWindow) or 0.72, 0.5, 0.95)
-    local token = tostring(data.token or "")
+    -- Target safely inside the hit window (openWindow + 0.05) to avoid boundary "TOO EARLY" evaluations
+    local targetProgress = math.min(0.92, openWindow + 0.05)
 
     task.spawn(function()
         for i = 1, sigilCount do
-            if not qteSelf or qteSelf.token ~= token then break end
+            if session.resolved then break end
 
-            -- Transition cooldown between sigils: game engine sets u152 = os.clock() + 0.25
-            if i > 1 then
-                task.wait(0.27)
-                if not qteSelf or qteSelf.token ~= token then break end
+            local roundStart = getServerTime()
+            local hitDelay = targetProgress * circleSec
+            -- Humanized micro-jitter: 5ms - 10ms (0.005s <= jitter <= 0.010s)
+            local jitter = 0.005 + (math.random() * 0.005)
+            -- 🎯 Clamp min wait to 0.26s so PixelQTE:_press passes the openedAt + 0.25 anti-spam window!
+            local waitTime = math.clamp(hitDelay + jitter, 0.26, 1.45)
+            task.wait(waitTime)
+
+            local pressTime = getServerTime()
+
+            -- 1. Stream real-time SkillCheckPress packet to Server (prevents anti-macro MISS penalty)
+            if not session.sentPresses[i] then
+                session.sentPresses[i] = true
+                sendSkillCheckPress(battleId, token, i, roundStart, pressTime)
             end
 
-            -- Crisp humanize micro-jitter (Target safely inside open window)
-            local jitter = (math.random() - 0.5) * 0.001
-            local delayToHit = math.max(0.08, ((openWindow + 0.035) * circleSec) + jitter)
+            -- 2. Native In-Memory Driver: Trigger PixelQTE visual feedback & animations
+            local activeQte = session.qteSelf or (LivePBState and LivePBState.pixelQTE)
+            if activeQte and activeQte.token == token then
+                local ok = triggerPrecisionPress(activeQte, token)
+                if not ok and activeQte.currentCircle then
+                    pcall(function()
+                        local btn = activeQte.currentCircle
+                        if firesignal then
+                            firesignal(btn.Activated)
+                        end
+                    end)
+                end
+            end
 
-            task.wait(delayToHit)
-
-            if qteSelf and qteSelf.token == token and type(qteSelf.pressHandler) == "function" then
-                pcall(qteSelf.pressHandler)
+            -- Transition interval between sigils in PixelQTE is 0.25s (wait 0.27s for clean next rune spawn)
+            if i < sigilCount then
+                task.wait(0.27 + (math.random() * 0.02))
             end
         end
+
+        -- Completion Dispatch: Wait 0.15s after final circle, then fire MageRhythmResult
+        task.wait(0.15)
+        if not session.resolved and RPGCommand and token ~= "" then
+            session.resolved = true
+            pcall(function()
+                RPGCommand:FireServer("MageRhythmResult", {
+                    battleId = tostring(battleId or ""),
+                    token = token,
+                    hits = sigilCount -- 🎯 CRITICAL FIX: INTEGER NUMBER, NEVER A TABLE!
+                })
+            end)
+        end
+
+        task.delay(1.5, function()
+            ActiveQTESessions[token] = nil
+        end)
     end)
 end
 
 local function setupQTE()
+    -- 1. Pre-cache LivePBState from RPGClient upvalues
+    getLivePBState()
+
     local pbClient = getPBClient(false)
     if not pbClient then return false end
 
-    -- 1. Hook PixelQTE (2D Pixel Battles)
+    -- 2. Hook PixelQTE (if 2D pixel mode triggers)
     local qteModule = pbClient:FindFirstChild("PixelQTE")
     if qteModule then
         local ok, PixelQTE = pcall(require, qteModule)
@@ -324,7 +607,6 @@ local function setupQTE()
             local oldHandle = PixelQTE.Handle
             PixelQTE.Handle = function(self, signal, payload)
                 local res = oldHandle(self, signal, payload)
-
                 if signal == "DefenseTimingStarted" then
                     solveDefenseQTE(self, payload)
                 elseif signal == "WarriorBladeTimingStarted" then
@@ -334,13 +616,26 @@ local function setupQTE()
                 elseif signal == "MageRhythmStarted" then
                     solveMageQTE(self, payload)
                 end
-
                 return res
+            end
+
+            -- Intercept _send so Layer 2 knows native PixelQTE already resolved the token
+            if type(PixelQTE._send) == "function" then
+                local oldSend = PixelQTE._send
+                PixelQTE._send = function(self, remoteName, payload)
+                    if type(payload) == "table" and payload.token then
+                        local session = ActiveQTESessions[tostring(payload.token)]
+                        if session then
+                            session.resolved = true
+                        end
+                    end
+                    return oldSend(self, remoteName, payload)
+                end
             end
         end
     end
 
-    -- 2. Standalone DefenseTimingClient (100% Perfect Dodge)
+    -- 3. Standalone DefenseTimingClient Hook
     local defModule = pbClient:FindFirstChild("DefenseTimingClient")
     if defModule then
         local defOk, DefenseTimingClient = pcall(require, defModule)
@@ -349,27 +644,15 @@ local function setupQTE()
             local oldStart = DefenseTimingClient.Start
             DefenseTimingClient.Start = function(self, payload)
                 local res = oldStart(self, payload)
-                if CombatConfig.AutoQTE_Defense and payload and payload.startedAt and payload.target then
-                    local duration = payload.duration or 0.85
-                    local targetTimestamp = payload.startedAt + (payload.target * duration)
-                    local jitter = (math.random() - 0.5) * 0.001
-
-                    local conn
-                    conn = RunService.RenderStepped:Connect(function()
-                        if getServerTime() >= targetTimestamp + jitter then
-                            conn:Disconnect()
-                            if self.pending and not self.sent then
-                                pcall(self.Press, self)
-                            end
-                        end
-                    end)
+                if CombatConfig.AutoQTE_Defense then
+                    solveDefenseQTE(self, payload)
                 end
                 return res
             end
         end
     end
 
-    -- 3. Standalone WarriorBladeTimingClient (100% Perfect Blade Chain Trace)
+    -- 4. Standalone WarriorBladeTimingClient Hook
     local warriorModule = pbClient:FindFirstChild("WarriorBladeTimingClient")
     if warriorModule then
         local wOk, WarriorBladeTimingClient = pcall(require, warriorModule)
@@ -379,24 +662,14 @@ local function setupQTE()
             WarriorBladeTimingClient.Start = function(self, payload)
                 local res = oldWarriorStart(self, payload)
                 if CombatConfig.AutoQTE_Attack then
-                    local token = self.token
-                    task.spawn(function()
-                        local dur = tonumber(self.duration) or 0.85
-                        local traceDelay = math.clamp(dur * 0.45, 0.15, 0.6) + ((math.random() - 0.5) * 0.005)
-                        task.wait(traceDelay)
-                        if self.active and self.token == token and not self.completingPattern then
-                            pcall(function()
-                                self:_completeTrace()
-                            end)
-                        end
-                    end)
+                    solveWarriorQTE(self, payload)
                 end
                 return res
             end
         end
     end
 
-    -- 4. Standalone ThiefSlashClient (100% Perfect Slash Cuts)
+    -- 5. Standalone ThiefSlashClient Hook
     local thiefModule = pbClient:FindFirstChild("ThiefSlashClient")
     if thiefModule then
         local tOk, ThiefSlashClient = pcall(require, thiefModule)
@@ -406,27 +679,14 @@ local function setupQTE()
             ThiefSlashClient.Start = function(self, payload)
                 local res = oldThiefStart(self, payload)
                 if CombatConfig.AutoQTE_Attack then
-                    local token = self.token
-                    task.spawn(function()
-                        while self.active and self.token == token do
-                            if self.currentTarget and not self.currentResolved then
-                                local slashDelay = 0.12 + ((math.random() - 0.5) * 0.01)
-                                task.wait(slashDelay)
-                                if self.active and self.token == token and self.currentTarget and not self.currentResolved then
-                                    self.currentSlashAngle = math.random(30, 150)
-                                    self.currentResolved = true
-                                end
-                            end
-                            RunService.Heartbeat:Wait()
-                        end
-                    end)
+                    solveThiefQTE(self, payload)
                 end
                 return res
             end
         end
     end
 
-    -- 5. Standalone MageRhythmClient (100% Perfect Arcane Sigils)
+    -- 6. Standalone MageRhythmClient Hook
     local mageModule = pbClient:FindFirstChild("MageRhythmClient")
     if mageModule then
         local mOk, MageRhythmClient = pcall(require, mageModule)
@@ -439,7 +699,8 @@ local function setupQTE()
                         if CombatConfig.AutoQTE_Attack then
                             local winStart = (circleData and tonumber(circleData.windowStart)) or 0.62
                             local dur = tonumber(circleSeconds) or 0.95
-                            local hitDelay = math.clamp(winStart * dur + 0.015, 0.15, 1.2) + ((math.random() - 0.5) * 0.001)
+                            local jitter = 0.005 + (math.random() * 0.005)
+                            local hitDelay = math.clamp(winStart * dur + jitter, 0.15, 1.2)
                             task.wait(hitDelay)
                             if self.active and self.token == token and self.currentCircle then
                                 local btn = self.currentCircle
@@ -461,6 +722,7 @@ local function setupQTE()
 
     return true
 end
+task.spawn(function() pcall(setupQTE) end)
 
 -- ═══════════════════════════════════════════════════════════════════
 -- 🤖 PART 2: DYNAMIC TURN-BASED ACTION BOT (Native PixelCommandMenu Hook)
@@ -492,7 +754,7 @@ local function selectTargetEnemy(enemies, strategy)
             table.insert(aliveFoes, {
                 index = tonumber(foe.index) or idx,
                 hp = hp,
-                isBoss = foe.boss == true or (actor and actor.boss == true)
+                isBoss = foe.boss == true or foe.isBoss == true or (actor and (actor.boss == true or actor.isBoss == true or actor.category == "boss" or actor.kind == "boss"))
             })
         end
     end
@@ -654,7 +916,7 @@ local function getTargetEnemyData(enemies, targetIdx)
             local actor = (type(foe) == "table" and foe.actor) or foe
             local hp = tonumber(foe.hp) or (actor and tonumber(actor.hp)) or 100
             local maxHp = math.max(1, tonumber(foe.maxHp) or (actor and tonumber(actor.maxHp)) or 100)
-            local isBoss = foe.boss == true or (actor and actor.boss == true)
+            local isBoss = foe.boss == true or foe.isBoss == true or (actor and (actor.boss == true or actor.isBoss == true or actor.category == "boss" or actor.kind == "boss"))
             return {
                 data = foe,
                 index = foeIdx,
@@ -789,12 +1051,15 @@ local function dispatchNativeAction(menu, snapshot, action, targetIdx)
     if not action or not action.id then return false end
     local targetType = tostring(action.targetType or "")
     local payload = nil
-    if targetType == "Enemy" or (targetType ~= "Self" and targetType ~= "Ally" and targetType ~= "SelfOnly" and action.category ~= "Meditate" and action.category ~= "Guard" and action.category ~= "Item") then
+    if targetType == "Enemy" then
         payload = { targetEnemyIndex = targetIdx or 1 }
     elseif targetType == "Ally" then
         payload = { targetUserId = LocalPlayer.UserId }
+    elseif targetType ~= "AllEnemies" and targetType ~= "Self" and targetType ~= "SelfOnly" and action.category ~= "Meditate" and action.category ~= "Guard" and action.category ~= "Item" then
+        -- Default single enemy target fallback if targetType is unspecified
+        payload = { targetEnemyIndex = targetIdx or 1 }
     end
-    -- NOTE: For targetType == "Self", "SelfOnly", or category == "Item", payload MUST remain nil!
+    -- NOTE: For "AllEnemies", "Self", "SelfOnly", or category == "Item", payload MUST remain nil per native PixelCommandMenu rules!
 
     if menu and menu._send then
         local ok = pcall(function()
@@ -1298,6 +1563,33 @@ local function matchesSecretBoss(choice, targetBoss)
     end
 end
 
+local function normalizeNodeType(choice)
+    if type(choice) ~= "table" then return "fight" end
+    local rawType = string.lower(tostring(choice.type or choice.kind or ""))
+    local title = string.lower(tostring(choice.title or choice.name or ""))
+
+    -- 1. Direct or Alias Mapping:
+    if rawType == "camp" or rawType == "rest" or string.find(rawType, "rest", 1, true)
+        or string.find(title, "camp", 1, true) or string.find(title, "rest", 1, true) then
+        return "rest"
+    elseif rawType == "scout" or rawType == "treasure" or string.find(rawType, "treasure", 1, true)
+        or string.find(title, "treasure", 1, true) or string.find(title, "chest", 1, true) then
+        return "treasure"
+    elseif rawType == "elite" or string.find(rawType, "elite", 1, true)
+        or string.find(title, "elite", 1, true) then
+        return "elite"
+    elseif rawType == "mystery" or rawType == "shrine" or string.find(rawType, "mystery", 1, true)
+        or string.find(title, "mystery", 1, true) or string.find(title, "shrine", 1, true) or string.find(title, "event", 1, true) then
+        return "mystery"
+    elseif rawType == "boss" or string.find(rawType, "boss", 1, true) or string.find(title, "boss", 1, true) then
+        return "boss"
+    elseif rawType == "retreat" or rawType == "dungeonreturn" or string.find(rawType, "retreat", 1, true)
+        or string.find(title, "retreat", 1, true) or string.find(title, "turn back", 1, true) then
+        return "retreat"
+    end
+    return "fight"
+end
+
 local function selectBestNodeChoice(choices)
     if type(choices) ~= "table" or #choices == 0 then return 1 end
 
@@ -1310,27 +1602,48 @@ local function selectBestNodeChoice(choices)
             end
         end
         if #matchedBosses > 0 then
-            local picked = matchedBosses[math.random(1, #matchedBosses)]
-            return picked
+            return matchedBosses[1]
         end
     end
 
-    -- 2. Preferred Node Choice: If set and found in choices, pick it!
+    -- 2. Preferred Node Choice: If set and found in choices, pick it 100%!
     local rawPref = DungeonConfig.PreferredNode
     local preferred = (type(rawPref) == "table" and rawPref[1]) or tostring(rawPref or "None")
-    if preferred and preferred ~= "None" and preferred ~= "" then
-        local preferredLower = string.lower(preferred)
+    local prefLower = string.lower(string.match(tostring(preferred), "^%s*(%a+)") or "none")
+
+    if prefLower ~= "none" and prefLower ~= "" then
         for idx, choice in ipairs(choices) do
-            local nodeType = string.lower(tostring(choice.kind or choice.type or choice.name or choice.title or ""))
-            if string.find(nodeType, preferredLower, 1, true) then
+            local normalized = normalizeNodeType(choice)
+            local nodeText = string.lower(tostring(choice.kind or choice.type or choice.name or choice.title or ""))
+            if normalized == prefLower or string.find(nodeText, prefLower, 1, true) then
                 return idx
             end
         end
     end
 
-    -- 3. Random Fallback: If preferred not found or None, pick randomly!
-    local randomIdx = math.random(1, #choices)
-    return randomIdx
+    -- 3. Deterministic Priority Fallback Hierarchy (NO RANDOM PICKING!):
+    -- When the preferred node did not roll in this round's choices, pick according to safe priority
+    local fallbackRanks = {
+        treasure = 1,
+        mystery = 2,
+        rest = 3,
+        fight = 4,
+        elite = 5,
+        retreat = 6
+    }
+
+    local bestIdx = 1
+    local bestRank = 999
+    for idx, choice in ipairs(choices) do
+        local nType = normalizeNodeType(choice)
+        local rank = fallbackRanks[nType] or 4
+        if rank < bestRank then
+            bestRank = rank
+            bestIdx = idx
+        end
+    end
+
+    return bestIdx
 end
 
 local function triggerAutoReplay(info)
@@ -1375,11 +1688,29 @@ local NormalActBossDefeated = false
 local NormalActReturningHome = false
 local CurrentCombatIsBoss = false
 
+-- Pre-declare UI & State variables so functions above/below share the exact same local reference
+local lastHandledMapPhase = ""
+local LatestProfile = nil
+local lastGcScanTime = 0
+local sweepAndSellBagGears = nil
+local sweepAndReleasePets = nil
+local upgradeValorAll = nil
+local dismissHatchCinematic = nil
+local TormentTrackerLabel = nil
+local DungeonStatusLabel = nil
+local refreshEggDropdown = nil
+local StageBadge = nil
+local updateStageDisplay = nil
+
 -- ═══════════════════════════════════════════════════════════════════
 -- 🎁 AUTO CLAIM DUNGEON REWARD CHESTS & DISMISS VICTORY SCREEN
 -- ═══════════════════════════════════════════════════════════════════
+local lastChestClaimScan = 0
 local function autoClaimDungeonChests()
     if not DungeonConfig.AutoClaimChests then return end
+    if os.clock() - lastChestClaimScan < 0.4 then return end
+    lastChestClaimScan = os.clock()
+
     task.spawn(function()
         -- 1. Auto-dismiss Victory Screen ("RETURN TO THE ROAD" / "Continue")
         local pg = getPlayerGui(false)
@@ -1415,14 +1746,12 @@ local function autoClaimDungeonChests()
         for _, obj in ipairs(workspace:GetDescendants()) do
             local oName = string.lower(obj.Name)
             if string.find(oName, "chest", 1, true) or string.find(oName, "reward", 1, true) or string.find(oName, "treasure", 1, true) then
-                -- Check ProximityPrompt
                 local prompt = obj:FindFirstChildOfClass("ProximityPrompt") or (obj:IsA("ProximityPrompt") and obj)
                 if prompt and prompt.Enabled then
                     if fireproximityprompt then
                         pcall(fireproximityprompt, prompt)
                     end
                 end
-                -- Check ClickDetector
                 local cd = obj:FindFirstChildOfClass("ClickDetector") or (obj:IsA("ClickDetector") and obj)
                 if cd then
                     if fireclickdetector then
@@ -1438,92 +1767,166 @@ local function isNormalActFinished(state)
     if DungeonConfig.DungeonMode ~= "Normal" then return false end
     if not state or type(state) ~= "table" then return false end
 
+    -- Continuous Progression Mode: Do NOT exit on Act transition! Allow playing through Acts continuously.
+    if DungeonConfig.ActProgression == "Continuous" then
+        if not DungeonConfig.AutoReplay and (state.phase == "completed" or state.phase == "victory" or state.phase == "ended" or state.active == false) then
+            return true
+        end
+        return false
+    end
+
+    -- Single Act (Farm) Mode: Exit as soon as target Act is completed and next Act's route choice begins
     local targetAct = math.clamp(tonumber(DungeonConfig.StartAct) or 1, 1, 10)
     local curAct = tonumber(state.act or state.startAct) or targetAct
 
-    -- Only return home when we reached the next Act's Route Selection (phase == "choose")!
-    -- This guarantees the boss in targetAct has died, victory screen dismissed, chest loot collected, and character loses 0 life!
+    -- 1. Reached the next Act's Route Selection (phase == "choose") -> Exit to prevent advancing Act!
     if curAct > targetAct and state.phase == "choose" then
         return true
     end
 
-    -- If run completed, victory, or ended
-    if state.phase == "completed" or state.phase == "victory" or state.phase == "ended" or state.active == false then
+    -- 2. If run ended/completed AND AutoReplay is OFF, return home safely
+    if not DungeonConfig.AutoReplay and (state.phase == "completed" or state.phase == "victory" or state.phase == "ended" or state.active == false) then
         return true
     end
 
     return false
 end
 
-local function performSafeReturnHome(state)
-    if NormalActReturningHome then return end
-    NormalActReturningHome = true
+-- Helper: Dispatch all Return-to-Lobby packets and click Return GUI buttons
+local function dispatchReturnLobbySequence(state)
+    local runId = (state and state.id) or ""
+    local round = (state and state.round) or 1
+    local phase = (state and state.phase) or "choose"
 
-    if DungeonStatusLabel then
-        DungeonStatusLabel:SetText("Act Cleared! Returning to Castle (Zero Life Loss)...")
+    -- Step 1: Fire RunAction abandon at choose phase
+    if RPGCommand and runId ~= "" then
+        pcall(function()
+            RPGCommand:FireServer("RunAction", {
+                action = "abandon",
+                phase = phase,
+                round = round,
+                runId = runId
+            })
+        end)
     end
 
-    task.spawn(function()
-        local runId = (state and state.id) or ""
-        local round = (state and state.round) or 1
-        local phase = (state and state.phase) or "choose"
+    task.wait(0.15)
 
-        -- Step 1: Fire RunAction abandon at choose phase (Zero-Life Loss handshake verified!)
-        if RPGCommand and runId ~= "" then
-            pcall(function()
-                RPGCommand:FireServer("RunAction", {
-                    action = "abandon",
-                    phase = phase,
-                    round = round,
-                    runId = runId
-                })
-            end)
-        end
+    -- Step 2: Fire RunLobby abandon
+    if RPGCommand then
+        pcall(function()
+            RPGCommand:FireServer("RunLobby", { action = "abandon" })
+        end)
+    end
 
-        task.wait(0.2)
+    task.wait(0.15)
 
-        -- Step 2: Fire RunLobby abandon
-        if RPGCommand then
-            pcall(function()
-                RPGCommand:FireServer("RunLobby", { action = "abandon" })
-            end)
-        end
+    -- Step 3: Fire RunGoHome { now = true }
+    if RPGCommand then
+        pcall(function()
+            RPGCommand:FireServer("RunGoHome", { now = true })
+        end)
+    end
 
-        task.wait(0.2)
-
-        -- Step 3: Fire RunGoHome { now = true }
-        if RPGCommand then
-            pcall(function()
-                RPGCommand:FireServer("RunGoHome", { now = true })
-            end)
-        end
-
-        -- GUI Fallback: Trigger native Return Home / Head Home buttons if rendered
-        local pg = getPlayerGui(false)
-        if pg then
-            for _, desc in ipairs(pg:GetDescendants()) do
-                if desc:IsA("TextButton") or desc:IsA("ImageButton") then
-                    local text = string.upper(tostring(desc.Name .. " " .. (desc:IsA("TextButton") and desc.Text or "")))
-                    if string.find(text, "RETURN HOME", 1, true)
-                        or string.find(text, "HEAD HOME", 1, true)
-                        or string.find(text, "RETURN TO CASTLE", 1, true)
-                        or string.find(text, "TURN BACK", 1, true) then
-                        if firesignal then
-                            pcall(firesignal, desc.Activated)
-                            pcall(firesignal, desc.MouseButton1Click)
-                        end
+    -- Step 4: GUI Fallback (Click Return Home / Continue / Return to the Road buttons if visible)
+    local pg = getPlayerGui(false)
+    if pg then
+        for _, desc in ipairs(pg:GetDescendants()) do
+            if desc:IsA("TextButton") or desc:IsA("ImageButton") then
+                local text = string.upper(tostring(desc.Name .. " " .. (desc:IsA("TextButton") and desc.Text or "")))
+                if string.find(text, "RETURN HOME", 1, true)
+                    or string.find(text, "HEAD HOME", 1, true)
+                    or string.find(text, "RETURN TO CASTLE", 1, true)
+                    or string.find(text, "TURN BACK", 1, true)
+                    or string.find(text, "LEAVE DUNGEON", 1, true)
+                    or string.find(text, "RETURN TO THE ROAD", 1, true) then
+                    if desc.Visible and desc.Active and firesignal then
+                        pcall(firesignal, desc.Activated)
+                        pcall(firesignal, desc.MouseButton1Click)
                     end
                 end
             end
         end
+    end
+end
 
-        -- Safety retry if still in run after 3s
-        task.wait(3)
-        if LocalPlayer and LocalPlayer:GetAttribute("PBInRun") == true and RPGCommand then
-            pcall(function()
-                RPGCommand:FireServer("RunGoHome", { now = true })
-            end)
+local LatestRunState = nil
+
+local function performSafeReturnHome(state)
+    if state and type(state) == "table" then
+        LatestRunState = state
+    end
+    if NormalActReturningHome then return end
+    NormalActReturningHome = true
+
+    if DungeonStatusLabel then
+        DungeonStatusLabel:SetText("Act Cleared! Returning to Lobby...")
+    end
+
+    task.spawn(function()
+        local attempt = 1
+        while NormalActReturningHome do
+            local inRun = LocalPlayer and LocalPlayer:GetAttribute("PBInRun") == true
+            if not inRun and attempt > 1 then
+                -- Confirmed back in Lobby! Reset state lock.
+                NormalActReturningHome = false
+                if DungeonStatusLabel then
+                    DungeonStatusLabel:SetText("Status: Returned to Lobby!")
+                end
+                break
+            end
+
+            if DungeonStatusLabel then
+                DungeonStatusLabel:SetText(string.format("Returning to Lobby (Attempt #%d)...", attempt))
+            end
+
+            -- Claim any lingering chests/victory screens before firing return sequence
+            autoClaimDungeonChests()
+            dispatchReturnLobbySequence(LatestRunState or state)
+
+            attempt = attempt + 1
+
+            -- ⏱️ Fallback Loop: Wait 5 seconds, then re-verify if still stuck in dungeon
+            task.wait(5)
+
+            if LocalPlayer and LocalPlayer:GetAttribute("PBInRun") ~= true then
+                NormalActReturningHome = false
+                break
+            end
         end
+    end)
+end
+
+updateStageDisplay = function(stateOrPayload)
+    if not StageBadge then return end
+    task.defer(function()
+        pcall(function()
+            if not stateOrPayload or type(stateOrPayload) ~= "table" then
+                StageBadge:SetText("📍 Lobby (Idle)")
+                return
+            end
+
+            local inRun = LocalPlayer and LocalPlayer:GetAttribute("PBInRun") == true
+            if not inRun and (stateOrPayload.active == false or stateOrPayload.phase == "lobby") then
+                StageBadge:SetText("📍 Lobby (Idle)")
+                return
+            end
+
+            local round = tonumber(stateOrPayload.round) or 1
+            local mode = tostring(stateOrPayload.difficulty or DungeonConfig.DungeonMode or "")
+            local act = tonumber(stateOrPayload.act or stateOrPayload.startAct or LastPlayedAct or DungeonConfig.StartAct) or 1
+            local tier = tonumber(stateOrPayload.tier or stateOrPayload.tormentLevel or DungeonConfig.TormentTier) or 1
+
+            local text = ""
+            if string.find(string.lower(mode), "torment", 1, true) or stateOrPayload.torment then
+                text = string.format("📍 Torment.lvl%d Stage %d", tier, round)
+            elseif string.find(string.lower(mode), "spooky", 1, true) or string.find(string.lower(mode), "halloween", 1, true) then
+                text = string.format("📍 Spooky Stage %d", round)
+            else
+                text = string.format("📍 Act %d Stage %d", act, round)
+            end
+            StageBadge:SetText(text)
+        end)
     end)
 end
 
@@ -1543,90 +1946,103 @@ local function hookRunMapView()
     RunMapView.SetState = function(self, newState)
         local res = oldSetState(self, newState)
 
-        if type(newState) == "table" then
-            local actNum = tonumber(newState.startAct or newState.act)
-            if actNum and actNum > 0 then
-                LastPlayedAct = actNum
-            end
-            if type(updateStageDisplay) == "function" then
-                updateStageDisplay(newState)
-            end
+        task.defer(function()
+            pcall(function()
+                if type(newState) == "table" then
+                    LatestRunState = newState
+                    local actNum = tonumber(newState.startAct or newState.act)
+                    if actNum and actNum > 0 then
+                        LastPlayedAct = actNum
+                    end
+                    updateStageDisplay(newState)
 
-            -- Check Auto Claim Chests / Dismiss Victory Screen in event / victory phases
-            if newState.phase == "event" or newState.phase == "victory" or newState.phase == "completed" then
-                autoClaimDungeonChests()
-            end
-        end
+                    if newState.phase == "event" or newState.phase == "victory" or newState.phase == "completed" then
+                        autoClaimDungeonChests()
+                    end
+                end
 
-        -- Normal Mode Single-Act Synchronization: Block advancing into next Act!
-        if isNormalActFinished(newState) then
-            performSafeReturnHome(newState)
-            return res
-        end
+                -- Normal Mode Single-Act Synchronization: Block advancing into next Act!
+                if isNormalActFinished(newState) then
+                    performSafeReturnHome(newState)
+                    return
+                end
 
-        if DungeonConfig.AutoChooseNode and type(newState) == "table" then
-            local phase = newState.phase
-            local runId = newState.id
-            local round = newState.round
+                if DungeonConfig.AutoChooseNode and type(newState) == "table" then
+                    local phase = newState.phase or ""
+                    local runId = newState.id
+                    local round = newState.round or 1
+                    local phaseKey = string.format("%s:%s:%s", tostring(runId), tostring(round), tostring(phase))
 
-            -- 1. Auto-Vote Best Route Node
-            if phase == "choose" and newState.choices and #newState.choices > 0 then
-                local bestIdx = selectBestNodeChoice(newState.choices)
-                task.delay(0.35, function()
-                    if self.state and self.state.phase == "choose" then
-                        if isNormalActFinished(self.state) then
-                            performSafeReturnHome(self.state)
-                            return
-                        end
-                        pcall(function()
-                            self:_send({
-                                action = "vote",
-                                choice = bestIdx
-                            }, self.state)
-                            if self.votes and self.player then
-                                self.votes[self.player.UserId] = bestIdx
-                                if self._refreshVotes then
-                                    self:_refreshVotes()
+                    -- Shared phase lock so RPGState.OnClientEvent won't fire a duplicate action
+                    if lastHandledMapPhase == phaseKey then
+                        return
+                    end
+                    lastHandledMapPhase = phaseKey
+
+                    -- 1. Auto-Vote Best Route Node
+                    if phase == "choose" and newState.choices and #newState.choices > 0 then
+                        local bestIdx = selectBestNodeChoice(newState.choices)
+                        task.delay(0.35, function()
+                            if self.state and self.state.phase == "choose" then
+                                if isNormalActFinished(self.state) then
+                                    performSafeReturnHome(self.state)
+                                    return
                                 end
+                                pcall(function()
+                                    self:_send({
+                                        action = "vote",
+                                        choice = bestIdx
+                                    }, self.state)
+                                    if self.votes and self.player then
+                                        self.votes[self.player.UserId] = bestIdx
+                                        if self._refreshVotes then
+                                            self:_refreshVotes()
+                                        end
+                                    end
+                                end)
                             end
                         end)
-                    end
-                end)
 
-            -- 2. Auto-Confirm Event / Shop
-            elseif phase == "event" then
-                autoClaimDungeonChests()
-                task.delay(0.6, function()
-                    if self.state and self.state.phase == "event" then
-                        if isNormalActFinished(self.state) then
-                            performSafeReturnHome(self.state)
-                            return
-                        end
-                        pcall(function()
-                            self:_send({ action = "eventReady" }, self.state)
+                    -- 2. Auto-Confirm Event / Shop
+                    elseif phase == "event" or phase == "mystery" then
+                        autoClaimDungeonChests()
+                        task.delay(0.6, function()
+                            if self.state and (self.state.phase == "event" or self.state.phase == "mystery") then
+                                if isNormalActFinished(self.state) then
+                                    performSafeReturnHome(self.state)
+                                    return
+                                end
+                                pcall(function()
+                                    self:_send({ action = "eventReady" }, self.state)
+                                end)
+                            end
                         end)
-                    end
-                end)
 
-            -- 3. Auto-Progress Story Dialogues
-            elseif phase == "story" then
-                task.delay(0.4, function()
-                    if self.state and self.state.phase == "story" then
-                        if isNormalActFinished(self.state) then
-                            performSafeReturnHome(self.state)
-                            return
-                        end
-                        pcall(function()
-                            self:_send({ action = "storyChoice", choice = "continue" }, self.state)
+                    -- 3. Auto-Progress Story Dialogues
+                    elseif phase == "story" then
+                        task.delay(0.4, function()
+                            if self.state and self.state.phase == "story" then
+                                if isNormalActFinished(self.state) then
+                                    performSafeReturnHome(self.state)
+                                    return
+                                end
+                                pcall(function()
+                                    self:_send({ action = "storyChoice", choice = "continue" }, self.state)
+                                end)
+                            end
                         end)
-                    end
-                end)
 
-            -- 4. Auto-Replay Upon Floor Completion
-            elseif phase == "ended" or newState.active == false then
-                triggerAutoReplay(newState)
-            end
-        end
+                    -- 4. Auto-Replay or Return Lobby Upon Floor Completion
+                    elseif phase == "completed" or phase == "victory" or phase == "ended" or newState.active == false then
+                        if DungeonConfig.AutoReplay then
+                            triggerAutoReplay(newState)
+                        else
+                            performSafeReturnHome(newState)
+                        end
+                    end
+                end
+            end)
+        end)
 
         return res
     end
@@ -1634,49 +2050,22 @@ local function hookRunMapView()
     return true
 end
 
--- Setup Dual-Layer Network Listeners
-local lastHandledMapPhase = ""
-local LatestProfile = nil
-local sweepAndSellBagGears = nil
-local sweepAndReleasePets = nil
-local upgradeValorAll = nil
-local dismissHatchCinematic = nil
-local TormentTrackerLabel = nil
-local refreshEggDropdown = nil
-local StageBadge = nil
-
-local function updateStageDisplay(stateOrPayload)
-    if not StageBadge then return end
-    if not stateOrPayload or type(stateOrPayload) ~= "table" then
-        StageBadge:SetText("📍 Lobby (Idle)")
-        return
-    end
-
-    local inRun = LocalPlayer and LocalPlayer:GetAttribute("PBInRun") == true
-    if not inRun and (stateOrPayload.active == false or stateOrPayload.phase == "lobby") then
-        StageBadge:SetText("📍 Lobby (Idle)")
-        return
-    end
-
-    local round = tonumber(stateOrPayload.round) or 1
-    local mode = tostring(stateOrPayload.difficulty or DungeonConfig.DungeonMode or "")
-    local act = tonumber(stateOrPayload.act or stateOrPayload.startAct or LastPlayedAct or DungeonConfig.StartAct) or 1
-    local tier = tonumber(stateOrPayload.tier or stateOrPayload.tormentLevel or DungeonConfig.TormentTier) or 1
-
-    local text = ""
-    if string.find(string.lower(mode), "torment", 1, true) or stateOrPayload.torment then
-        text = string.format("📍 Torment.lvl%d Stage %d", tier, round)
-    elseif string.find(string.lower(mode), "spooky", 1, true) or string.find(string.lower(mode), "halloween", 1, true) then
-        text = string.format("📍 Spooky Stage %d", round)
-    else
-        text = string.format("📍 Act %d Stage %d", act, round)
-    end
-    StageBadge:SetText(text)
-end
-
 if RPGState then
     RPGState.OnClientEvent:Connect(function(event, payload)
-        if event == "Profile" and type(payload) == "table" then
+        -- 🎯 100% Guaranteed Dual-Layer Auto QTE Handlers
+        if event == "DefenseTimingStarted" and type(payload) == "table" then
+            solveDefenseQTE(nil, payload)
+
+        elseif event == "WarriorBladeTimingStarted" and type(payload) == "table" then
+            solveWarriorQTE(nil, payload)
+
+        elseif event == "ThiefSlashStarted" and type(payload) == "table" then
+            solveThiefQTE(nil, payload)
+
+        elseif event == "MageRhythmStarted" and type(payload) == "table" then
+            solveMageQTE(nil, payload)
+
+        elseif event == "Profile" and type(payload) == "table" then
             LatestProfile = payload
             if AutoSellConfig.Enabled and type(sweepAndSellBagGears) == "function" then
                 task.delay(0.5, sweepAndSellBagGears)
@@ -1693,12 +2082,11 @@ if RPGState then
             if type(snapshot) == "table" and snapshot.id then
                 CombatState.CurrentBattle = snapshot
 
-                -- Check if battle contains a Boss enemy
                 local hasBoss = false
                 if snapshot.enemies and type(snapshot.enemies) == "table" then
                     for _, foe in ipairs(snapshot.enemies) do
                         local actor = (type(foe) == "table" and foe.actor) or foe
-                        if foe.isBoss or (actor and (actor.isBoss or actor.category == "boss" or actor.kind == "boss")) then
+                        if foe.boss == true or foe.isBoss == true or (actor and (actor.boss == true or actor.isBoss == true or actor.category == "boss" or actor.kind == "boss")) then
                             hasBoss = true
                             break
                         end
@@ -1706,7 +2094,6 @@ if RPGState then
                 end
                 CurrentCombatIsBoss = hasBoss
 
-                -- Fallback turn execution ONLY if native PixelCommandMenu hook is not available
                 if not NativeMenuHooked and CombatConfig.AutoTurn and snapshot.canAct == true then
                     dispatchTurnAction(nil, snapshot, "RPGStateFallback")
                 end
@@ -1723,7 +2110,6 @@ if RPGState then
                 CurrentCombatIsBoss = false
                 NormalActBossDefeated = true
             end
-            -- Auto Claim Chests / Dismiss Victory Screen
             autoClaimDungeonChests()
             task.delay(0.6, autoClaimDungeonChests)
             task.delay(1.5, autoClaimDungeonChests)
@@ -1752,6 +2138,7 @@ if RPGState then
 
         -- Dungeon Map Auto-Choose Fallback
         elseif (event == "RunState" or event == "RunMapUpdated") and type(payload) == "table" then
+            LatestRunState = payload
             local actNum = tonumber(payload.startAct or payload.act)
             if actNum and actNum > 0 then
                 LastPlayedAct = actNum
@@ -1762,7 +2149,6 @@ if RPGState then
                 autoClaimDungeonChests()
             end
 
-            -- Normal Mode Single-Act Synchronization: Block advancing into next Act!
             if isNormalActFinished(payload) then
                 performSafeReturnHome(payload)
             else
@@ -1787,29 +2173,29 @@ if RPGState then
                         task.delay(0.4, function()
                             RPGCommand:FireServer("RunAction", { action = "storyChoice", choice = "continue", runId = runId, round = round, phase = phase })
                         end)
-                    elseif phase == "completed" or phase == "victory" or phase == "ended" then
-                        -- 1. Post-Torment / Post-Run Valor Auto-Upgrade
+                    elseif phase == "completed" or phase == "victory" or phase == "ended" or payload.active == false then
                         if DungeonConfig.AutoUpgradeValor and type(upgradeValorAll) == "function" then
                             task.delay(0.4, upgradeValorAll)
                         end
-                        -- 2. Post-Run Bag Clean
                         if AutoSellConfig.Enabled and type(sweepAndSellBagGears) == "function" then
                             task.delay(0.8, sweepAndSellBagGears)
                         end
-                        -- 3. Auto Replay Runner
-                        triggerAutoReplay(payload)
+                        if DungeonConfig.AutoReplay then
+                            triggerAutoReplay(payload)
+                        else
+                            performSafeReturnHome(payload)
+                        end
                     end
                 end
             end
 
         elseif event == "RunLobbyState" and type(payload) == "table" then
-            -- Reset Normal Mode Single-Act tracking when back in Lobby
             NormalActBossDefeated = false
             NormalActReturningHome = false
             CurrentCombatIsBoss = false
+            LatestRunState = nil
             updateStageDisplay(nil)
 
-            -- Check Valor Upgrade in lobby transition
             if DungeonConfig.AutoUpgradeValor and type(upgradeValorAll) == "function" then
                 task.delay(0.3, upgradeValorAll)
             end
@@ -2494,7 +2880,6 @@ end
 -- ═══════════════════════════════════════════════════════════════════
 local countdownRemaining = 0
 local isCountingDown = false
-local DungeonStatusLabel = nil
 
 task.spawn(function()
     while true do
@@ -2838,6 +3223,11 @@ end)
 
 DungeonTab:CreateSlider("Select Start Act (Normal)", 1, 10, DungeonConfig.StartAct, 1, function(val)
     DungeonConfig.StartAct = math.floor(val)
+end)
+
+createSelect(DungeonTab, "Act Progression", { "Continuous", "Single Act" }, DungeonConfig.ActProgression, function(prog)
+    local chosen = (type(prog) == "table" and prog[1]) or tostring(prog or "Continuous")
+    DungeonConfig.ActProgression = chosen
 end)
 
 createSelect(DungeonTab, "Torment Mode", { "Climb", "Stay" }, DungeonConfig.TormentMode, function(mode)
