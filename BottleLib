@@ -3206,13 +3206,46 @@ function BottleLib:CreateWindow(WindowConfig)
         dockBadge.MouseButton1Click:Connect(triggerBadgeClick)
 
         local BadgeObj = {}
-        function BadgeObj:SetText(t) lbl.Text = t; dbLbl.Text = t end
-        function BadgeObj:SetColor(c) badge.BackgroundColor3 = c; dockBadge.BackgroundColor3 = c end
-        function BadgeObj:SetTextColor(c) lbl.TextColor3 = c; dbLbl.TextColor3 = c end
+        function BadgeObj:SetText(t)
+            local s = tostring(t or "")
+            local ok = pcall(function() lbl.Text = s; dbLbl.Text = s end)
+            if not ok then
+                task.defer(function()
+                    pcall(function() lbl.Text = s; dbLbl.Text = s end)
+                end)
+            end
+        end
+        function BadgeObj:SetColor(c)
+            local ok = pcall(function() badge.BackgroundColor3 = c; dockBadge.BackgroundColor3 = c end)
+            if not ok then
+                task.defer(function()
+                    pcall(function() badge.BackgroundColor3 = c; dockBadge.BackgroundColor3 = c end)
+                end)
+            end
+        end
+        function BadgeObj:SetTextColor(c)
+            local ok = pcall(function() lbl.TextColor3 = c; dbLbl.TextColor3 = c end)
+            if not ok then
+                task.defer(function()
+                    pcall(function() lbl.TextColor3 = c; dbLbl.TextColor3 = c end)
+                end)
+            end
+        end
         function BadgeObj:SetVisible(v)
-            badge.Visible = v
-            dockBadge.Visible = v
-            updateDockDivider()
+            local ok = pcall(function()
+                badge.Visible = v
+                dockBadge.Visible = v
+                updateDockDivider()
+            end)
+            if not ok then
+                task.defer(function()
+                    pcall(function()
+                        badge.Visible = v
+                        dockBadge.Visible = v
+                        updateDockDivider()
+                    end)
+                end)
+            end
         end
         function BadgeObj:OnClick(fn) clickCb = fn end
         return BadgeObj
