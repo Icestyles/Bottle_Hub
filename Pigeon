@@ -64,10 +64,10 @@ local CombatConfig = {
     ActionPriority = "Skill",    -- Fallback Priority
     TargetStrategy = "None",     -- "None", "LowestHP", "Boss", "FirstAlive" (Default: "None")
     AntiOverkill = true,         -- Anti-Overkill: Don't waste high energy skills on low-HP mobs (DEFAULT ON)
-    SmartSummon = true,          -- Smart Summon Optimization: Priority in turn 1-2 on high-HP/boss (DEFAULT ON)
-    AutoHeal_Satchel = false,    -- Emergency Satchel Potion (DEFAULT OFF)
+    SmartSummon = false,          -- Smart Summon Optimization: Priority in turn 1-2 on high-HP/boss (DEFAULT OFF)
+    AutoHeal_Satchel = true,    -- Emergency Satchel Potion (DEFAULT ON)
     AutoHeal_Threshold = 0.70,   -- 70% HP (DEFAULT 70%)
-    AutoGuard_Brace = false,     -- Auto-Guard on Boss Brace (DEFAULT OFF)
+    AutoGuard_Brace = true,     -- Auto-Guard on Boss Brace (DEFAULT ON)
     AutoMeditate_NoEnergy = false, -- Meditate if no energy (DEFAULT OFF)
     AutoJoinBattle = false,      -- Automatically accept BattleJoinOffer
     AutoDeclineBattle = false,   -- Automatically reject BattleJoinOffer
@@ -87,10 +87,12 @@ local SecretBossList = {
 }
 
 local DungeonConfig = {
+    AutoSelectSlot = false,       -- Auto Select Character Slot on Main Menu (DEFAULT OFF)
+    SelectedSlot = 1,            -- Target Character Slot (1 to 2, default 1)
     AutoStartDungeon = false,    -- Auto Start Dungeon (DEFAULT OFF)
-    StartDelay = 15,             -- Pre-start countdown delay in seconds (DEFAULT 15s)
+    StartDelay = 20,             -- Pre-start countdown delay in seconds (DEFAULT 20s)
     DungeonMode = "Normal",      -- "Normal", "Torment", "Event (Haunted Harvest)"
-    NormalDifficulty = "normal", -- "normal", "hard", "nightmare"
+    NormalDifficulty = "nightmare", -- "normal", "hard", "nightmare"
     StartAct = 1,                -- Act / Stage (1 to 10, default 1)
     ActProgression = "Continuous", -- "Continuous" (Progress to next Act) or "Single Act" (Return to Lobby when Act finished)
     TormentMode = "Climb",       -- "Climb" (Auto Highest Unlocked) or "Stay" (Selected Tier)
@@ -267,7 +269,12 @@ local function solveDefenseQTE(qteSelf, data)
     local target = tonumber(data.target) or 0.5
     local startedAt = tonumber(data.startedAt) or getServerTime()
     local targetOffset = target * duration
-    local triggerTimestamp = startedAt + targetOffset
+    local idealCenterTime = startedAt + targetOffset
+    -- 🎯 Bullseye Frame-Lead Compensation:
+    -- Perfect window is only ±0.032s (32ms).
+    -- Subtracting 0.008s (half a frame at 60fps) centers the RenderStepped trigger
+    -- directly in the middle of the Perfect zone, eliminating trailing-edge overshoots into "Blocked".
+    local triggerTimestamp = idealCenterTime - 0.008
 
     task.spawn(function()
         local conn
@@ -294,7 +301,7 @@ local function solveDefenseQTE(qteSelf, data)
                         RPGCommand:FireServer("DefenseTimingInput", {
                             battleId = data.battleId,
                             token = token,
-                            pressedAt = triggerTimestamp
+                            pressedAt = idealCenterTime
                         })
                     end)
                 end
@@ -2866,6 +2873,171 @@ upgradeValorAll = function()
 end
 
 -- ═══════════════════════════════════════════════════════════════════
+-- 🚪 AUTO CHARACTER SLOT & MAIN MENU / PROFILE GATE RECOVERY ENGINE
+-- ═══════════════════════════════════════════════════════════════════
+local isHandlingSlotSelect = false
+
+local function clickGuiButton(btn)
+    if not btn then return false end
+    local clicked = false
+
+    -- Method 1: firesignal (Activated / MouseButton1Click)
+    if firesignal then
+        pcall(function()
+            if btn.Activated then
+                firesignal(btn.Activated)
+                clicked = true
+            end
+        end)
+        pcall(function()
+            if btn.MouseButton1Click then
+                firesignal(btn.MouseButton1Click)
+                clicked = true
+            end
+        end)
+    end
+
+    -- Method 2: getconnections
+    if not clicked and getconnections then
+        pcall(function()
+            if btn.Activated then
+                for _, conn in ipairs(getconnections(btn.Activated)) do
+                    if conn and conn.Fire then
+                        conn:Fire()
+                        clicked = true
+                    elseif conn and conn.Function then
+                        task.spawn(conn.Function)
+                        clicked = true
+                    end
+                end
+            end
+            if btn.MouseButton1Click then
+                for _, conn in ipairs(getconnections(btn.MouseButton1Click)) do
+                    if conn and conn.Fire then
+                        conn:Fire()
+                        clicked = true
+                    elseif conn and conn.Function then
+                        task.spawn(conn.Function)
+                        clicked = true
+                    end
+                end
+            end
+        end)
+    end
+
+    -- Method 3: VirtualUser fallback click
+    if not clicked and VirtualUser then
+        pcall(function()
+            local absPos = btn.AbsolutePosition
+            local absSize = btn.AbsoluteSize
+            local center = Vector2.new(absPos.X + absSize.X / 2, absPos.Y + absSize.Y / 2)
+            VirtualUser:Button1Down(center)
+            task.wait(0.05)
+            VirtualUser:Button1Up(center)
+            clicked = true
+        end)
+    end
+
+    return clicked
+end
+
+local function getProfileGateUI()
+    local pg = getPlayerGui(false)
+    if not pg then return nil end
+    local pbUI = pg:FindFirstChild("PlatformBattlesUI")
+    if not pbUI then return nil end
+    local root = pbUI:FindFirstChild("Root")
+    if not root then return nil end
+    local gate = root:FindFirstChild("ProfileGate")
+    if not gate then return nil end
+
+    local isGateActive = (gate.Visible == true) or (LocalPlayer and LocalPlayer:GetAttribute("PBProfileGate") == true)
+
+    return {
+        gate = gate,
+        root = root,
+        isGateActive = isGateActive,
+        mainMenuPage = gate:FindFirstChild("MainMenuPage"),
+        slotsPage = gate:FindFirstChild("CharacterSlotsPage"),
+    }
+end
+
+local function handleAutoSlotSelection()
+    if isHandlingSlotSelect then return end
+    isHandlingSlotSelect = true
+
+    task.spawn(function()
+        local success, err = pcall(function()
+            local gateData = getProfileGateUI()
+            if not gateData or not gateData.isGateActive then
+                return
+            end
+
+            local gate = gateData.gate
+            local targetSlot = math.clamp(tonumber(DungeonConfig.SelectedSlot) or 1, 1, 2)
+
+            -- Stage 1: If on MainMenuPage, click [ CHARACTER SELECT ]
+            local mainMenu = gateData.mainMenuPage or gate:FindFirstChild("MainMenuPage", true)
+            local slotsPage = gateData.slotsPage or gate:FindFirstChild("CharacterSlotsPage", true)
+
+            if mainMenu and (mainMenu.Visible == true or (slotsPage and not slotsPage.Visible)) then
+                local charSelectBtn = mainMenu:FindFirstChild("CharacterSelect", true)
+                if charSelectBtn then
+                    clickGuiButton(charSelectBtn)
+                    task.wait(0.5)
+                end
+            end
+
+            -- Refresh slotsPage reference after clicking
+            slotsPage = gateData.slotsPage or gate:FindFirstChild("CharacterSlotsPage", true)
+            local targetSlotName = "Slot" .. tostring(targetSlot)
+            local slotCard = nil
+            if slotsPage then
+                slotCard = slotsPage:FindFirstChild(targetSlotName, true)
+            end
+            if not slotCard then
+                slotCard = gate:FindFirstChild(targetSlotName, true)
+            end
+
+            if slotCard then
+                local actionBtn = slotCard:FindFirstChild("Action", true)
+                if actionBtn then
+                    clickGuiButton(actionBtn)
+                    task.wait(0.5)
+                end
+            end
+
+            -- Stage 3: Layer 2 Fail-safe Remote Dispatch
+            local pReq = Remotes and Remotes:FindFirstChild("ProfileRequest")
+            if not pReq then
+                local pb = ReplicatedStorage:FindFirstChild("PlatformBattles")
+                local r = pb and pb:FindFirstChild("Remotes")
+                pReq = r and r:FindFirstChild("ProfileRequest")
+            end
+
+            if pReq then
+                pcall(function()
+                    pReq:InvokeServer("SelectSlot", { slot = targetSlot })
+                end)
+                task.wait(0.25)
+                pcall(function()
+                    pReq:InvokeServer("Village", { action = "status" })
+                end)
+            end
+
+            if RPGCommand then
+                pcall(function()
+                    RPGCommand:FireServer("Ready", { slot = targetSlot })
+                end)
+            end
+        end)
+
+        task.wait(2.5)
+        isHandlingSlotSelect = false
+    end)
+end
+
+-- ═══════════════════════════════════════════════════════════════════
 -- 🏰 BACKGROUND RUNNER 1: AUTO START DUNGEON (Solo with 15s Countdown)
 -- ═══════════════════════════════════════════════════════════════════
 local countdownRemaining = 0
@@ -2885,8 +3057,25 @@ task.spawn(function()
 
         local inRun = LocalPlayer and LocalPlayer:GetAttribute("PBInRun") == true
         local inBattle = LocalPlayer and (LocalPlayer:GetAttribute("InTurnBattle") == true or LocalPlayer:GetAttribute("PlatformBattleActive") == true)
+        local gateData = getProfileGateUI()
+        local inProfileGate = gateData and gateData.isGateActive
 
-        if DungeonConfig.AutoStartDungeon and RPGCommand then
+        -- 🚪 AUTO SELECT CHARACTER SLOT (If dropped on Main Menu / Title Screen)
+        if inProfileGate and not inRun and not inBattle then
+            isCountingDown = false
+            countdownRemaining = 0
+            if DungeonConfig.AutoSelectSlot then
+                local slotNum = tonumber(DungeonConfig.SelectedSlot) or 1
+                if DungeonStatusLabel then
+                    DungeonStatusLabel:SetText(string.format("Status: Main Menu (Auto-Selecting Slot %d...)", slotNum))
+                end
+                handleAutoSlotSelection()
+            else
+                if DungeonStatusLabel then
+                    DungeonStatusLabel:SetText("Status: Main Menu / Character Select")
+                end
+            end
+        elseif DungeonConfig.AutoStartDungeon and RPGCommand then
             local char = LocalPlayer and LocalPlayer.Character
             local hrp = char and char:FindFirstChild("HumanoidRootPart")
 
@@ -3232,6 +3421,26 @@ DungeonTab:CreateSection("Stage & Node Selection")
 
 DungeonTab:CreateToggle("Auto Path Next Node", DungeonConfig.AutoChooseNode, function(state)
     DungeonConfig.AutoChooseNode = state
+    if state and LatestRunState and type(LatestRunState) == "table" then
+        local phase = LatestRunState.phase or ""
+        local runId = LatestRunState.id
+        local round = LatestRunState.round or 1
+        if phase == "choose" and LatestRunState.choices and #LatestRunState.choices > 0 then
+            local bestIdx = selectBestNodeChoice(LatestRunState.choices)
+            task.delay(0.2, function()
+                RPGCommand:FireServer("RunAction", { action = "vote", runId = runId, round = round, phase = phase, choice = bestIdx })
+            end)
+        elseif (phase == "event" or phase == "mystery") then
+            autoClaimDungeonChests()
+            task.delay(0.2, function()
+                RPGCommand:FireServer("RunAction", { action = "eventReady", runId = runId, round = round, phase = phase })
+            end)
+        elseif phase == "story" then
+            task.delay(0.2, function()
+                RPGCommand:FireServer("RunAction", { action = "storyChoice", choice = "continue", runId = runId, round = round, phase = phase })
+            end)
+        end
+    end
 end)
 
 createSelect(DungeonTab, "Preferred Node", { "None", "treasure", "elite", "rest", "mystery", "fight" }, DungeonConfig.PreferredNode, function(selected)
@@ -3277,6 +3486,24 @@ end)
 
 -- TAB 3: 🚀 QOL
 local QoLTab = Window:CreateTab("🚀 QoL")
+
+QoLTab:CreateSection("Auto Lobby & Character Slot")
+
+QoLTab:CreateToggle("Auto Select Character Slot", DungeonConfig.AutoSelectSlot, function(state)
+    DungeonConfig.AutoSelectSlot = state
+    if state then
+        local gateData = getProfileGateUI()
+        if gateData and gateData.isGateActive then
+            handleAutoSlotSelection()
+        end
+    end
+end)
+
+createSelect(QoLTab, "Default Character Slot", { "Slot 1", "Slot 2" }, "Slot " .. tostring(DungeonConfig.SelectedSlot or 1), function(selected)
+    local chosen = (type(selected) == "table" and selected[1]) or tostring(selected or "Slot 1")
+    local num = tonumber(string.match(chosen, "%d+")) or 1
+    DungeonConfig.SelectedSlot = num
+end)
 
 QoLTab:CreateSection("Auto-Sell Gears")
 
