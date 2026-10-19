@@ -3832,9 +3832,9 @@ function BottleLib:CreateWindow(WindowConfig)
         local autoLoadEnabled, autoLoadTarget = self:GetAutoLoad()
         local function getStatusText(enabled, target)
             if enabled and target and #target > 0 then
-                return "⚡ Active Auto-Load: [ " .. target .. " ] (ON)"
+                return "Active Auto-Load: [ " .. target .. " ] (ON)"
             else
-                return "⚡ Active Auto-Load: [ None / Disabled ]"
+                return "Active Auto-Load: [ None / Disabled ]"
             end
         end
 
@@ -3878,7 +3878,7 @@ function BottleLib:CreateWindow(WindowConfig)
         -- 3. System & Anti-AFK Section
         ConfigTab:CreateSection("System Settings")
 
-        self._AntiAfkToggle = ConfigTab:CreateToggle("Anti AFK (20-Min Idle Kick Guard)", BottleLib.AntiAFKEnabled, function(state)
+        self._AntiAfkToggle = ConfigTab:CreateToggle("Anti-AFK", BottleLib.AntiAFKEnabled, function(state)
             if state then
                 BottleLib:EnableAntiAFK()
             else
